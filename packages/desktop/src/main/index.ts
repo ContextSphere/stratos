@@ -19,8 +19,7 @@ if (app.isPackaged && process.platform === 'darwin') {
 
 import { IPC_CHANNELS } from '../common/ipc-channels'
 import { AgentManager } from './agent-manager'
-import { registerThreadIpc, unregisterThreadIpc } from './threads/thread.ipc'
-import { setThreadSessionClearer } from './threads/thread.ipc'
+import { registerThreadIpc, unregisterThreadIpc, setThreadSessionClearer, setRunningThreadsGetter } from './threads/thread.ipc'
 import { registerGitHubIpc, unregisterGitHubIpc } from './integrations/github.ipc'
 import { registerClaudeIpc, unregisterClaudeIpc } from './integrations/claude.ipc'
 import { registerDirectoryIpc, unregisterDirectoryIpc } from './settings/directory.ipc'
@@ -136,6 +135,7 @@ if (!gotLock) {
 
     // Wire up thread session clearing
     setThreadSessionClearer((threadId: string) => agentManager?.clearSession(threadId))
+    setRunningThreadsGetter(() => agentManager?.getRunningThreadIds() ?? [])
 
     registerThreadIpc()
     registerGitHubIpc(mainWindow)

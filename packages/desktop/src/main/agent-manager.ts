@@ -13,8 +13,12 @@ export class AgentManager {
     this.sessions.delete(threadId)
   }
 
-  discoverSlashCommands(): void {
-    // TODO: Discover slash commands from claude CLI
+  getRunningThreadIds(): string[] {
+    return Array.from(this.sessions.keys())
+  }
+
+  discoverSlashCommands(): string[] {
+    return ['/help', '/clear', '/compact', '/cost', '/doctor', '/init', '/login', '/logout', '/memory', '/review', '/status', '/terminal-setup']
   }
 
   dispose(): void {

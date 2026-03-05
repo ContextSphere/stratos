@@ -7,9 +7,14 @@ const storage = new FileStorageAdapter()
 
 // Reference to clearThreadSession — set by main/index.ts
 let clearSessionFn: ((threadId: string) => void) | null = null
+let getRunningIdsFn: (() => string[]) | null = null
 
 export function setThreadSessionClearer(fn: (threadId: string) => void): void {
   clearSessionFn = fn
+}
+
+export function setRunningThreadsGetter(fn: () => string[]): void {
+  getRunningIdsFn = fn
 }
 
 export function registerThreadIpc(): void {
@@ -64,7 +69,7 @@ export function registerThreadIpc(): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.THREADS_RUNNING, () => {
-    return [] // TODO: track running thread IDs from agent-manager
+    return getRunningIdsFn?.() ?? []
   })
 }
 
