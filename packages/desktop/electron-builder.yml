@@ -1,0 +1,40 @@
+appId: com.agentpanel.desktop
+productName: AgentPanel
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - "out/**/*"
+  - "package.json"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/arm64-linux"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-linux"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-win32"
+
+asarUnpack:
+  - "node_modules/@anthropic-ai/claude-agent-sdk/**"
+  - "node_modules/@img/**"
+
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.icns
+  darkModeSupport: true
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  target:
+    - target: dmg
+      arch:
+        - arm64
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
