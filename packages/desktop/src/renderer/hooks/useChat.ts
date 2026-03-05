@@ -566,6 +566,11 @@ export function useChat(activeThreadId: string | null, options?: UseChatOptions)
             saveMessages(threadId, state.messages)
           }
           streamingThreadsRef.current.delete(threadId)
+
+          // Clear running state immediately — result means the turn is complete.
+          // The main process also sends THREAD_STREAM_STATE, but the SDK generator
+          // may not close promptly, so we clear here as defense-in-depth.
+          setRunningThreadIds(prev => prev.filter(id => id !== threadId))
           break
         }
 
@@ -583,6 +588,7 @@ export function useChat(activeThreadId: string | null, options?: UseChatOptions)
               saveMessages(threadId, state.messages)
             }
             streamingThreadsRef.current.delete(threadId)
+            setRunningThreadIds(prev => prev.filter(id => id !== threadId))
             break
           }
 
@@ -601,6 +607,7 @@ export function useChat(activeThreadId: string | null, options?: UseChatOptions)
             saveMessages(threadId, state.messages)
           }
           streamingThreadsRef.current.delete(threadId)
+          setRunningThreadIds(prev => prev.filter(id => id !== threadId))
           break
         }
 
@@ -843,6 +850,16 @@ export function useChat(activeThreadId: string | null, options?: UseChatOptions)
     // Don't delete streaming state here — let the stream's result/error
     // event handle cleanup. Eagerly deleting causes late-arriving events
     // to create a new empty state, which clobbers messages via setMessages([]).
+    //
+    // However, if the stream doesn't end within 5s (e.g. the SDK generator
+    // hangs), force-clear the running indicator so the UI isn't stuck.
+    const capturedTid = tid
+    setTimeout(() => {
+      if (streamingThreadsRef.current.has(capturedTid)) {
+        streamingThreadsRef.current.delete(capturedTid)
+        setRunningThreadIds(prev => prev.filter(id => id !== capturedTid))
+      }
+    }, 5000)
   }, [saveMessages])
 
   const respondPermission = useCallback((requestId: string, approved: boolean) => {

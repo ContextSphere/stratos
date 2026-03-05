@@ -69,6 +69,7 @@ export default function App(): React.ReactElement {
   const [pendingAdditionalCwds, setPendingAdditionalCwds] = useState<string[]>([])
   const [homeDir, setHomeDir] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const inputRef = useRef<InputBarRef | null>(null)
   const draftsRef = useRef<Map<string, string>>(new Map())
   const prevActiveThreadIdRef = useRef<string | null>(null)
@@ -242,6 +243,12 @@ export default function App(): React.ReactElement {
     return () => document.removeEventListener('keydown', handler)
   }, [])
 
+  // Cmd+P to open model picker (via main process menu)
+  useEffect(() => {
+    window.api.onOpenModelPicker(() => setModelPickerOpen((v) => !v))
+    return () => window.api.removeAllListeners('ui:open-model-picker')
+  }, [])
+
   // Auto-open Claude auth dialog on auth failure
   useEffect(() => {
     const handler = () => setShowClaudeDialog(true)
@@ -382,6 +389,9 @@ export default function App(): React.ReactElement {
                   onModelChange={handleModelChange}
                   thinkingEffort={activeThread?.thinkingEffort}
                   onThinkingEffortChange={handleThinkingEffortChange}
+                  onFetchModels={() => window.api.getAvailableModels()}
+                  isOpen={modelPickerOpen}
+                  onOpenChange={setModelPickerOpen}
                 />
                 <ModeToggle
                   mode={activeThread?.mode ? normalizeMode(activeThread.mode) : pendingMode}

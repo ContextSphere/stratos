@@ -4,6 +4,9 @@ import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 
 // Fix PATH for packaged macOS apps
+// Always strip CLAUDECODE to prevent nested-session detection by the SDK
+delete process.env.CLAUDECODE
+
 if (app.isPackaged && process.platform === 'darwin') {
   try {
     const userShell = process.env.SHELL || '/bin/zsh'
@@ -14,7 +17,6 @@ if (app.isPackaged && process.platform === 'darwin') {
     })
     if (result.trim()) process.env.PATH = result.trim()
   } catch {}
-  delete process.env.CLAUDECODE
 }
 
 import { IPC_CHANNELS } from '../common/ipc-channels'
@@ -172,6 +174,7 @@ if (!gotLock) {
     unregisterClaudeIpc()
     unregisterDirectoryIpc()
     unregisterSettingsIpc()
+    unregisterSkillsIpc()
     if (process.platform !== 'darwin') app.quit()
   })
 }

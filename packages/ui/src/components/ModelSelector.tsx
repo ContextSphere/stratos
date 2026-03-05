@@ -15,6 +15,8 @@ interface ModelSelectorProps {
   onThinkingEffortChange: (effort: string) => void
   models?: ModelInfo[]
   onFetchModels?: () => Promise<ModelInfo[]>
+  isOpen?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 function isOpusModel(model: ModelInfo | undefined): boolean {
@@ -29,15 +31,31 @@ export default function ModelSelector({
   thinkingEffort,
   onThinkingEffortChange,
   models: modelsProp,
-  onFetchModels
+  onFetchModels,
+  isOpen: controlledIsOpen,
+  onOpenChange
 }: ModelSelectorProps): React.ReactElement {
   const [fetchedModels, setFetchedModels] = useState<ModelInfo[]>([])
   const [isLoading, setIsLoading] = useState(!modelsProp)
-  const [isOpen, setIsOpen] = useState(false)
+  const [internalIsOpen, setInternalIsOpen] = useState(false)
+
+  const isOpen = controlledIsOpen ?? internalIsOpen
+  const setIsOpen = (v: boolean | ((prev: boolean) => boolean)) => {
+    const next = typeof v === 'function' ? v(isOpen) : v
+    setInternalIsOpen(next)
+    onOpenChange?.(next)
+  }
   const [highlightedIndex, setHighlightedIndex] = useState(0)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   const models = modelsProp ?? fetchedModels
+
+  // Sync controlled open state
+  useEffect(() => {
+    if (controlledIsOpen !== undefined) {
+      setInternalIsOpen(controlledIsOpen)
+    }
+  }, [controlledIsOpen])
 
   useEffect(() => {
     if (modelsProp || !onFetchModels) {
