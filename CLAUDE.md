@@ -1,0 +1,118 @@
+# CLAUDE.md — AgentPanel
+
+## Quick Start
+
+```bash
+pnpm install          # Install all dependencies
+pnpm build            # Build all 3 packages (core, ui, desktop)
+pnpm test             # Run tests across all packages
+pnpm --filter @agentpanel/desktop dev         # Dev mode with HMR
+pnpm --filter @agentpanel/desktop dev:debug   # Dev mode + CDP on port 9224
+```
+
+## Mandatory: Visually Verify Every UI Change
+
+**You MUST test every UI change using Chrome DevTools MCP before considering it done.** Do not ask the user to verify — verify it yourself.
+
+```bash
+# 1. Start the app with CDP enabled (if not already running)
+pnpm --filter @agentpanel/desktop dev:debug
+
+# 2. Snapshot the UI to get element UIDs
+#    REQUIRED before any click/fill/press_key — UIDs are session-scoped
+take_snapshot
+
+# 3. Interact with the feature you changed
+click uid=...
+fill uid=... value="..."
+press_key key="Enter"
+
+# 4. Screenshot + snapshot to verify the result
+take_screenshot filePath="/tmp/verify.png"
+take_snapshot
+```
+
+**Rules:**
+- Every `take_snapshot` starts a new session. You MUST call it before any interaction.
+- After interacting, WAIT 2-5 seconds, then screenshot + snapshot to capture the updated state.
+- READ the screenshot image to confirm visual correctness. READ the snapshot text to confirm content/structure.
+- If something looks wrong, fix it and re-verify. Do not move on with broken UI.
+- **Typing into React inputs:** `fill` sets the DOM value but does NOT trigger React state updates. Use `evaluate_script` with native setter + `input` event:
+  ```js
+  (el) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+    setter.call(el, 'your text here');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  ```
+- **InputBar is a `contentEditable` div (not a textarea):** Set `el.textContent` directly then dispatch `new Event('input', { bubbles: true })`.
+
+## CDP Configuration
+
+- **Port:** 9224 (hardcoded in `dev:debug` script). Override with `CDP_PORT` env var.
+- **MCP config:** `.mcp.json` points to `scripts/cdp-mcp.sh`
+- **First-time setup:** When Claude Code prompts to enable the `chrome-devtools` MCP server, accept it. To pre-allow all CDP tools, create `.claude/settings.local.json`:
+  ```json
+  {
+    "permissions": {
+      "allow": [
+        "mcp__chrome-devtools__list_pages",
+        "mcp__chrome-devtools__take_snapshot",
+        "mcp__chrome-devtools__click",
+        "mcp__chrome-devtools__fill",
+        "mcp__chrome-devtools__press_key",
+        "mcp__chrome-devtools__take_screenshot",
+        "mcp__chrome-devtools__evaluate_script"
+      ]
+    },
+    "enableAllProjectMcpServers": true
+  }
+  ```
+
+## Project Structure
+
+Monorepo with 3 packages managed by pnpm workspaces + turborepo:
+
+| Package | Path | Description |
+|---------|------|-------------|
+| `@agentpanel/core` | `packages/core` | Provider abstraction, storage adapters, trace store, worktree utils |
+| `@agentpanel/ui` | `packages/ui` | React components, bridge system, hooks (zero Electron dependency) |
+| `@agentpanel/desktop` | `packages/desktop` | Electron shell, IPC bridge (60+ channels), preload, renderer |
+
+## Key Files
+
+| Area | File |
+|------|------|
+| Electron main | `packages/desktop/src/main/index.ts` |
+| Agent manager | `packages/desktop/src/main/agent-manager.ts` |
+| IPC channels | `packages/desktop/src/common/ipc-channels.ts` |
+| Renderer entry | `packages/desktop/src/renderer/App.tsx` |
+| Chat hook | `packages/desktop/src/renderer/hooks/useChat.ts` |
+| Claude provider | `packages/core/src/providers/claude-code.provider.ts` |
+| Storage adapter | `packages/core/src/storage/file-adapter.ts` |
+| Chat view | `packages/ui/src/components/ChatView.tsx` |
+| Bridge provider | `packages/ui/src/bridges/AgentPanelProvider.tsx` |
+
+## NEVER Use pkill/killall on Electron
+
+**DO NOT run `pkill -f electron`, `killall Electron`, or any broad process kill.**
+The user may be running inside ContextSphere (also Electron). Broad kills destroy everything.
+
+**To stop the AgentPanel dev instance:**
+```bash
+# By CDP port
+lsof -ti :9224 | xargs kill
+
+# By PID (if you spawned it)
+kill $PID
+
+# Graceful close via CDP
+# evaluate_script(() => window.close())
+```
+
+## Architecture Notes
+
+- **Worktree isolation** is opt-in via `AGENTPANEL_WORKTREE=1` env var. Without it, the app uses `~/Library/Application Support/AgentPanel/` as its data dir.
+- **IPC bridge pattern:** Main process registers handlers via `ipcMain.handle()`, preload exposes them via `contextBridge`, renderer accesses via `window.electronAPI`.
+- **Provider abstraction:** `@agentpanel/core` defines a `Provider` interface. `ClaudeCodeProvider` implements it using `@anthropic-ai/claude-agent-sdk`. New providers can be added without touching UI code.
+- **Bridge system:** `@agentpanel/ui` components receive platform capabilities through `AgentPanelProvider` context. Desktop injects Electron IPC; other platforms can inject their own implementations.
