@@ -28,13 +28,14 @@ import { registerSkillsIpc, unregisterSkillsIpc } from './skills/skills.ipc'
 import { getWorktreeInfo } from '@agentpanel/core'
 import { generateDockIcon } from './dock-icon'
 
-// Worktree instance isolation
-const worktree = app.isPackaged ? null : getWorktreeInfo()
+// Worktree instance isolation (opt-in via AGENTPANEL_WORKTREE=1)
+const worktree = !app.isPackaged && process.env.AGENTPANEL_WORKTREE ? getWorktreeInfo() : null
 if (worktree) {
   app.setPath('userData', worktree.userDataPath)
   app.name = `agentpanel-${worktree.hash}`
   app.setName(`${worktree.name} — AgentPanel`)
 } else {
+  app.name = 'agentpanel'
   app.setName('AgentPanel')
 }
 
