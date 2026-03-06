@@ -140,15 +140,10 @@ if (!gotLock) {
     setThreadSessionClearer((threadId: string) => agentManager?.clearSession(threadId))
     setRunningThreadsGetter(() => agentManager?.getRunningThreadIds() ?? [])
 
-    // App info (worktree, accent color, CDP port)
-    const ACCENT_COLORS = ['text-blue-500', 'text-green-500', 'text-orange-500', 'text-purple-500', 'text-pink-500', 'text-cyan-500']
-    const accentColor = worktree
-      ? ACCENT_COLORS[parseInt(worktree.hash.slice(0, 4), 16) % ACCENT_COLORS.length]
-      : 'text-blue-500'
+    // App info (worktree, CDP port)
     ipcMain.handle(IPC_CHANNELS.APP_INFO, () => ({
       isWorktree: !!worktree,
       worktreeName: worktree?.name ?? null,
-      accentColor,
       cdpPort
     }))
 

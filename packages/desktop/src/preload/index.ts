@@ -92,7 +92,7 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.THREADS_RECOVER_ORPHANED, threadId),
 
   // App info
-  getAppInfo: (): Promise<{ isWorktree: boolean; worktreeName: string | null; accentColor: string; cdpPort: number | null }> =>
+  getAppInfo: (): Promise<{ isWorktree: boolean; worktreeName: string | null; cdpPort: number | null }> =>
     ipcRenderer.invoke(IPC_CHANNELS.APP_INFO),
 
   // App settings
