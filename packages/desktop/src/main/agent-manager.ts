@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow, ipcMain, Notification } from 'electron'
 import { IPC_CHANNELS } from '../common/ipc-channels'
 import {
   ClaudeCodeProvider,
@@ -23,6 +23,7 @@ interface ThreadSession {
 export class AgentManager {
   private window: BrowserWindow
   private sessions = new Map<string, ThreadSession>()
+  private activeStreams = new Set<string>()
   private storage = new FileStorageAdapter()
   private pendingPermissions = new Map<string, { resolve: (result: { approved: boolean; modifiedInput?: Record<string, unknown>; denyMessage?: string }) => void }>()
   private pendingQuestions = new Map<
@@ -40,10 +41,14 @@ export class AgentManager {
   private questionCounter = 0
   private planReviewCounter = 0
   private lastPlanMarkdown: { content: string; title: string } | null = null
+  private cachedSlashCommands: { name: string; description?: string }[] = []
 
   constructor(window: BrowserWindow) {
     this.window = window
     this.registerIpc()
+    this.detectOrphanedThreads().catch((err) => {
+      console.error('[agent-manager] orphan detection failed:', err)
+    })
   }
 
   private registerIpc(): void {
@@ -52,8 +57,6 @@ export class AgentManager {
       // Fire-and-forget: start streaming in background, return immediately
       this.runStream(threadId, prompt, images).catch((err) => {
         console.error(`[agent-manager] stream error for thread ${threadId}:`, err)
-        this.sendToRenderer(IPC_CHANNELS.STREAM_MESSAGE, { type: 'error', message: err?.message ?? 'Unknown error', code: 'AGENT_ERROR' }, threadId)
-        this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, { threadId, isRunning: false })
       })
     })
 
@@ -103,17 +106,26 @@ export class AgentManager {
     })
 
     // Handle plan review responses
-    ipcMain.on(IPC_CHANNELS.PLAN_REVIEW_RESPONSE, (_event, data: { requestId: string; decision: { type: string; feedback?: string } }) => {
+    ipcMain.on(IPC_CHANNELS.PLAN_REVIEW_RESPONSE, async (_event, data: { requestId: string; decision: { type: string; feedback?: string } }) => {
       const pending = this.pendingPlanReviews.get(data.requestId)
       if (!pending) return
-      const { resolve, input } = pending
+      const { resolve, threadId, input } = pending
       this.pendingPlanReviews.delete(data.requestId)
 
       switch (data.decision.type) {
+        case 'clear-bypass':
         case 'bypass':
+          if (threadId) {
+            try { await this.storage.updateThread(threadId, { mode: 'bypassPermissions' }) } catch {}
+            this.sendToRenderer(IPC_CHANNELS.MODE_CHANGED, { mode: 'bypassPermissions' }, threadId)
+          }
           resolve({ approved: true })
           break
         case 'manual':
+          if (threadId) {
+            try { await this.storage.updateThread(threadId, { mode: 'default' }) } catch {}
+            this.sendToRenderer(IPC_CHANNELS.MODE_CHANGED, { mode: 'default' }, threadId)
+          }
           resolve({ approved: true, modifiedInput: { ...input, allowedPrompts: [] } })
           break
         case 'feedback':
@@ -121,6 +133,16 @@ export class AgentManager {
         default:
           resolve({ approved: false, denyMessage: data.decision.feedback ?? 'User provided feedback' })
           break
+      }
+    })
+
+    // Handle orphaned thread recovery
+    ipcMain.handle(IPC_CHANNELS.THREADS_RECOVER_ORPHANED, async (_event, threadId: string) => {
+      try {
+        this.storage.clearPersistedSessionId(threadId)
+        this.clearSession(threadId)
+      } catch (err) {
+        console.error(`[agent-manager] failed to recover orphaned thread ${threadId}:`, err)
       }
     })
   }
@@ -148,10 +170,21 @@ export class AgentManager {
       this.sessions.set(threadId, session)
     }
 
+    // Track active stream
+    this.activeStreams.add(threadId)
+
     // Notify renderer that streaming started
     this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, { threadId, isRunning: true })
 
     const permissionHandler: PermissionHandler = async (toolName, input) => {
+      // Mode-aware permission logic (defense-in-depth)
+      const currentThread = await this.storage.getThread(threadId)
+      const currentMode = normalizeMode(currentThread?.mode)
+
+      if (currentMode === 'bypassPermissions') {
+        return { approved: true }
+      }
+
       if (toolName === 'EnterPlanMode') {
         return { approved: true }
       }
@@ -159,12 +192,22 @@ export class AgentManager {
         return this.requestPlanReview(threadId, input)
       }
       if (toolName === 'AskUserQuestion') {
+        this.notifyIfBackground(threadId, 'question')
         return this.requestUserAnswer(threadId, input)
+      }
+
+      // Auto-approve file/shell tools in acceptEdits mode
+      if (currentMode === 'acceptEdits') {
+        const autoApprove = new Set(['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'NotebookEdit'])
+        if (autoApprove.has(toolName) || toolName.startsWith('mcp__')) {
+          return { approved: true }
+        }
       }
 
       // Default: generic tool permission
       const requestId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
       this.sendToRenderer(IPC_CHANNELS.TOOL_PERMISSION, { requestId, toolName, input }, threadId)
+      this.notifyIfBackground(threadId, 'permission')
       return new Promise((resolve) => {
         this.pendingPermissions.set(requestId, { resolve })
       })
@@ -186,9 +229,15 @@ export class AgentManager {
       }
     }
 
+    let specificErrorSent = false
+
     try {
       for await (const msg of session.provider.sendMessage(params)) {
         this.sendToRenderer(IPC_CHANNELS.STREAM_MESSAGE, msg, threadId)
+
+        if (msg.type === 'error') {
+          specificErrorSent = true
+        }
 
         // Track plan markdown for artifact viewer
         if (
@@ -212,9 +261,19 @@ export class AgentManager {
           session.sessionId = msg.sessionId
           // Persist sessionId to thread for resume
           try { this.storage.updateThread(threadId, { sessionId: msg.sessionId }) } catch {}
+          // Notify renderer of session readiness
+          this.sendToRenderer(IPC_CHANNELS.SESSION_READY, {
+            sessionId: msg.sessionId,
+            tools: (msg as any).tools ?? []
+          }, threadId)
         }
       }
+    } catch (err: any) {
+      if (!specificErrorSent) {
+        this.sendToRenderer(IPC_CHANNELS.STREAM_MESSAGE, { type: 'error', message: err?.message ?? 'Unknown error', code: 'AGENT_ERROR' }, threadId)
+      }
     } finally {
+      this.activeStreams.delete(threadId)
       this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, { threadId, isRunning: false })
     }
   }
@@ -228,11 +287,38 @@ export class AgentManager {
     }
   }
 
+  private notifyIfBackground(threadId: string, type: 'permission' | 'question' | 'plan_review'): void {
+    if (this.window.isDestroyed() || this.window.isFocused()) return
+
+    const titles: Record<string, string> = {
+      permission: 'Permission Required',
+      question: 'Question from Agent',
+      plan_review: 'Plan Review Required'
+    }
+    const bodies: Record<string, string> = {
+      permission: 'A tool needs your approval to proceed.',
+      question: 'The agent has a question for you.',
+      plan_review: 'A plan is ready for your review.'
+    }
+
+    const notification = new Notification({
+      title: titles[type],
+      body: bodies[type]
+    })
+    notification.on('click', () => {
+      this.window.show()
+      this.window.focus()
+      this.sendToRenderer(IPC_CHANNELS.THREAD_ACTIVATE, { threadId })
+    })
+    notification.show()
+  }
+
   private requestPlanReview(
     threadId: string | null,
     input: Record<string, unknown>
   ): Promise<{ approved: boolean; modifiedInput?: Record<string, unknown>; denyMessage?: string }> {
     const requestId = `plan_review_${++this.planReviewCounter}`
+    this.notifyIfBackground(threadId ?? '', 'plan_review')
     return new Promise((resolve) => {
       this.pendingPlanReviews.set(requestId, { resolve, threadId, input })
       this.sendToRenderer(IPC_CHANNELS.PLAN_REVIEW, {
@@ -259,6 +345,27 @@ export class AgentManager {
     })
   }
 
+  private async detectOrphanedThreads(): Promise<void> {
+    try {
+      const threads = this.storage.listThreads()
+      const orphanedIds: string[] = []
+      for (const thread of threads) {
+        if (thread.sessionId && !this.activeStreams.has(thread.id)) {
+          this.storage.clearPersistedSessionId(thread.id)
+          orphanedIds.push(thread.id)
+        }
+      }
+      if (orphanedIds.length > 0) {
+        // Delay slightly so renderer has time to initialize
+        setTimeout(() => {
+          this.sendToRenderer(IPC_CHANNELS.THREADS_ORPHANED, { threadIds: orphanedIds })
+        }, 2000)
+      }
+    } catch (err) {
+      console.error('[agent-manager] orphan detection error:', err)
+    }
+  }
+
   clearSession(threadId: string): void {
     const session = this.sessions.get(threadId)
     if (session) {
@@ -268,7 +375,11 @@ export class AgentManager {
   }
 
   getRunningThreadIds(): string[] {
-    return Array.from(this.sessions.keys())
+    return Array.from(this.activeStreams)
+  }
+
+  getSlashCommands(): { name: string; description?: string }[] {
+    return this.cachedSlashCommands
   }
 
   async discoverSlashCommands(): Promise<{ name: string; description?: string }[]> {
@@ -280,6 +391,7 @@ export class AgentManager {
     })
     try {
       const commands = await provider.discoverSlashCommands()
+      this.cachedSlashCommands = commands
       // Broadcast to renderer
       this.sendToRenderer(IPC_CHANNELS.SLASH_COMMANDS_LIST, commands)
       return commands
@@ -295,16 +407,29 @@ export class AgentManager {
     ipcMain.removeHandler(IPC_CHANNELS.SEND_MESSAGE)
     ipcMain.removeHandler(IPC_CHANNELS.INTERRUPT)
     ipcMain.removeHandler(IPC_CHANNELS.GET_AVAILABLE_MODELS)
+    ipcMain.removeHandler(IPC_CHANNELS.THREADS_RECOVER_ORPHANED)
     ipcMain.removeAllListeners(IPC_CHANNELS.TOOL_RESPONSE)
     ipcMain.removeAllListeners(IPC_CHANNELS.ASK_USER_RESPONSE)
     ipcMain.removeAllListeners(IPC_CHANNELS.PLAN_REVIEW_RESPONSE)
   }
 
   dispose(): void {
+    // Reject pending promises before clearing
+    for (const [, pending] of this.pendingPermissions) {
+      pending.resolve({ approved: false })
+    }
+    for (const [, pending] of this.pendingQuestions) {
+      pending.resolve({ approved: false })
+    }
+    for (const [, pending] of this.pendingPlanReviews) {
+      pending.resolve({ approved: false })
+    }
+
     for (const [, session] of this.sessions) {
       session.provider.dispose().catch(() => {})
     }
     this.sessions.clear()
+    this.activeStreams.clear()
     this.pendingPermissions.clear()
     this.pendingQuestions.clear()
     this.pendingPlanReviews.clear()

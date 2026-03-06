@@ -26,7 +26,7 @@ import { registerGitHubIpc, unregisterGitHubIpc } from './integrations/github.ip
 import { registerClaudeIpc, unregisterClaudeIpc } from './integrations/claude.ipc'
 import { registerDirectoryIpc, unregisterDirectoryIpc } from './settings/directory.ipc'
 import { registerSettingsIpc, unregisterSettingsIpc } from './settings/settings.ipc'
-import { registerSkillsIpc, unregisterSkillsIpc } from './skills/skills.ipc'
+import { registerSkillsIpc, unregisterSkillsIpc, setSlashCommandsGetter } from './skills/skills.ipc'
 import { getWorktreeInfo } from '@agentpanel/core'
 import { generateDockIcon } from './dock-icon'
 
@@ -145,6 +145,7 @@ if (!gotLock) {
     registerClaudeIpc(mainWindow)
     registerDirectoryIpc(mainWindow)
     registerSettingsIpc(mainWindow)
+    setSlashCommandsGetter(() => agentManager?.getSlashCommands() ?? [])
     registerSkillsIpc()
   }
 
