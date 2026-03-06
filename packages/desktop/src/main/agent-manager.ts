@@ -14,6 +14,10 @@ import type {
 } from '@agentpanel/core'
 import { loadSettings } from './settings/settings.store'
 
+function safeLog(fn: (...args: unknown[]) => void, ...args: unknown[]) {
+  try { fn(...args) } catch (e: any) { if (e?.code !== 'EPIPE') throw e }
+}
+
 interface ThreadSession {
   provider: AgentProvider
   sessionId?: string
@@ -47,7 +51,7 @@ export class AgentManager {
     this.window = window
     this.registerIpc()
     this.detectOrphanedThreads().catch((err) => {
-      console.error('[agent-manager] orphan detection failed:', err)
+      safeLog(console.error, '[agent-manager] orphan detection failed:', err)
     })
   }
 
@@ -56,7 +60,7 @@ export class AgentManager {
       if (!threadId) return
       // Fire-and-forget: start streaming in background, return immediately
       this.runStream(threadId, prompt, images).catch((err) => {
-        console.error(`[agent-manager] stream error for thread ${threadId}:`, err)
+        safeLog(console.error, `[agent-manager] stream error for thread ${threadId}:`, err)
       })
     })
 
@@ -142,7 +146,7 @@ export class AgentManager {
         this.storage.clearPersistedSessionId(threadId)
         this.clearSession(threadId)
       } catch (err) {
-        console.error(`[agent-manager] failed to recover orphaned thread ${threadId}:`, err)
+        safeLog(console.error, `[agent-manager] failed to recover orphaned thread ${threadId}:`, err)
       }
     })
   }
@@ -362,7 +366,7 @@ export class AgentManager {
         }, 2000)
       }
     } catch (err) {
-      console.error('[agent-manager] orphan detection error:', err)
+      safeLog(console.error, '[agent-manager] orphan detection error:', err)
     }
   }
 
@@ -396,7 +400,7 @@ export class AgentManager {
       this.sendToRenderer(IPC_CHANNELS.SLASH_COMMANDS_LIST, commands)
       return commands
     } catch (err) {
-      console.error('[agent-manager] Failed to discover slash commands:', err)
+      safeLog(console.error, '[agent-manager] Failed to discover slash commands:', err)
       return []
     } finally {
       await provider.dispose()

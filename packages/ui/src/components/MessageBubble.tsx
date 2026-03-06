@@ -223,7 +223,7 @@ export function MessageBubble({ message, onLinkClick, onSendMessage, onQuestionA
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+        className={`max-w-[85%] rounded-2xl px-4 py-3 break-words ${
           isUser ? 'bg-blue-600 text-white' : 'bg-[#1a1a1a] text-gray-200 border border-[#2a2a2a]'
         }`}
       >

@@ -95,9 +95,10 @@ export default function App(): React.ReactElement {
 
   const handleThreadClick = useCallback(
     async (threadId: string) => {
+      closePreview()
       await setActiveThreadId(threadId)
     },
-    [setActiveThreadId],
+    [setActiveThreadId, closePreview],
   )
 
   const handleCreateThread = useCallback(async () => {
