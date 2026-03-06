@@ -17,6 +17,9 @@ const api = {
 
   getHomeDirectory: (): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.GET_HOME_DIRECTORY),
 
+  checkIsGitRepo: (dirPath: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CHECK_IS_GIT_REPO, dirPath),
+
   onStreamMessage: (callback: (data: unknown, threadId: string | null) => void): void => {
     ipcRenderer.on(IPC_CHANNELS.STREAM_MESSAGE, (_event, data, threadId) => callback(data, threadId ?? null))
   },
@@ -126,7 +129,7 @@ const api = {
   threadsCreate: (title?: string, model?: string, cwd?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.THREADS_CREATE, title, model, cwd),
   threadsGet: (threadId: string) => ipcRenderer.invoke(IPC_CHANNELS.THREADS_GET, threadId),
-  threadsUpdate: (threadId: string, updates: { title?: string; model?: string; cwd?: string; thinkingEffort?: 'low' | 'medium' | 'high' | 'max'; mode?: AgentMode; additionalCwds?: string[] }) =>
+  threadsUpdate: (threadId: string, updates: { title?: string; model?: string; cwd?: string; thinkingEffort?: 'low' | 'medium' | 'high' | 'max'; mode?: AgentMode; additionalCwds?: string[]; isGitRepo?: boolean; worktreeMode?: 'local' | 'worktree' }) =>
     ipcRenderer.invoke(IPC_CHANNELS.THREADS_UPDATE, threadId, updates),
   threadsDelete: (threadId: string) => ipcRenderer.invoke(IPC_CHANNELS.THREADS_DELETE, threadId),
   threadsCreateWorktree: (params: { threadId: string; sourceRepoPath: string }) =>
