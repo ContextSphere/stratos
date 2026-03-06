@@ -55,8 +55,8 @@ Last updated: 2026-03-05
 
 ### Architecture Decisions Made
 
-- **Worktree isolation is opt-in** — Set `AGENTPANEL_WORKTREE=1` to enable. Without it, the app uses standard `~/Library/Application Support/AgentPanel/`. This prevents conflicts when developing inside a parent Electron app (e.g., ContextSphere).
-- **Fixed CDP port (9224)** — Unlike ContextSphere which derives ports from worktree hashes, AgentPanel uses a fixed port for simplicity. Override with `CDP_PORT` env var if needed.
+- **Worktree isolation is automatic in dev mode** — Each git root gets a deterministic isolated data dir (`~/.agentpanel/instances/<hash>/`) and unique CDP port (9200-9999). Packaged builds use standard `~/Library/Application Support/AgentPanel/`. Matches ContextSphere's pattern.
+- **CDP port derived from git root** — Both the Electron app and `scripts/cdp-mcp.sh` derive the same deterministic port from the git root path via SHA256. Override with `CDP_PORT` env var if needed.
 - **`app.name` set explicitly** — Both worktree and non-worktree paths set `app.name` to prevent singleton lock conflicts with other Electron apps using the generic `Electron` binary.
 
 ## Git History
