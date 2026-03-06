@@ -46,7 +46,7 @@ export class ClaudeCodeProvider implements AgentProvider {
     const cliPath = this.config.cliPath
 
     const options = {
-      allowedTools,
+      tools: allowedTools,
       ...(cliPath ? { pathToClaudeCodeExecutable: cliPath } : {}),
       ...(params.model ?? this.config.model ? { model: params.model ?? this.config.model } : {}),
       cwd: params.cwd ?? this.config.cwd ?? process.env.HOME,
