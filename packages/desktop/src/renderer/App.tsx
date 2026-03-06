@@ -104,7 +104,9 @@ export default function App(): React.ReactElement {
   )
 
   const handleCreateThread = useCallback(async () => {
-    const thread = await createThread('New chat')
+    const result = await window.api.selectDirectory()
+    if (result.canceled || !result.path) return
+    const thread = await createThread('New chat', undefined, result.path)
     await setActiveThreadId(thread.id)
     inputRef.current?.focus()
   }, [createThread, setActiveThreadId])
@@ -121,7 +123,9 @@ export default function App(): React.ReactElement {
     async (prompt: string, images?: ImageAttachment[]) => {
       let threadId = activeThreadId
       if (!threadId) {
-        const thread = await createThread('New chat')
+        const result = await window.api.selectDirectory()
+        if (result.canceled || !result.path) return
+        const thread = await createThread('New chat', undefined, result.path)
         threadId = thread.id
         const updates: Record<string, unknown> = {}
         if (pendingMode) {
