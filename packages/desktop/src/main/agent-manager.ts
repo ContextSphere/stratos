@@ -230,7 +230,7 @@ export class AgentManager {
         settingSources: ['project', 'user'],
         ...(mcpServers ? { mcpServers } : {})
       })
-      session = { provider }
+      session = { provider, sessionId: thread.sessionId }
       this.sessions.set(threadId, session)
     }
 
@@ -415,7 +415,6 @@ export class AgentManager {
       const orphanedIds: string[] = []
       for (const thread of threads) {
         if (thread.sessionId && !this.activeStreams.has(thread.id)) {
-          this.storage.clearPersistedSessionId(thread.id)
           orphanedIds.push(thread.id)
         }
       }
