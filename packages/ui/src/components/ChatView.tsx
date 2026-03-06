@@ -66,7 +66,7 @@ export function ChatView({ messages, isStreaming, onLinkClick, onSendMessage, on
 
   return (
     <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-2 relative">
-      <div className="max-w-3xl mx-auto space-y-4">
+      <div className="space-y-4">
         {messages.map((msg) => (
           <MessageBubble key={msg.id} message={msg} onLinkClick={onLinkClick} onSendMessage={onSendMessage} onQuestionAnswer={onQuestionAnswer} onPlanReviewDecision={onPlanReviewDecision} onViewPlan={onViewPlan} onUpdateTaskExpanded={onUpdateTaskExpanded} />
         ))}
