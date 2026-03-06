@@ -7,7 +7,7 @@ pnpm install          # Install all dependencies
 pnpm build            # Build all 3 packages (core, ui, desktop)
 pnpm test             # Run tests across all packages
 pnpm --filter @agentpanel/desktop dev         # Dev mode with HMR
-pnpm --filter @agentpanel/desktop dev:debug   # Dev mode + CDP (port auto-derived or 9224)
+pnpm --filter @agentpanel/desktop dev:debug   # Dev mode + CDP (port auto-derived from git root)
 ```
 
 ## Mandatory: Visually Verify Every UI Change
@@ -49,8 +49,9 @@ take_snapshot
 
 ## CDP Configuration
 
-- **Port:** 9224 default (non-worktree), or auto-derived from worktree path. Override with `CDP_PORT` env var.
-- **MCP config:** `.mcp.json` points to `scripts/cdp-mcp.sh`
+- **Port:** Always auto-derived from the git root path using SHA256: `PORT = 9200 + (first 4 hex chars of hash % 799)`. Both the Electron app and `scripts/cdp-mcp.sh` use the same derivation, so they always agree. Override with `CDP_PORT` env var if needed.
+- **How it works:** `dev:debug` sets `ENABLE_CDP=1` which makes Electron open `--remote-debugging-port` on the derived port. The `.mcp.json` MCP config runs `scripts/cdp-mcp.sh` which derives the same port and connects `chrome-devtools-mcp` to it.
+- **Check your port:** The Electron console logs `[worktree] CDP port=XXXX` on startup, or run: `ROOT=$(git rev-parse --show-toplevel) && HASH=$(echo -n "$ROOT" | shasum -a 256 | cut -c1-4) && echo $((9200 + 16#$HASH % 799))`
 - **First-time setup:** When Claude Code prompts to enable the `chrome-devtools` MCP server, accept it. To pre-allow all CDP tools, create `.claude/settings.local.json`:
   ```json
   {
@@ -68,6 +69,7 @@ take_snapshot
     "enableAllProjectMcpServers": true
   }
   ```
+- **Troubleshooting:** If MCP can't connect, ensure the app is running with `dev:debug` and that the Electron process and MCP script resolve the same git root (check with `git rev-parse --show-toplevel`).
 
 ## Project Structure
 
@@ -100,8 +102,8 @@ The user may be running inside ContextSphere (also Electron). Broad kills destro
 
 **To stop the AgentPanel dev instance:**
 ```bash
-# By CDP port
-lsof -ti :9224 | xargs kill
+# By CDP port (check console output for your port, or derive it — see CDP Configuration)
+lsof -ti :YOUR_CDP_PORT | xargs kill
 
 # By PID (if you spawned it)
 kill $PID
@@ -128,7 +130,7 @@ kill $PID
 
 ## Architecture Notes
 
-- **Worktree isolation** is opt-in via `AGENTPANEL_WORKTREE=1` env var. Without it, the app uses `~/Library/Application Support/AgentPanel/` as its data dir.
+- **Worktree isolation** is automatic in dev mode. Each git root gets a deterministic isolated data dir at `~/.agentpanel/instances/<hash>/` and a unique CDP port. Packaged builds use `~/Library/Application Support/AgentPanel/`.
 - **IPC bridge pattern:** Main process registers handlers via `ipcMain.handle()`, preload exposes them via `contextBridge`, renderer accesses via `window.electronAPI`.
 - **Provider abstraction:** `@agentpanel/core` defines a `Provider` interface. `ClaudeCodeProvider` implements it using `@anthropic-ai/claude-agent-sdk`. New providers can be added without touching UI code.
 - **Bridge system:** `@agentpanel/ui` components receive platform capabilities through `AgentPanelProvider` context. Desktop injects Electron IPC; other platforms can inject their own implementations.

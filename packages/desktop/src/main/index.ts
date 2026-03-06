@@ -30,8 +30,8 @@ import { registerSkillsIpc, unregisterSkillsIpc, setSlashCommandsGetter } from '
 import { getWorktreeInfo } from '@agentpanel/core'
 import { generateDockIcon } from './dock-icon'
 
-// Worktree instance isolation (opt-in via AGENTPANEL_WORKTREE=1)
-const worktree = !app.isPackaged && process.env.AGENTPANEL_WORKTREE ? getWorktreeInfo() : null
+// Worktree instance isolation (automatic in dev mode, like ContextSphere)
+const worktree = app.isPackaged ? null : getWorktreeInfo()
 if (worktree) {
   app.setPath('userData', worktree.userDataPath)
   app.name = `agentpanel-${worktree.hash}`
@@ -57,8 +57,8 @@ if (!gotLock) {
   // CDP support
   const cdpPort = process.env.CDP_PORT
     ? parseInt(process.env.CDP_PORT, 10)
-    : process.env.ENABLE_CDP
-      ? (worktree ? worktree.cdpPort : 9224)
+    : process.env.ENABLE_CDP && worktree
+      ? worktree.cdpPort
       : null
 
   if (cdpPort && !process.env.REMOTE_DEBUGGING_PORT) {
