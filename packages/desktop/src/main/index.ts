@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process'
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 
@@ -57,8 +57,8 @@ if (!gotLock) {
   // CDP support
   const cdpPort = process.env.CDP_PORT
     ? parseInt(process.env.CDP_PORT, 10)
-    : process.env.ENABLE_CDP && worktree
-      ? worktree.cdpPort
+    : process.env.ENABLE_CDP
+      ? (worktree ? worktree.cdpPort : 9224)
       : null
 
   if (cdpPort && !process.env.REMOTE_DEBUGGING_PORT) {
@@ -140,6 +140,18 @@ if (!gotLock) {
     setThreadSessionClearer((threadId: string) => agentManager?.clearSession(threadId))
     setRunningThreadsGetter(() => agentManager?.getRunningThreadIds() ?? [])
 
+    // App info (worktree, accent color, CDP port)
+    const ACCENT_COLORS = ['text-blue-500', 'text-green-500', 'text-orange-500', 'text-purple-500', 'text-pink-500', 'text-cyan-500']
+    const accentColor = worktree
+      ? ACCENT_COLORS[parseInt(worktree.hash.slice(0, 4), 16) % ACCENT_COLORS.length]
+      : 'text-blue-500'
+    ipcMain.handle(IPC_CHANNELS.APP_INFO, () => ({
+      isWorktree: !!worktree,
+      worktreeName: worktree?.name ?? null,
+      accentColor,
+      cdpPort
+    }))
+
     registerThreadIpc()
     registerGitHubIpc(mainWindow)
     registerClaudeIpc(mainWindow)
@@ -170,6 +182,7 @@ if (!gotLock) {
 
   app.on('window-all-closed', () => {
     agentManager?.dispose()
+    ipcMain.removeHandler(IPC_CHANNELS.APP_INFO)
     unregisterThreadIpc()
     unregisterGitHubIpc()
     unregisterClaudeIpc()

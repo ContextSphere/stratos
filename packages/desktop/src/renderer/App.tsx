@@ -70,13 +70,15 @@ export default function App(): React.ReactElement {
   const [homeDir, setHomeDir] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
+  const [accentColor, setAccentColor] = useState('text-blue-500')
   const inputRef = useRef<InputBarRef | null>(null)
   const draftsRef = useRef<Map<string, string>>(new Map())
   const prevActiveThreadIdRef = useRef<string | null>(null)
 
-  // Fetch home directory
+  // Fetch home directory and app info
   useEffect(() => {
     window.api.getHomeDirectory().then(setHomeDir)
+    window.api.getAppInfo().then((info) => setAccentColor(info.accentColor))
   }, [])
 
   // Save/restore draft input text when switching threads
@@ -275,6 +277,7 @@ export default function App(): React.ReactElement {
           onSettingsClick={() => setShowSettingsDialog(true)}
           runningThreadIds={runningThreadIds}
           threadNotifications={threadNotifications}
+          accentColor={accentColor}
         />
       </div>
 

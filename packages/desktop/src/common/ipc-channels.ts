@@ -66,6 +66,9 @@ export const IPC_CHANNELS = {
   THREADS_ORPHANED: 'chat:threads-orphaned',
   THREADS_RECOVER_ORPHANED: 'chat:threads:recover-orphaned',
 
+  // App info
+  APP_INFO: 'app:info',
+
   // UI shortcuts
   OPEN_MODEL_PICKER: 'ui:open-model-picker',
 } as const

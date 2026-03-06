@@ -6,7 +6,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "dev:debug": "electron-vite dev --remoteDebuggingPort 9224",
+    "dev:debug": "ENABLE_CDP=1 electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",

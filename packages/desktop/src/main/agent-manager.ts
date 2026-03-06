@@ -1,10 +1,16 @@
 import { BrowserWindow, ipcMain, Notification } from 'electron'
+import { execSync } from 'child_process'
+import { existsSync, readFileSync } from 'fs'
+import { join } from 'path'
 import { IPC_CHANNELS } from '../common/ipc-channels'
 import {
   ClaudeCodeProvider,
   FileStorageAdapter,
   appendTraceEntry,
-  normalizeMode
+  normalizeMode,
+  deriveHash,
+  derivePort,
+  getWorktreeInfo
 } from '@agentpanel/core'
 import type {
   AgentProvider,
@@ -13,6 +19,57 @@ import type {
   SendMessageParams
 } from '@agentpanel/core'
 import { loadSettings } from './settings/settings.store'
+
+/**
+ * Build MCP servers for an agent session.
+ * 1. Reads .mcp.json from the thread's cwd (project-level MCP servers).
+ * 2. Dynamically adds chrome-devtools when the thread targets a different
+ *    worktree than the one this app is running in (cross-worktree debugging).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildMcpServers(cwd: string): Record<string, any> | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const servers: Record<string, any> = {}
+
+  // 1. Load project-level .mcp.json
+  const mcpPath = join(cwd, '.mcp.json')
+  if (existsSync(mcpPath)) {
+    try {
+      const data = JSON.parse(readFileSync(mcpPath, 'utf-8'))
+      if (data.mcpServers) {
+        Object.assign(servers, data.mcpServers)
+      }
+    } catch {}
+  }
+
+  // 2. Add chrome-devtools for cross-worktree debugging (ContextSphere pattern)
+  if (process.env.AGENTPANEL_WORKTREE) {
+    try {
+      let targetRoot: string
+      try {
+        targetRoot = execSync('git rev-parse --show-toplevel', {
+          cwd, encoding: 'utf-8', timeout: 3000,
+          stdio: ['pipe', 'pipe', 'pipe']
+        }).trim()
+      } catch {
+        targetRoot = cwd
+      }
+      const targetHash = deriveHash(targetRoot)
+      const selfHash = getWorktreeInfo().hash
+
+      // Only add chrome-devtools when targeting a different worktree
+      if (targetHash !== selfHash) {
+        const cdpPort = derivePort(targetHash, 9200, 9999)
+        servers['chrome-devtools'] = {
+          command: 'npx',
+          args: ['chrome-devtools-mcp', `--browser-url=http://127.0.0.1:${cdpPort}`]
+        }
+      }
+    } catch {}
+  }
+
+  return Object.keys(servers).length > 0 ? servers : undefined
+}
 
 function safeLog(fn: (...args: unknown[]) => void, ...args: unknown[]) {
   try { fn(...args) } catch (e: any) { if (e?.code !== 'EPIPE') throw e }
@@ -164,11 +221,14 @@ export class AgentManager {
     if (!session) {
       const provider = new ClaudeCodeProvider()
       const settings = loadSettings()
+      const threadCwd = thread.cwd ?? process.env.HOME!
+      const mcpServers = buildMcpServers(threadCwd)
       await provider.initialize({
         cliPath: settings.cliPath as string | undefined,
         model: thread.model,
-        cwd: thread.cwd ?? process.env.HOME,
-        settingSources: ['project', 'user']
+        cwd: threadCwd,
+        settingSources: ['project', 'user'],
+        ...(mcpServers ? { mcpServers } : {})
       })
       session = { provider }
       this.sessions.set(threadId, session)

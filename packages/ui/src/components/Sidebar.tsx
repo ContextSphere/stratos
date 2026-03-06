@@ -11,6 +11,7 @@ interface Props {
   onSettingsClick: () => void
   runningThreadIds: string[]
   threadNotifications: Map<string, string>
+  accentColor?: string
 }
 
 export function Sidebar({
@@ -22,7 +23,8 @@ export function Sidebar({
   onToggleSidebar,
   onSettingsClick,
   runningThreadIds,
-  threadNotifications
+  threadNotifications,
+  accentColor = 'text-blue-500'
 }: Props): React.ReactElement {
   return (
     <div className="flex-shrink-0 flex flex-col bg-[#0a0a0a] overflow-hidden w-[232px] min-w-[232px] h-full">
@@ -32,7 +34,7 @@ export function Sidebar({
         {/* Header with logo */}
         <div className="flex-shrink-0 flex items-center justify-between px-3 pb-1">
           <span className="font-semibold text-gray-200">
-            Agent<span className="text-blue-500">Panel</span>
+            Agent<span className={accentColor}>Panel</span>
           </span>
           <button
             onClick={onToggleSidebar}

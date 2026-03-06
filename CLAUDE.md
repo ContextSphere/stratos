@@ -7,7 +7,7 @@ pnpm install          # Install all dependencies
 pnpm build            # Build all 3 packages (core, ui, desktop)
 pnpm test             # Run tests across all packages
 pnpm --filter @agentpanel/desktop dev         # Dev mode with HMR
-pnpm --filter @agentpanel/desktop dev:debug   # Dev mode + CDP on port 9224
+pnpm --filter @agentpanel/desktop dev:debug   # Dev mode + CDP (port auto-derived or 9224)
 ```
 
 ## Mandatory: Visually Verify Every UI Change
@@ -49,7 +49,7 @@ take_snapshot
 
 ## CDP Configuration
 
-- **Port:** 9224 (hardcoded in `dev:debug` script). Override with `CDP_PORT` env var.
+- **Port:** 9224 default (non-worktree), or auto-derived from worktree path. Override with `CDP_PORT` env var.
 - **MCP config:** `.mcp.json` points to `scripts/cdp-mcp.sh`
 - **First-time setup:** When Claude Code prompts to enable the `chrome-devtools` MCP server, accept it. To pre-allow all CDP tools, create `.claude/settings.local.json`:
   ```json
@@ -110,9 +110,29 @@ kill $PID
 # evaluate_script(() => window.close())
 ```
 
+## Layer Boundaries (MUST follow)
+
+**Import rules:**
+
+| Package | Can import from | Must NOT import from |
+|---|---|---|
+| `ui` | React, shared types | `core` provider internals, `desktop`, Electron |
+| `core` | shared types | `ui`, `desktop`, React, DOM |
+| `desktop` | `ui`, `core` | — (glue layer, can import both) |
+
+**Package constraints:**
+- **`core` is pure TypeScript** — no React, no DOM, no Electron. Must work in Node, web, CLI.
+- **`ui` has zero Electron dependency** — works in any React app (web, Next.js, etc.). Platform capabilities come through the bridge system (`AgentPanelProvider` context), never direct imports.
+- **`desktop` is the glue layer** — wires `core` providers to `ui` components via IPC bridge. All Electron-specific code lives here.
+- **External UI libs are wrapped, never exposed** — Monaco, react-markdown, etc. are internal deps of `ui`. Consumers use AgentPanel components, not raw libs. Internals can be swapped without breaking consumers.
+
 ## Architecture Notes
 
 - **Worktree isolation** is opt-in via `AGENTPANEL_WORKTREE=1` env var. Without it, the app uses `~/Library/Application Support/AgentPanel/` as its data dir.
 - **IPC bridge pattern:** Main process registers handlers via `ipcMain.handle()`, preload exposes them via `contextBridge`, renderer accesses via `window.electronAPI`.
 - **Provider abstraction:** `@agentpanel/core` defines a `Provider` interface. `ClaudeCodeProvider` implements it using `@anthropic-ai/claude-agent-sdk`. New providers can be added without touching UI code.
 - **Bridge system:** `@agentpanel/ui` components receive platform capabilities through `AgentPanelProvider` context. Desktop injects Electron IPC; other platforms can inject their own implementations.
+
+## Self-Development (Dual-Instance Workflow)
+
+AgentPanel can develop itself: run one instance as the "dev tool" (main worktree) and a second as the "dev target" (feature worktree). Each gets a unique CDP port derived from its git root path, a distinct logo color, and a different dock icon. See `.claude/skills/dev-target.md` for the full workflow.
