@@ -235,12 +235,11 @@ export function useChat(activeThreadId: string | null, options?: UseChatOptions)
 
       let state = streamingThreadsRef.current.get(threadId)
       if (!state) {
-        // Don't create a new empty state for terminal events — these are
-        // late arrivals after interrupt() already saved and cleaned up.
-        // Creating an empty state here would clobber React messages via apply().
-        if (msg.type === 'result' || msg.type === 'error') return
-        state = { messages: [], assistantId: null, activeTaskId: null }
-        streamingThreadsRef.current.set(threadId, state)
+        // No streaming state means the stream was already finalized (by result/error)
+        // or cleaned up (by interrupt timeout). Any event arriving now is a late
+        // arrival — creating a new empty state would clobber accumulated messages
+        // via setMessages(). Ignore all late arrivals, not just terminal events.
+        return
       }
 
       const apply = (updater: (msgs: ChatMessage[]) => ChatMessage[]) => {
@@ -720,12 +719,14 @@ export function useChat(activeThreadId: string | null, options?: UseChatOptions)
         if (isRunning) return prev.includes(threadId) ? prev : [...prev, threadId]
         return prev.filter(id => id !== threadId)
       })
-      // Safety net: clean up lingering streaming state when the main process
-      // confirms the stream ended. Normally result/error events handle this,
-      // but this catches edge cases where no terminal event arrives.
-      if (!isRunning) {
-        streamingThreadsRef.current.delete(threadId)
-      }
+      // NOTE: Do NOT delete streamingThreadsRef here. This event arrives on a
+      // different IPC channel than STREAM_MESSAGE, so ordering is not guaranteed.
+      // If we delete the streaming state before the final stream events arrive,
+      // late non-terminal events (text, tool_result) create a new empty state
+      // with messages: [], which clobbers accumulated messages via setMessages().
+      // The result/error handlers in onStreamMessage already handle cleanup
+      // after saving messages. For the edge case where no terminal event arrives,
+      // interrupt() sets a 5s timeout to force-clear the state.
     })
 
     // Pull any already-cached commands (handles reload via cmd+r)
