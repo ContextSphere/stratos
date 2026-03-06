@@ -1,7 +1,11 @@
 import { ipcMain } from 'electron'
+import { execSync } from 'child_process'
+import { join } from 'path'
+import { mkdirSync } from 'fs'
+import { homedir } from 'os'
 import { IPC_CHANNELS } from '../../common/ipc-channels'
 import { FileStorageAdapter, readTraceEntries, clearTraceFile } from '@agentpanel/core'
-import type { StoredMessage, AgentMode } from '@agentpanel/core'
+import type { StoredMessage, AgentMode, ThreadWorktree } from '@agentpanel/core'
 
 const storage = new FileStorageAdapter()
 
@@ -39,7 +43,63 @@ export function registerThreadIpc(): void {
     return storage.getThread(threadId)
   })
 
-  ipcMain.handle(IPC_CHANNELS.THREADS_UPDATE, async (_event, threadId: string, updates: { title?: string; model?: string; cwd?: string; thinkingEffort?: 'low' | 'medium' | 'high' | 'max'; mode?: AgentMode; additionalCwds?: string[] }) => {
+  // Git repo detection
+  ipcMain.handle(IPC_CHANNELS.CHECK_IS_GIT_REPO, async (_event, dirPath: string) => {
+    try {
+      execSync('git rev-parse --is-inside-work-tree', {
+        cwd: dirPath, encoding: 'utf-8', timeout: 3000,
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
+      return true
+    } catch {
+      return false
+    }
+  })
+
+  // Thread worktree creation
+  ipcMain.handle(IPC_CHANNELS.THREADS_CREATE_WORKTREE, async (_event, params: { threadId: string; sourceRepoPath: string }) => {
+    const { threadId, sourceRepoPath } = params
+    const shortId = threadId.slice(-7)
+    const branchName = `agentpanel/${shortId}`
+    const worktreeDir = join(homedir(), '.agentpanel', 'worktrees', threadId)
+
+    mkdirSync(worktreeDir, { recursive: true })
+
+    execSync(`git worktree add -b "${branchName}" "${worktreeDir}"`, {
+      cwd: sourceRepoPath, encoding: 'utf-8', timeout: 30000,
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+
+    const worktreeData: ThreadWorktree = {
+      path: worktreeDir,
+      branch: branchName,
+      sourceRepoPath
+    }
+
+    await storage.updateThread(threadId, { worktree: worktreeData, cwd: worktreeDir })
+    return worktreeData
+  })
+
+  // Thread worktree cleanup
+  ipcMain.handle(IPC_CHANNELS.THREADS_CLEANUP_WORKTREE, async (_event, threadId: string) => {
+    const thread = await storage.getThread(threadId)
+    if (!thread?.worktree) return
+
+    const { sourceRepoPath, path: worktreePath } = thread.worktree
+
+    try {
+      execSync(`git worktree remove "${worktreePath}" --force`, {
+        cwd: sourceRepoPath, encoding: 'utf-8', timeout: 10000,
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
+    } catch {
+      // Worktree may already be removed
+    }
+
+    await storage.updateThread(threadId, { worktree: undefined })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THREADS_UPDATE, async (_event, threadId: string, updates: { title?: string; model?: string; cwd?: string; thinkingEffort?: 'low' | 'medium' | 'high' | 'max'; mode?: AgentMode; additionalCwds?: string[]; isGitRepo?: boolean; worktreeMode?: 'local' | 'worktree' }) => {
     // Clear session on cwd or mode change
     if (updates.cwd !== undefined || updates.mode !== undefined) {
       clearSessionFn?.(threadId)
@@ -48,6 +108,19 @@ export function registerThreadIpc(): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.THREADS_DELETE, async (_event, threadId: string) => {
+    // Clean up worktree if one exists
+    const thread = await storage.getThread(threadId)
+    if (thread?.worktree) {
+      try {
+        execSync(`git worktree remove "${thread.worktree.path}" --force`, {
+          cwd: thread.worktree.sourceRepoPath, encoding: 'utf-8', timeout: 10000,
+          stdio: ['pipe', 'pipe', 'pipe']
+        })
+      } catch {
+        // Worktree may already be removed
+      }
+    }
+
     clearSessionFn?.(threadId)
     return storage.deleteThread(threadId)
   })
@@ -86,4 +159,7 @@ export function unregisterThreadIpc(): void {
   ipcMain.removeHandler(IPC_CHANNELS.THREADS_READ_TRACE)
   ipcMain.removeHandler(IPC_CHANNELS.THREADS_CLEAR_TRACE)
   ipcMain.removeHandler(IPC_CHANNELS.THREADS_RUNNING)
+  ipcMain.removeHandler(IPC_CHANNELS.CHECK_IS_GIT_REPO)
+  ipcMain.removeHandler(IPC_CHANNELS.THREADS_CREATE_WORKTREE)
+  ipcMain.removeHandler(IPC_CHANNELS.THREADS_CLEANUP_WORKTREE)
 }

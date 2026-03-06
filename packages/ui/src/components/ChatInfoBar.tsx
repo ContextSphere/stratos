@@ -1,6 +1,7 @@
 import React from 'react'
 import type { TodoData } from '../types'
 import { ToolsBadge } from './ToolsBadge'
+import WorktreeToggle from './WorktreeToggle'
 
 export interface SessionStats {
   totalCost: number
@@ -19,6 +20,10 @@ interface ChatInfoBarProps {
   sessionTools?: string[]
   todoData?: TodoData | null
   onToggleTaskPanel?: () => void
+  worktreeMode?: 'local' | 'worktree'
+  isGitRepo?: boolean
+  hasMessages?: boolean
+  onWorktreeModeChange?: (mode: 'local' | 'worktree') => void
 }
 
 function shortenPath(path: string, homeDir: string): string {
@@ -41,6 +46,10 @@ export function ChatInfoBar({
   sessionTools,
   todoData,
   onToggleTaskPanel,
+  worktreeMode,
+  isGitRepo,
+  hasMessages,
+  onWorktreeModeChange,
 }: ChatInfoBarProps): React.ReactElement {
   const { totalCost, totalInputTokens, totalOutputTokens, contextWindow } = sessionStats
   const totalTokens = totalInputTokens + totalOutputTokens
@@ -64,6 +73,14 @@ export function ChatInfoBar({
               </svg>
               <span className="truncate max-w-[180px]">{shortenPath(primaryCwd, homeDir)}</span>
             </span>
+          )}
+          {isGitRepo && onWorktreeModeChange && (
+            <WorktreeToggle
+              worktreeMode={worktreeMode}
+              isGitRepo={isGitRepo}
+              disabled={hasMessages ?? false}
+              onWorktreeModeChange={onWorktreeModeChange}
+            />
           )}
           {additionalCwds.map((cwd) => (
             <span

@@ -32,6 +32,8 @@ export interface Thread {
   mode?: AgentMode
   additionalCwds?: string[]
   sessionId?: string
+  isGitRepo?: boolean
+  worktreeMode?: 'local' | 'worktree'
   worktree?: ThreadWorktree
   sessionTools?: string[]
 }

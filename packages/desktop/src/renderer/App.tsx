@@ -15,6 +15,7 @@ import {
   useTodoData,
   ModelSelector,
   ModeToggle,
+  WorktreeToggle,
 } from '@agentpanel/ui'
 
 import { Group, Panel, Separator } from 'react-resizable-panels'
@@ -107,9 +108,15 @@ export default function App(): React.ReactElement {
     const result = await window.api.selectDirectory()
     if (result.canceled || !result.path) return
     const thread = await createThread('New chat', undefined, result.path)
+    // Detect git repo and set default worktree mode
+    const isGit = await window.api.checkIsGitRepo(result.path)
+    if (isGit) {
+      await window.api.threadsUpdate(thread.id, { isGitRepo: true, worktreeMode: 'local' })
+      await refreshThreads()
+    }
     await setActiveThreadId(thread.id)
     inputRef.current?.focus()
-  }, [createThread, setActiveThreadId])
+  }, [createThread, setActiveThreadId, refreshThreads])
 
   const handleDeleteThread = useCallback(
     async (id: string) => {
@@ -135,6 +142,12 @@ export default function App(): React.ReactElement {
         if (pendingAdditionalCwds.length > 0) {
           updates.additionalCwds = pendingAdditionalCwds
           setPendingAdditionalCwds([])
+        }
+        // Detect git repo
+        const isGit = await window.api.checkIsGitRepo(result.path)
+        if (isGit) {
+          updates.isGitRepo = true
+          updates.worktreeMode = 'local'
         }
         if (Object.keys(updates).length > 0) {
           await window.api.threadsUpdate(
@@ -206,6 +219,15 @@ export default function App(): React.ReactElement {
         return
       }
       await window.api.threadsUpdate(activeThreadId, { mode })
+      await refreshThreads()
+    },
+    [activeThreadId, refreshThreads],
+  )
+
+  const handleWorktreeModeChange = useCallback(
+    async (mode: 'local' | 'worktree') => {
+      if (!activeThreadId) return
+      await window.api.threadsUpdate(activeThreadId, { worktreeMode: mode })
       await refreshThreads()
     },
     [activeThreadId, refreshThreads],
@@ -360,6 +382,10 @@ export default function App(): React.ReactElement {
               sessionTools={sessionTools ?? undefined}
               todoData={latestTodoData}
               onToggleTaskPanel={() => setShowTaskPanel((s) => !s)}
+              worktreeMode={activeThread?.worktreeMode}
+              isGitRepo={activeThread?.isGitRepo}
+              hasMessages={messages.length > 0}
+              onWorktreeModeChange={handleWorktreeModeChange}
             />
 
             {/* Chat messages */}

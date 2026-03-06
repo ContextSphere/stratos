@@ -28,6 +28,9 @@ export const IPC_CHANNELS = {
   THREADS_CREATE_WORKTREE: 'chat:threads:create-worktree',
   THREADS_CLEANUP_WORKTREE: 'chat:threads:cleanup-worktree',
 
+  // Git detection
+  CHECK_IS_GIT_REPO: 'settings:check-is-git-repo',
+
   // GitHub — connection management (gh CLI)
   GITHUB_CHECK_CLI: 'integration:github:check-cli',
   GITHUB_CONNECT: 'integration:github:connect',

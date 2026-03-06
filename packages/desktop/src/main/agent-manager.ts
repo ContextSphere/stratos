@@ -1,7 +1,8 @@
 import { BrowserWindow, ipcMain, Notification } from 'electron'
 import { execSync } from 'child_process'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
+import { homedir } from 'os'
 import { IPC_CHANNELS } from '../common/ipc-channels'
 import {
   ClaudeCodeProvider,
@@ -213,8 +214,47 @@ export class AgentManager {
     prompt: string,
     images?: { dataUrl: string; mimeType: string }[]
   ): Promise<void> {
-    const thread = await this.storage.getThread(threadId)
+    let thread = await this.storage.getThread(threadId)
     if (!thread) throw new Error(`Thread ${threadId} not found`)
+
+    // Lazy worktree creation: if user selected worktree mode but no worktree exists yet
+    if (thread.worktreeMode === 'worktree' && !thread.worktree && thread.cwd) {
+      this.sendToRenderer(IPC_CHANNELS.STREAM_MESSAGE, {
+        type: 'worktree_progress',
+        steps: [{ step: 'Creating git worktree...', status: 'running' }]
+      }, threadId)
+
+      try {
+        const shortId = threadId.slice(-7)
+        const branchName = `agentpanel/${shortId}`
+        const worktreeDir = join(homedir(), '.agentpanel', 'worktrees', threadId)
+        mkdirSync(worktreeDir, { recursive: true })
+
+        execSync(`git worktree add -b "${branchName}" "${worktreeDir}"`, {
+          cwd: thread.cwd, encoding: 'utf-8', timeout: 30000,
+          stdio: ['pipe', 'pipe', 'pipe']
+        })
+
+        await this.storage.updateThread(threadId, {
+          worktree: { path: worktreeDir, branch: branchName, sourceRepoPath: thread.cwd },
+          cwd: worktreeDir
+        })
+
+        // Reload thread with updated cwd
+        thread = (await this.storage.getThread(threadId))!
+
+        this.sendToRenderer(IPC_CHANNELS.STREAM_MESSAGE, {
+          type: 'worktree_progress',
+          steps: [{ step: 'Creating git worktree...', status: 'completed' }]
+        }, threadId)
+      } catch (err: any) {
+        this.sendToRenderer(IPC_CHANNELS.STREAM_MESSAGE, {
+          type: 'worktree_progress',
+          steps: [{ step: `Failed to create worktree: ${err?.message ?? 'Unknown error'}`, status: 'error' }]
+        }, threadId)
+        // Fall back to local mode
+      }
+    }
 
     // Get or create a session for this thread
     let session = this.sessions.get(threadId)
