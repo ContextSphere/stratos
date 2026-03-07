@@ -66,6 +66,12 @@ export class CodexProvider implements AgentProvider {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private activeThread?: any
   private sessionInitSent = false
+  /**
+   * Tracks how many characters of text we've already emitted per item ID.
+   * Used to compute deltas for streaming: on each item.updated we yield
+   * only the new portion of text, not the full accumulated string.
+   */
+  private emittedTextLengths = new Map<string, number>()
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config
@@ -180,6 +186,7 @@ export class CodexProvider implements AgentProvider {
     // Disposing and recreating is the safest approach.
     this.activeThread = undefined
     this.codexInstance = undefined
+    this.emittedTextLengths.clear()
   }
 
   canResume(sessionId: string): boolean {
@@ -200,6 +207,7 @@ export class CodexProvider implements AgentProvider {
     this.codexInstance = undefined
     this.threadId = undefined
     this.sessionInitSent = false
+    this.emittedTextLengths.clear()
   }
 
   /**
@@ -212,18 +220,34 @@ export class CodexProvider implements AgentProvider {
    * SDK item types (snake_case):
    *   agent_message, reasoning, command_execution, file_change,
    *   mcp_tool_call, web_search, todo_list, error
+   *
+   * Streaming strategy:
+   *   For text-bearing items (agent_message, reasoning) we track the emitted
+   *   character count per item ID. On item.started / item.updated we yield only
+   *   the NEW delta (isStreaming: true). On item.completed we yield any remaining
+   *   delta (isStreaming: false) and clean up the tracking entry.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private *transformEvent(event: any): Generator<AgentMessage> {
     switch (event.type) {
+      case 'item.started':
+      case 'item.updated': {
+        const item = event.item
+        if (!item) break
+        yield* this.emitStreamingDelta(item)
+        break
+      }
+
       case 'item.completed': {
         const item = event.item
         if (!item) break
-        yield* this.transformItem(item)
+        yield* this.emitCompletedItem(item)
         break
       }
 
       case 'turn.completed': {
+        // Clear all tracking state for the turn
+        this.emittedTextLengths.clear()
         const usage = event.usage
         yield {
           type: 'result',
@@ -240,6 +264,7 @@ export class CodexProvider implements AgentProvider {
       }
 
       case 'turn.failed': {
+        this.emittedTextLengths.clear()
         const errorMsg = event.error?.message ?? 'Turn failed'
         yield { type: 'error', message: errorMsg, code: 'CODEX_TURN_FAILED' }
         break
@@ -251,27 +276,67 @@ export class CodexProvider implements AgentProvider {
       }
 
       default:
-        // Ignore thread.started, turn.started, item.started, item.updated
+        // Ignore thread.started, turn.started
         break
     }
   }
 
+  /**
+   * Yield a streaming text delta for in-progress items (item.started / item.updated).
+   * Only emits for text-bearing types (agent_message, reasoning).
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private *transformItem(item: any): Generator<AgentMessage> {
+  private *emitStreamingDelta(item: any): Generator<AgentMessage> {
+    if (item.type === 'agent_message') {
+      const text = item.text ?? ''
+      const id = item.id ?? 'msg'
+      const prev = this.emittedTextLengths.get(id) ?? 0
+      if (text.length > prev) {
+        const delta = text.slice(prev)
+        this.emittedTextLengths.set(id, text.length)
+        yield { type: 'text', content: delta, isStreaming: true }
+      }
+    } else if (item.type === 'reasoning') {
+      const text = item.text ?? ''
+      const id = item.id ?? 'reasoning'
+      const prev = this.emittedTextLengths.get(id) ?? 0
+      if (text.length > prev) {
+        const delta = text.slice(prev)
+        this.emittedTextLengths.set(id, text.length)
+        yield { type: 'thinking', content: delta, isStreaming: true }
+      }
+    }
+    // For non-text items (command_execution, file_change, etc.)
+    // we wait for item.completed to emit them in full.
+  }
+
+  /**
+   * Yield the final output for a completed item.
+   * For text items, emits only the remaining un-emitted delta.
+   * For tool items, emits the full tool_use + tool_result.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private *emitCompletedItem(item: any): Generator<AgentMessage> {
     switch (item.type) {
       case 'agent_message': {
         const text = item.text ?? ''
-        if (text) {
-          yield { type: 'text', content: text, isStreaming: false }
+        const id = item.id ?? 'msg'
+        const prev = this.emittedTextLengths.get(id) ?? 0
+        if (text.length > prev) {
+          yield { type: 'text', content: text.slice(prev), isStreaming: false }
         }
+        this.emittedTextLengths.delete(id)
         break
       }
 
       case 'reasoning': {
         const text = item.text ?? ''
-        if (text) {
-          yield { type: 'text', content: `*Reasoning:* ${text}`, isStreaming: false }
+        const id = item.id ?? 'reasoning'
+        const prev = this.emittedTextLengths.get(id) ?? 0
+        if (text.length > prev) {
+          yield { type: 'thinking', content: text.slice(prev), isStreaming: false }
         }
+        this.emittedTextLengths.delete(id)
         break
       }
 
@@ -283,7 +348,6 @@ export class CodexProvider implements AgentProvider {
           input: { command: item.command ?? '' },
           toolCallId
         }
-        // Emit result with aggregated output and exit code
         const outputParts: string[] = []
         if (item.aggregated_output) outputParts.push(item.aggregated_output)
         if (item.exit_code !== undefined && item.exit_code !== 0) {
@@ -328,7 +392,6 @@ export class CodexProvider implements AgentProvider {
           input: item.arguments ?? {},
           toolCallId
         }
-        // result is { content: ContentBlock[], structured_content: unknown }
         let output = ''
         if (item.error) {
           output = item.error.message ?? 'MCP tool call failed'
@@ -364,7 +427,6 @@ export class CodexProvider implements AgentProvider {
       }
 
       case 'todo_list': {
-        // Render todo list as markdown text
         const items = item.items ?? []
         if (items.length > 0) {
           const text = items.map((t: { text: string; completed: boolean }) =>
@@ -381,7 +443,6 @@ export class CodexProvider implements AgentProvider {
       }
 
       default: {
-        // Unknown item type — try to extract text content
         const text = item.text ?? item.content ?? item.message
         if (typeof text === 'string' && text) {
           yield { type: 'text', content: text, isStreaming: false }
