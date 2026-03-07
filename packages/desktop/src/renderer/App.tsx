@@ -30,6 +30,72 @@ import { ConnectGitHubDialog } from "./components/ConnectGitHubDialog";
 import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 
+function ContextRing({
+  sessionStats,
+}: {
+  sessionStats: SessionStats;
+}): React.ReactElement {
+  const totalTokens =
+    sessionStats.totalInputTokens + sessionStats.totalOutputTokens;
+  const contextPercent =
+    sessionStats.contextWindow && totalTokens > 0
+      ? Math.min(
+          100,
+          Math.round((totalTokens / sessionStats.contextWindow) * 100),
+        )
+      : null;
+  const ringPercent = contextPercent ?? 0;
+  const ringColor =
+    contextPercent != null && contextPercent >= 80 ? "#d97706" : "#4b5563";
+
+  return (
+    <div className="relative no-drag group flex-shrink-0">
+      <button
+        type="button"
+        aria-label="Session stats"
+        className="w-3.5 h-3.5 rounded-full flex items-center justify-center"
+        title="Session stats"
+      >
+        <span
+          className="block w-3.5 h-3.5 rounded-full"
+          style={{
+            background: `conic-gradient(${ringColor} ${ringPercent}%, #2a2a2a ${ringPercent}% 100%)`,
+          }}
+        />
+        <span className="absolute w-2.5 h-2.5 rounded-full bg-[#0f0f0f]" />
+      </button>
+      <div className="pointer-events-none absolute left-0 bottom-[calc(100%+6px)] w-44 rounded-lg border border-[#2a2a2a] bg-[#121212] px-2.5 py-2 text-[11px] text-gray-300 opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-150 z-20">
+        <div className="flex items-center justify-between">
+          <span className="text-gray-500">Context</span>
+          <span
+            className={
+              contextPercent != null && contextPercent >= 80
+                ? "text-amber-400"
+                : "text-gray-300"
+            }
+          >
+            {contextPercent != null ? `${contextPercent}%` : "—"}
+          </span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-gray-500">Cost</span>
+          <span>${sessionStats.totalCost.toFixed(2)}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-gray-500">Tokens</span>
+          <span>
+            {totalTokens >= 1_000_000
+              ? (totalTokens / 1_000_000).toFixed(1) + "M"
+              : totalTokens >= 1_000
+                ? (totalTokens / 1_000).toFixed(1) + "k"
+                : String(totalTokens)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App(): React.ReactElement {
   const {
     threads,
@@ -79,7 +145,9 @@ export default function App(): React.ReactElement {
   const [showGitHubDialog, setShowGitHubDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [pendingMode, setPendingMode] = useState<AgentMode>();
-  const [pendingProvider, setPendingProvider] = useState<"claude-code" | "codex">("claude-code");
+  const [pendingProvider, setPendingProvider] = useState<
+    "claude-code" | "codex"
+  >("claude-code");
   const [pendingAdditionalCwds, setPendingAdditionalCwds] = useState<string[]>(
     [],
   );
@@ -138,7 +206,12 @@ export default function App(): React.ReactElement {
     async (folderId: string) => {
       const folder = folders.find((f) => f.id === folderId);
       if (!folder) return;
-      const thread = await createThread("New chat", undefined, folder.path, pendingProvider);
+      const thread = await createThread(
+        "New chat",
+        undefined,
+        folder.path,
+        pendingProvider,
+      );
       // Use folder's git repo info
       if (folder.isGitRepo) {
         await window.api.threadsUpdate(thread.id, {
@@ -237,16 +310,16 @@ export default function App(): React.ReactElement {
   );
 
   const handleProviderChange = useCallback(
-    async (provider: 'claude-code' | 'codex') => {
+    async (provider: "claude-code" | "codex") => {
       if (!activeThreadId) {
-        setPendingProvider(provider)
-        return
+        setPendingProvider(provider);
+        return;
       }
-      await window.api.threadsUpdate(activeThreadId, { provider })
-      await refreshThreads()
+      await window.api.threadsUpdate(activeThreadId, { provider });
+      await refreshThreads();
     },
     [activeThreadId, refreshThreads],
-  )
+  );
 
   const handleWorktreeModeChange = useCallback(
     async (mode: "local" | "worktree") => {
@@ -476,7 +549,10 @@ export default function App(): React.ReactElement {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <ProviderToggle
-                    provider={(activeThread?.provider as 'claude-code' | 'codex') ?? pendingProvider}
+                    provider={
+                      (activeThread?.provider as "claude-code" | "codex") ??
+                      pendingProvider
+                    }
                     onProviderChange={handleProviderChange}
                     disabled={isStreaming}
                   />
@@ -486,12 +562,19 @@ export default function App(): React.ReactElement {
                     onModelChange={handleModelChange}
                     thinkingEffort={activeThread?.thinkingEffort}
                     onThinkingEffortChange={handleThinkingEffortChange}
-                    onFetchModels={() => window.api.getAvailableModels(
-                      (activeThread?.provider as string) ?? pendingProvider
-                    )}
+                    onFetchModels={() =>
+                      window.api.getAvailableModels(
+                        (activeThread?.provider as string) ?? pendingProvider,
+                      )
+                    }
                     isOpen={modelPickerOpen}
                     onOpenChange={setModelPickerOpen}
                   />
+                  {sessionStats &&
+                    (sessionStats.totalCost > 0 ||
+                      sessionStats.totalInputTokens +
+                        sessionStats.totalOutputTokens >
+                        0) && <ContextRing sessionStats={sessionStats} />}
                 </div>
                 <ModeToggle
                   mode={
