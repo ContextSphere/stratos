@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
@@ -88,16 +88,8 @@ describe("trace.store", () => {
   });
 
   it("returns empty array when trace file contains only whitespace", () => {
-    const { writeFileSync } = require("fs");
-    const tracePath = require("path").join(
-      tmpDir,
-      "threads",
-      "traces",
-      `${threadId}.jsonl`,
-    );
-    require("fs").mkdirSync(require("path").dirname(tracePath), {
-      recursive: true,
-    });
+    const tracePath = join(tmpDir, "threads", "traces", `${threadId}.jsonl`);
+    mkdirSync(join(tmpDir, "threads", "traces"), { recursive: true });
     writeFileSync(tracePath, "   \n  \n", "utf-8");
     expect(readTraceEntries(threadId, tmpDir)).toEqual([]);
   });
