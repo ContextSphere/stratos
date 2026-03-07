@@ -6,3 +6,4 @@ release
 *.tsbuildinfo
 .DS_Store
 docs/plans/
+.worktrees/
