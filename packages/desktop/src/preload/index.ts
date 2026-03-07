@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS } from "../common/ipc-channels";
-import type { AgentMode } from "@agentpanel/core";
+import type { AgentMode, Folder } from "@agentpanel/core";
 
 export type ElectronAPI = typeof api;
 
@@ -191,6 +191,19 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_DISCONNECT),
   claudeGetConnection: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_GET_CONNECTION),
+
+  // Folders
+  foldersList: (): Promise<Folder[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FOLDERS_LIST),
+  foldersAdd: (path: string, name?: string): Promise<Folder> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FOLDERS_ADD, path, name),
+  foldersRemove: (folderId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FOLDERS_REMOVE, folderId),
+  foldersUpdate: (
+    folderId: string,
+    updates: Partial<Folder>,
+  ): Promise<Folder | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FOLDERS_UPDATE, folderId, updates),
 
   // Threads / sessions
   threadsList: () => ipcRenderer.invoke(IPC_CHANNELS.THREADS_LIST),
