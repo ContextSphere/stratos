@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
-import { normalizeMode, AGENT_MODES, type AgentMode } from './utils/modes'
-import type { ImageAttachment } from '@agentpanel/ui'
+import { useState, useCallback, useRef, useEffect } from "react";
+import { normalizeMode, AGENT_MODES, type AgentMode } from "./utils/modes";
+import type { ImageAttachment } from "@agentpanel/ui";
 import {
   Sidebar,
   ChatView,
@@ -16,17 +16,18 @@ import {
   ModelSelector,
   ModeToggle,
   WorktreeToggle,
-} from '@agentpanel/ui'
+} from "@agentpanel/ui";
 
-import { Group, Panel, Separator } from 'react-resizable-panels'
-import { useChat } from './hooks/useChat'
-import { useThreads } from './hooks/useThreads'
-import { useGitHub } from './hooks/useGitHub'
-import { useClaude } from './hooks/useClaude'
-import { usePreview } from './hooks/usePreview'
-import { ConnectGitHubDialog } from './components/ConnectGitHubDialog'
-import { ConnectClaudeDialog } from './components/ConnectClaudeDialog'
-import { SettingsDialog } from './components/SettingsDialog'
+import { Group, Panel, Separator } from "react-resizable-panels";
+import { useChat } from "./hooks/useChat";
+import { useThreads } from "./hooks/useThreads";
+import { useFolders } from "./hooks/useFolders";
+import { useGitHub } from "./hooks/useGitHub";
+import { useClaude } from "./hooks/useClaude";
+import { usePreview } from "./hooks/usePreview";
+import { ConnectGitHubDialog } from "./components/ConnectGitHubDialog";
+import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
 
 export default function App(): React.ReactElement {
   const {
@@ -37,7 +38,9 @@ export default function App(): React.ReactElement {
     createThread,
     deleteThread,
     refreshThreads,
-  } = useThreads()
+  } = useThreads();
+
+  const { folders, addFolder, removeFolder, updateFolder } = useFolders();
 
   const {
     messages,
@@ -56,234 +59,246 @@ export default function App(): React.ReactElement {
     runningThreadIds,
     threadNotifications,
     sessionTools,
-  } = useChat(activeThreadId, { onThreadUpdated: refreshThreads })
+  } = useChat(activeThreadId, { onThreadUpdated: refreshThreads });
 
-  const github = useGitHub()
-  const claude = useClaude()
-  const { preview, openUrl, openMarkdown, openArtifactEditor, close: closePreview } = usePreview()
-  const { latestTodoData, showTaskPanel, setShowTaskPanel } = useTodoData(messages)
+  const github = useGitHub();
+  const claude = useClaude();
+  const {
+    preview,
+    openUrl,
+    openMarkdown,
+    openArtifactEditor,
+    close: closePreview,
+  } = usePreview();
+  const { latestTodoData, showTaskPanel, setShowTaskPanel } =
+    useTodoData(messages);
 
-  const [showClaudeDialog, setShowClaudeDialog] = useState(false)
-  const [showGitHubDialog, setShowGitHubDialog] = useState(false)
-  const [showSettingsDialog, setShowSettingsDialog] = useState(false)
-  const [pendingMode, setPendingMode] = useState<AgentMode>()
-  const [pendingAdditionalCwds, setPendingAdditionalCwds] = useState<string[]>([])
-  const [homeDir, setHomeDir] = useState('')
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [modelPickerOpen, setModelPickerOpen] = useState(false)
-  const inputRef = useRef<InputBarRef | null>(null)
-  const draftsRef = useRef<Map<string, string>>(new Map())
-  const prevActiveThreadIdRef = useRef<string | null>(null)
+  const [showClaudeDialog, setShowClaudeDialog] = useState(false);
+  const [showGitHubDialog, setShowGitHubDialog] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [pendingMode, setPendingMode] = useState<AgentMode>();
+  const [pendingAdditionalCwds, setPendingAdditionalCwds] = useState<string[]>(
+    [],
+  );
+  const [homeDir, setHomeDir] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const inputRef = useRef<InputBarRef | null>(null);
+  const draftsRef = useRef<Map<string, string>>(new Map());
+  const prevActiveThreadIdRef = useRef<string | null>(null);
 
   // Fetch home directory
   useEffect(() => {
-    window.api.getHomeDirectory().then(setHomeDir)
-  }, [])
+    window.api.getHomeDirectory().then(setHomeDir);
+  }, []);
 
   // Save/restore draft input text when switching threads
   useEffect(() => {
-    const prev = prevActiveThreadIdRef.current
+    const prev = prevActiveThreadIdRef.current;
     if (prev && prev !== activeThreadId) {
-      const text = inputRef.current?.getText() ?? ''
-      if (text) draftsRef.current.set(prev, text)
-      else draftsRef.current.delete(prev)
+      const text = inputRef.current?.getText() ?? "";
+      if (text) draftsRef.current.set(prev, text);
+      else draftsRef.current.delete(prev);
     }
-    prevActiveThreadIdRef.current = activeThreadId
+    prevActiveThreadIdRef.current = activeThreadId;
     if (activeThreadId) {
-      inputRef.current?.prefill(draftsRef.current.get(activeThreadId) ?? '')
+      inputRef.current?.prefill(draftsRef.current.get(activeThreadId) ?? "");
     }
-  }, [activeThreadId])
+  }, [activeThreadId]);
 
   const handleThreadClick = useCallback(
     async (threadId: string) => {
-      closePreview()
-      await setActiveThreadId(threadId)
+      closePreview();
+      await setActiveThreadId(threadId);
     },
     [setActiveThreadId, closePreview],
-  )
+  );
 
-  const handleCreateThread = useCallback(async () => {
-    const result = await window.api.selectDirectory()
-    if (result.canceled || !result.path) return
-    const thread = await createThread('New chat', undefined, result.path)
-    // Detect git repo and set default worktree mode
-    const isGit = await window.api.checkIsGitRepo(result.path)
+  const handleAddFolder = useCallback(async () => {
+    const result = await window.api.selectDirectory();
+    if (result.canceled || !result.path) return;
+    const folder = await addFolder(result.path);
+    // Detect git repo
+    const isGit = await window.api.checkIsGitRepo(result.path);
     if (isGit) {
-      await window.api.threadsUpdate(thread.id, { isGitRepo: true, worktreeMode: 'local' })
-      await refreshThreads()
+      await updateFolder(folder.id, { isGitRepo: true });
     }
-    await setActiveThreadId(thread.id)
-    inputRef.current?.focus()
-  }, [createThread, setActiveThreadId, refreshThreads])
+  }, [addFolder, updateFolder]);
+
+  const handleToggleFolderCollapsed = useCallback(
+    (folderId: string, collapsed: boolean) =>
+      updateFolder(folderId, { collapsed }),
+    [updateFolder],
+  );
+
+  const handleCreateThreadInFolder = useCallback(
+    async (folderId: string) => {
+      const folder = folders.find((f) => f.id === folderId);
+      if (!folder) return;
+      const thread = await createThread("New chat", undefined, folder.path);
+      // Use folder's git repo info
+      if (folder.isGitRepo) {
+        await window.api.threadsUpdate(thread.id, {
+          isGitRepo: true,
+          worktreeMode: "local",
+        });
+        await refreshThreads();
+      }
+      await setActiveThreadId(thread.id);
+      inputRef.current?.focus();
+    },
+    [folders, createThread, setActiveThreadId, refreshThreads],
+  );
 
   const handleDeleteThread = useCallback(
     async (id: string) => {
-      draftsRef.current.delete(id)
-      await deleteThread(id)
+      draftsRef.current.delete(id);
+      await deleteThread(id);
     },
     [deleteThread],
-  )
+  );
 
   const handleSend = useCallback(
     async (prompt: string, images?: ImageAttachment[]) => {
-      let threadId = activeThreadId
-      if (!threadId) {
-        const result = await window.api.selectDirectory()
-        if (result.canceled || !result.path) return
-        const thread = await createThread('New chat', undefined, result.path)
-        threadId = thread.id
-        const updates: Record<string, unknown> = {}
-        if (pendingMode) {
-          updates.mode = pendingMode
-          setPendingMode(undefined)
-        }
-        if (pendingAdditionalCwds.length > 0) {
-          updates.additionalCwds = pendingAdditionalCwds
-          setPendingAdditionalCwds([])
-        }
-        // Detect git repo
-        const isGit = await window.api.checkIsGitRepo(result.path)
-        if (isGit) {
-          updates.isGitRepo = true
-          updates.worktreeMode = 'local'
-        }
-        if (Object.keys(updates).length > 0) {
-          await window.api.threadsUpdate(
-            threadId,
-            updates as Parameters<typeof window.api.threadsUpdate>[1],
-          )
-        }
-      }
-      await sendMessage(prompt, threadId, images)
+      const threadId = activeThreadId;
+      if (!threadId) return; // Must create a thread in a folder first
+      await sendMessage(prompt, threadId, images);
     },
-    [activeThreadId, createThread, sendMessage, pendingMode, pendingAdditionalCwds],
-  )
+    [activeThreadId, sendMessage],
+  );
 
   const handleModelChange = useCallback(
     async (model: string) => {
-      if (!activeThreadId) return
-      await window.api.threadsUpdate(activeThreadId, { model })
-      await refreshThreads()
+      if (!activeThreadId) return;
+      await window.api.threadsUpdate(activeThreadId, { model });
+      await refreshThreads();
     },
     [activeThreadId, refreshThreads],
-  )
+  );
 
   const handleThinkingEffortChange = useCallback(
     async (effort: string) => {
-      if (!activeThreadId) return
+      if (!activeThreadId) return;
       await window.api.threadsUpdate(activeThreadId, {
-        thinkingEffort: effort as 'low' | 'medium' | 'high' | 'max',
-      })
-      await refreshThreads()
+        thinkingEffort: effort as "low" | "medium" | "high" | "max",
+      });
+      await refreshThreads();
     },
     [activeThreadId, refreshThreads],
-  )
+  );
 
   const handleAddDirectory = useCallback(async () => {
-    const result = await window.api.selectDirectory()
-    if (result.canceled || !result.path) return
-    const newPath = result.path
+    const result = await window.api.selectDirectory();
+    if (result.canceled || !result.path) return;
+    const newPath = result.path;
     if (activeThreadId) {
-      const currentCwds = activeThread?.additionalCwds ?? []
-      if (currentCwds.includes(newPath) || activeThread?.cwd === newPath) return
+      const currentCwds = activeThread?.additionalCwds ?? [];
+      if (currentCwds.includes(newPath) || activeThread?.cwd === newPath)
+        return;
       await window.api.threadsUpdate(activeThreadId, {
         additionalCwds: [...currentCwds, newPath],
-      })
-      await refreshThreads()
+      });
+      await refreshThreads();
     } else {
-      setPendingAdditionalCwds((prev) => (prev.includes(newPath) ? prev : [...prev, newPath]))
+      setPendingAdditionalCwds((prev) =>
+        prev.includes(newPath) ? prev : [...prev, newPath],
+      );
     }
-  }, [activeThreadId, activeThread, refreshThreads])
+  }, [activeThreadId, activeThread, refreshThreads]);
 
   const handleRemoveDirectory = useCallback(
     async (path: string) => {
       if (activeThreadId) {
-        const currentCwds = activeThread?.additionalCwds ?? []
+        const currentCwds = activeThread?.additionalCwds ?? [];
         await window.api.threadsUpdate(activeThreadId, {
           additionalCwds: currentCwds.filter((d) => d !== path),
-        })
-        await refreshThreads()
+        });
+        await refreshThreads();
       } else {
-        setPendingAdditionalCwds((prev) => prev.filter((d) => d !== path))
+        setPendingAdditionalCwds((prev) => prev.filter((d) => d !== path));
       }
     },
     [activeThreadId, activeThread, refreshThreads],
-  )
+  );
 
   const handleModeChange = useCallback(
     async (mode: AgentMode) => {
       if (!activeThreadId) {
-        setPendingMode(mode)
-        return
+        setPendingMode(mode);
+        return;
       }
-      await window.api.threadsUpdate(activeThreadId, { mode })
-      await refreshThreads()
+      await window.api.threadsUpdate(activeThreadId, { mode });
+      await refreshThreads();
     },
     [activeThreadId, refreshThreads],
-  )
+  );
 
   const handleWorktreeModeChange = useCallback(
-    async (mode: 'local' | 'worktree') => {
-      if (!activeThreadId) return
-      await window.api.threadsUpdate(activeThreadId, { worktreeMode: mode })
-      await refreshThreads()
+    async (mode: "local" | "worktree") => {
+      if (!activeThreadId) return;
+      await window.api.threadsUpdate(activeThreadId, { worktreeMode: mode });
+      await refreshThreads();
     },
     [activeThreadId, refreshThreads],
-  )
+  );
 
   // Ctrl+Tab to cycle modes
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.shiftKey) && e.key === 'Tab') {
-        e.preventDefault()
-        e.stopPropagation()
-        if (isStreaming) return
+      if ((e.ctrlKey || e.shiftKey) && e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isStreaming) return;
         const currentMode = activeThread?.mode
           ? normalizeMode(activeThread.mode)
-          : (pendingMode ?? 'default')
-        const currentIndex = AGENT_MODES.indexOf(currentMode)
-        const nextIndex = (currentIndex + 1) % AGENT_MODES.length
-        handleModeChange(AGENT_MODES[nextIndex])
+          : (pendingMode ?? "default");
+        const currentIndex = AGENT_MODES.indexOf(currentMode);
+        const nextIndex = (currentIndex + 1) % AGENT_MODES.length;
+        handleModeChange(AGENT_MODES[nextIndex]);
       }
-    }
-    document.addEventListener('keydown', handler, { capture: true })
-    return () => document.removeEventListener('keydown', handler, { capture: true })
-  }, [activeThread, pendingMode, isStreaming, handleModeChange])
+    };
+    document.addEventListener("keydown", handler, { capture: true });
+    return () =>
+      document.removeEventListener("keydown", handler, { capture: true });
+  }, [activeThread, pendingMode, isStreaming, handleModeChange]);
 
   // Handle notification click -> activate thread
   useEffect(() => {
     window.api.onThreadActivate(({ threadId }: { threadId: string }) => {
-      handleThreadClick(threadId)
-    })
-    return () => window.api.removeAllListeners('chat:thread-activate')
-  }, [handleThreadClick])
+      handleThreadClick(threadId);
+    });
+    return () => window.api.removeAllListeners("chat:thread-activate");
+  }, [handleThreadClick]);
 
   // Cmd+B to toggle sidebar
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
-        e.preventDefault()
-        setSidebarCollapsed((prev) => !prev)
+      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+        e.preventDefault();
+        setSidebarCollapsed((prev) => !prev);
       }
-    }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [])
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
 
   // Cmd+P to open model picker (via main process menu)
   useEffect(() => {
-    window.api.onOpenModelPicker(() => setModelPickerOpen((v) => !v))
-    return () => window.api.removeAllListeners('ui:open-model-picker')
-  }, [])
+    window.api.onOpenModelPicker(() => setModelPickerOpen((v) => !v));
+    return () => window.api.removeAllListeners("ui:open-model-picker");
+  }, []);
 
   // Auto-open Claude auth dialog on auth failure
   useEffect(() => {
-    const handler = () => setShowClaudeDialog(true)
-    window.addEventListener('claude:auth-failed', handler)
-    return () => window.removeEventListener('claude:auth-failed', handler)
-  }, [])
+    const handler = () => setShowClaudeDialog(true);
+    window.addEventListener("claude:auth-failed", handler);
+    return () => window.removeEventListener("claude:auth-failed", handler);
+  }, []);
 
-  const toggleSidebar = useCallback(() => setSidebarCollapsed((prev) => !prev), [])
+  const toggleSidebar = useCallback(
+    () => setSidebarCollapsed((prev) => !prev),
+    [],
+  );
 
   return (
     <div className="flex h-screen">
@@ -293,30 +308,35 @@ export default function App(): React.ReactElement {
       >
         <Sidebar
           threads={threads}
+          folders={folders}
           activeThreadId={activeThreadId}
           onThreadClick={handleThreadClick}
-          onCreateThread={handleCreateThread}
+          onCreateThreadInFolder={handleCreateThreadInFolder}
+          onAddFolder={handleAddFolder}
+          onRemoveFolder={removeFolder}
+          onToggleFolderCollapsed={handleToggleFolderCollapsed}
           onDeleteThread={handleDeleteThread}
           onToggleSidebar={toggleSidebar}
           onSettingsClick={() => setShowSettingsDialog(true)}
           runningThreadIds={runningThreadIds}
           threadNotifications={threadNotifications}
-
         />
       </div>
 
       <Group
-        key={preview.isOpen ? 'split' : 'full'}
+        key={preview.isOpen ? "split" : "full"}
         orientation="horizontal"
         className="flex-1 min-h-0"
       >
         <Panel defaultSize={preview.isOpen ? 70 : 100} minSize={30}>
           <div className="flex flex-col h-full bg-[#0f0f0f] rounded-l-xl overflow-hidden">
-            {sidebarCollapsed && <div className="drag-region h-7 flex-shrink-0" />}
+            {sidebarCollapsed && (
+              <div className="drag-region h-7 flex-shrink-0" />
+            )}
 
             {/* Top bar */}
             <div
-              className={`drag-region flex-shrink-0 flex items-end justify-between px-4 pb-1.5 ${sidebarCollapsed ? '' : 'h-11'}`}
+              className={`drag-region flex-shrink-0 flex items-end justify-between px-4 pb-1.5 ${sidebarCollapsed ? "" : "h-11"}`}
             >
               <div className="flex items-center">
                 {sidebarCollapsed && (
@@ -345,24 +365,36 @@ export default function App(): React.ReactElement {
                 <button
                   onClick={() => setShowClaudeDialog(true)}
                   className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[#2a2a2a]"
-                  title={claude.isConnected ? 'Claude connected' : 'Connect Claude'}
+                  title={
+                    claude.isConnected ? "Claude connected" : "Connect Claude"
+                  }
                 >
                   <div
-                    className={`w-1.5 h-1.5 rounded-full ${claude.isConnected ? 'bg-green-500' : 'bg-gray-600'}`}
+                    className={`w-1.5 h-1.5 rounded-full ${claude.isConnected ? "bg-green-500" : "bg-gray-600"}`}
                   />
-                  <span className={claude.isConnected ? 'text-gray-400' : 'text-gray-600'}>
+                  <span
+                    className={
+                      claude.isConnected ? "text-gray-400" : "text-gray-600"
+                    }
+                  >
                     Claude
                   </span>
                 </button>
                 <button
                   onClick={() => setShowGitHubDialog(true)}
                   className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[#2a2a2a]"
-                  title={github.isConnected ? 'GitHub connected' : 'Connect GitHub'}
+                  title={
+                    github.isConnected ? "GitHub connected" : "Connect GitHub"
+                  }
                 >
                   <div
-                    className={`w-1.5 h-1.5 rounded-full ${github.isConnected ? 'bg-green-500' : 'bg-gray-600'}`}
+                    className={`w-1.5 h-1.5 rounded-full ${github.isConnected ? "bg-green-500" : "bg-gray-600"}`}
                   />
-                  <span className={github.isConnected ? 'text-gray-400' : 'text-gray-600'}>
+                  <span
+                    className={
+                      github.isConnected ? "text-gray-400" : "text-gray-600"
+                    }
+                  >
                     GitHub
                   </span>
                 </button>
@@ -372,7 +404,9 @@ export default function App(): React.ReactElement {
             {/* Chat info bar */}
             <ChatInfoBar
               primaryCwd={activeThread?.cwd}
-              additionalCwds={activeThread?.additionalCwds ?? pendingAdditionalCwds}
+              additionalCwds={
+                activeThread?.additionalCwds ?? pendingAdditionalCwds
+              }
               onAddDirectory={handleAddDirectory}
               onRemoveDirectory={handleRemoveDirectory}
               sessionStats={sessionStats}
@@ -426,7 +460,11 @@ export default function App(): React.ReactElement {
                   onOpenChange={setModelPickerOpen}
                 />
                 <ModeToggle
-                  mode={activeThread?.mode ? normalizeMode(activeThread.mode) : pendingMode}
+                  mode={
+                    activeThread?.mode
+                      ? normalizeMode(activeThread.mode)
+                      : pendingMode
+                  }
                   onModeChange={handleModeChange}
                   disabled={isStreaming}
                 />
@@ -447,7 +485,10 @@ export default function App(): React.ReactElement {
 
       {/* Permission dialog */}
       {permissionRequest && (
-        <PermissionDialog request={permissionRequest} onRespond={respondPermission} />
+        <PermissionDialog
+          request={permissionRequest}
+          onRespond={respondPermission}
+        />
       )}
 
       {/* Claude connect dialog */}
@@ -485,5 +526,5 @@ export default function App(): React.ReactElement {
         onClose={() => setShowSettingsDialog(false)}
       />
     </div>
-  )
+  );
 }
