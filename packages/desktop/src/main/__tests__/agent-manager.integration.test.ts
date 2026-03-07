@@ -69,6 +69,8 @@ describe("AgentManager (integration)", () => {
   it("dispose resolves pending permissions with denied", () => {
     const manager = new AgentManager(mockWindow);
     const resolveMock = vi.fn();
+    // Access private field directly: no public seam for pending permissions,
+    // and driving through real IPC would require a full Electron process.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (manager as any).pendingPermissions.set("test-req", {
       resolve: resolveMock,
@@ -97,6 +99,7 @@ describe("AgentManager (integration)", () => {
     };
 
     const manager = new AgentManager(mockWindow);
+    // Access private field directly — no public API to inject a session without spawning a full agent.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (manager as any).sessions.set("thread-1", { provider: fakeProvider });
     manager.clearSession("thread-1");

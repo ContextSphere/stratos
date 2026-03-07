@@ -28,6 +28,6 @@ export default tseslint.config(
     }
   },
   {
-    ignores: ['**/dist/**', '**/out/**', '**/node_modules/**', '**/*.d.ts', '**/*.config.*']
+    ignores: ['**/dist/**', '**/out/**', '**/node_modules/**', '**/*.d.ts']
   }
 )
