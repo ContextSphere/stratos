@@ -10,6 +10,23 @@ pnpm --filter @agentpanel/desktop dev         # Dev mode with HMR
 pnpm --filter @agentpanel/desktop dev:debug   # Dev mode + CDP (port auto-derived from git root)
 ```
 
+## Testing
+
+```bash
+pnpm test                                          # Run all tests (core + ui + desktop)
+pnpm --filter @agentpanel/core test                # Core unit + integration tests only
+pnpm --filter @agentpanel/ui test                  # UI component tests only
+pnpm --filter @agentpanel/desktop test             # Desktop unit + integration tests only
+```
+
+**CI runs automatically** on every push via GitHub Actions (`.github/workflows/ci.yml`):
+
+- `lint` — ESLint across all packages
+- `typecheck` — `tsc --noEmit` after a full build
+- `test` — Vitest across all packages
+
+**Pre-commit hook** (Husky + lint-staged) runs `prettier --write` on staged `*.{ts,tsx,json,md}` files before every commit.
+
 ## Mandatory: Visually Verify Every UI Change
 
 **You MUST test every UI change using Chrome DevTools MCP before considering it done.** Do not ask the user to verify — verify it yourself.
@@ -33,6 +50,7 @@ take_snapshot
 ```
 
 **Rules:**
+
 - Every `take_snapshot` starts a new session. You MUST call it before any interaction.
 - After interacting, WAIT 2-5 seconds, then screenshot + snapshot to capture the updated state.
 - READ the screenshot image to confirm visual correctness. READ the snapshot text to confirm content/structure.
@@ -40,10 +58,13 @@ take_snapshot
 - **Typing into React inputs:** `fill` sets the DOM value but does NOT trigger React state updates. Use `evaluate_script` with native setter + `input` event:
   ```js
   (el) => {
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-    setter.call(el, 'your text here');
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  }
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value",
+    ).set;
+    setter.call(el, "your text here");
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  };
   ```
 - **InputBar is a `contentEditable` div (not a textarea):** Set `el.textContent` directly then dispatch `new Event('input', { bubbles: true })`.
 
@@ -75,25 +96,25 @@ take_snapshot
 
 Monorepo with 3 packages managed by pnpm workspaces + turborepo:
 
-| Package | Path | Description |
-|---------|------|-------------|
-| `@agentpanel/core` | `packages/core` | Provider abstraction, storage adapters, trace store, worktree utils |
-| `@agentpanel/ui` | `packages/ui` | React components, bridge system, hooks (zero Electron dependency) |
-| `@agentpanel/desktop` | `packages/desktop` | Electron shell, IPC bridge (60+ channels), preload, renderer |
+| Package               | Path               | Description                                                         |
+| --------------------- | ------------------ | ------------------------------------------------------------------- |
+| `@agentpanel/core`    | `packages/core`    | Provider abstraction, storage adapters, trace store, worktree utils |
+| `@agentpanel/ui`      | `packages/ui`      | React components, bridge system, hooks (zero Electron dependency)   |
+| `@agentpanel/desktop` | `packages/desktop` | Electron shell, IPC bridge (60+ channels), preload, renderer        |
 
 ## Key Files
 
-| Area | File |
-|------|------|
-| Electron main | `packages/desktop/src/main/index.ts` |
-| Agent manager | `packages/desktop/src/main/agent-manager.ts` |
-| IPC channels | `packages/desktop/src/common/ipc-channels.ts` |
-| Renderer entry | `packages/desktop/src/renderer/App.tsx` |
-| Chat hook | `packages/desktop/src/renderer/hooks/useChat.ts` |
+| Area            | File                                                  |
+| --------------- | ----------------------------------------------------- |
+| Electron main   | `packages/desktop/src/main/index.ts`                  |
+| Agent manager   | `packages/desktop/src/main/agent-manager.ts`          |
+| IPC channels    | `packages/desktop/src/common/ipc-channels.ts`         |
+| Renderer entry  | `packages/desktop/src/renderer/App.tsx`               |
+| Chat hook       | `packages/desktop/src/renderer/hooks/useChat.ts`      |
 | Claude provider | `packages/core/src/providers/claude-code.provider.ts` |
-| Storage adapter | `packages/core/src/storage/file-adapter.ts` |
-| Chat view | `packages/ui/src/components/ChatView.tsx` |
-| Bridge provider | `packages/ui/src/bridges/AgentPanelProvider.tsx` |
+| Storage adapter | `packages/core/src/storage/file-adapter.ts`           |
+| Chat view       | `packages/ui/src/components/ChatView.tsx`             |
+| Bridge provider | `packages/ui/src/bridges/AgentPanelProvider.tsx`      |
 
 ## NEVER Use pkill/killall on Electron
 
@@ -101,6 +122,7 @@ Monorepo with 3 packages managed by pnpm workspaces + turborepo:
 The user may be running inside ContextSphere (also Electron). Broad kills destroy everything.
 
 **To stop the AgentPanel dev instance:**
+
 ```bash
 # By CDP port (check console output for your port, or derive it — see CDP Configuration)
 lsof -ti :YOUR_CDP_PORT | xargs kill
@@ -116,13 +138,14 @@ kill $PID
 
 **Import rules:**
 
-| Package | Can import from | Must NOT import from |
-|---|---|---|
-| `ui` | React, shared types | `core` provider internals, `desktop`, Electron |
-| `core` | shared types | `ui`, `desktop`, React, DOM |
-| `desktop` | `ui`, `core` | — (glue layer, can import both) |
+| Package   | Can import from     | Must NOT import from                           |
+| --------- | ------------------- | ---------------------------------------------- |
+| `ui`      | React, shared types | `core` provider internals, `desktop`, Electron |
+| `core`    | shared types        | `ui`, `desktop`, React, DOM                    |
+| `desktop` | `ui`, `core`        | — (glue layer, can import both)                |
 
 **Package constraints:**
+
 - **`core` is pure TypeScript** — no React, no DOM, no Electron. Must work in Node, web, CLI.
 - **`ui` has zero Electron dependency** — works in any React app (web, Next.js, etc.). Platform capabilities come through the bridge system (`AgentPanelProvider` context), never direct imports.
 - **`desktop` is the glue layer** — wires `core` providers to `ui` components via IPC bridge. All Electron-specific code lives here.
