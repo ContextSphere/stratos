@@ -6,6 +6,8 @@ import { homedir } from 'os'
 import { IPC_CHANNELS } from '../common/ipc-channels'
 import {
   ClaudeCodeProvider,
+  CodexProvider,
+  createProvider,
   FileStorageAdapter,
   appendTraceEntry,
   normalizeMode,
@@ -17,7 +19,8 @@ import type {
   AgentProvider,
   AgentMessage,
   PermissionHandler,
-  SendMessageParams
+  SendMessageParams,
+  ProviderType
 } from '@agentpanel/core'
 import { loadSettings } from './settings/settings.store'
 
@@ -130,8 +133,8 @@ export class AgentManager {
       }
     })
 
-    ipcMain.handle(IPC_CHANNELS.GET_AVAILABLE_MODELS, async () => {
-      const provider = new ClaudeCodeProvider()
+    ipcMain.handle(IPC_CHANNELS.GET_AVAILABLE_MODELS, async (_event, providerName?: string) => {
+      const provider = createProvider(providerName ?? 'claude-code')
       const settings = loadSettings()
       await provider.initialize({
         cliPath: settings.cliPath as string | undefined
@@ -259,15 +262,18 @@ export class AgentManager {
     // Get or create a session for this thread
     let session = this.sessions.get(threadId)
     if (!session) {
-      const provider = new ClaudeCodeProvider()
+      const providerName = thread.provider ?? 'claude-code'
+      const provider = createProvider(providerName)
       const settings = loadSettings()
       const threadCwd = thread.cwd ?? process.env.HOME!
       const mcpServers = buildMcpServers(threadCwd)
       await provider.initialize({
-        cliPath: settings.cliPath as string | undefined,
+        ...(providerName === 'claude-code' ? {
+          cliPath: settings.cliPath as string | undefined,
+          settingSources: ['project', 'user'] as ('project' | 'user')[],
+        } : {}),
         model: thread.model,
         cwd: threadCwd,
-        settingSources: ['project', 'user'],
         ...(mcpServers ? { mcpServers } : {})
       })
       session = { provider, sessionId: thread.sessionId }

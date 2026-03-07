@@ -1,11 +1,18 @@
 import type { AgentMode } from '../types/thread'
-import type { AgentDefinition as SDKAgentDefinition } from '@anthropic-ai/claude-agent-sdk'
 
 /** Read-only tools allowed in plan mode (provider-agnostic) */
 export const READ_ONLY_TOOLS = ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'] as const
 
-/** Re-export SDK's AgentDefinition for type consistency */
-export type AgentDefinition = SDKAgentDefinition
+/**
+ * Agent definition for sub-agents.
+ * Compatible with @anthropic-ai/claude-agent-sdk's AgentDefinition.
+ */
+export interface AgentDefinition {
+  model?: string
+  systemPrompt?: string
+  tools?: string[]
+  [key: string]: unknown
+}
 
 /**
  * Provider abstraction for AI coding agents.
@@ -97,6 +104,8 @@ export interface ProviderConfig {
   agents?: Record<string, AgentDefinition>
   /** Path to the Claude Code CLI executable (for packaged Electron builds) */
   cliPath?: string
+  /** Codex sandbox policy (default: 'workspace-write') */
+  sandboxPolicy?: 'read-only' | 'workspace-write' | 'danger-full-access'
 }
 
 export interface TokenUsage {

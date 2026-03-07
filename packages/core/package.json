@@ -13,10 +13,12 @@
     "lint": "eslint src/"
   },
   "peerDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.66"
+    "@anthropic-ai/claude-agent-sdk": "^0.2.66",
+    "@openai/codex-sdk": "^0.111.0"
   },
   "devDependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.66",
+    "@openai/codex-sdk": "^0.111.0",
     "@types/node": "^25.2.3",
     "vitest": "^4.0.18",
     "typescript": "^5.9.3"

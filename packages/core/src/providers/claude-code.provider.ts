@@ -60,7 +60,8 @@ export class ClaudeCodeProvider implements AgentProvider {
       ...(params.sessionId ? { resume: params.sessionId } : {}),
       ...(hasMcpServers ? { mcpServers: this.config.mcpServers } : {}),
       ...(this.config.plugins?.length ? { plugins: this.config.plugins } : {}),
-      ...(this.config.agents ? { agents: this.config.agents } : {}),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...(this.config.agents ? { agents: this.config.agents as any } : {}),
       permissionMode: modeConfig.sdkPermissionMode as
         'plan' | 'default' | 'acceptEdits' | 'bypassPermissions',
       ...(isBypass ? { allowDangerouslySkipPermissions: true } : {}),

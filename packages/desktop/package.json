@@ -22,6 +22,7 @@
     "@agentpanel/core": "workspace:*",
     "@agentpanel/ui": "workspace:*",
     "@anthropic-ai/claude-agent-sdk": "^0.2.66",
+    "@openai/codex-sdk": "^0.111.0",
     "@monaco-editor/react": "^4.7.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

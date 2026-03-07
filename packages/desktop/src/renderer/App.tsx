@@ -16,6 +16,7 @@ import {
   ModelSelector,
   ModeToggle,
   WorktreeToggle,
+  ProviderToggle,
 } from '@agentpanel/ui'
 
 import { Group, Panel, Separator } from 'react-resizable-panels'
@@ -67,6 +68,7 @@ export default function App(): React.ReactElement {
   const [showGitHubDialog, setShowGitHubDialog] = useState(false)
   const [showSettingsDialog, setShowSettingsDialog] = useState(false)
   const [pendingMode, setPendingMode] = useState<AgentMode>()
+  const [pendingProvider, setPendingProvider] = useState<'claude-code' | 'codex'>('claude-code')
   const [pendingAdditionalCwds, setPendingAdditionalCwds] = useState<string[]>([])
   const [homeDir, setHomeDir] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -105,7 +107,7 @@ export default function App(): React.ReactElement {
   const handleCreateThread = useCallback(async () => {
     const result = await window.api.selectDirectory()
     if (result.canceled || !result.path) return
-    const thread = await createThread('New chat', undefined, result.path)
+    const thread = await createThread('New chat', undefined, result.path, pendingProvider)
     // Detect git repo and set default worktree mode
     const isGit = await window.api.checkIsGitRepo(result.path)
     if (isGit) {
@@ -114,7 +116,7 @@ export default function App(): React.ReactElement {
     }
     await setActiveThreadId(thread.id)
     inputRef.current?.focus()
-  }, [createThread, setActiveThreadId, refreshThreads])
+  }, [createThread, setActiveThreadId, refreshThreads, pendingProvider])
 
   const handleDeleteThread = useCallback(
     async (id: string) => {
@@ -130,7 +132,7 @@ export default function App(): React.ReactElement {
       if (!threadId) {
         const result = await window.api.selectDirectory()
         if (result.canceled || !result.path) return
-        const thread = await createThread('New chat', undefined, result.path)
+        const thread = await createThread('New chat', undefined, result.path, pendingProvider)
         threadId = thread.id
         const updates: Record<string, unknown> = {}
         if (pendingMode) {
@@ -156,7 +158,7 @@ export default function App(): React.ReactElement {
       }
       await sendMessage(prompt, threadId, images)
     },
-    [activeThreadId, createThread, sendMessage, pendingMode, pendingAdditionalCwds],
+    [activeThreadId, createThread, sendMessage, pendingMode, pendingAdditionalCwds, pendingProvider],
   )
 
   const handleModelChange = useCallback(
@@ -217,6 +219,18 @@ export default function App(): React.ReactElement {
         return
       }
       await window.api.threadsUpdate(activeThreadId, { mode })
+      await refreshThreads()
+    },
+    [activeThreadId, refreshThreads],
+  )
+
+  const handleProviderChange = useCallback(
+    async (provider: 'claude-code' | 'codex') => {
+      if (!activeThreadId) {
+        setPendingProvider(provider)
+        return
+      }
+      await window.api.threadsUpdate(activeThreadId, { provider })
       await refreshThreads()
     },
     [activeThreadId, refreshThreads],
@@ -413,18 +427,28 @@ export default function App(): React.ReactElement {
               slashCommands={slashCommands}
             />
 
-            {/* Toolbar: model + mode */}
+            {/* Toolbar: provider + model + mode */}
             <div className="flex-shrink-0 bg-[#0f0f0f] px-4 pb-2">
               <div className="flex items-center justify-between">
-                <ModelSelector
-                  selectedModel={activeThread?.model}
-                  onModelChange={handleModelChange}
-                  thinkingEffort={activeThread?.thinkingEffort}
-                  onThinkingEffortChange={handleThinkingEffortChange}
-                  onFetchModels={() => window.api.getAvailableModels()}
-                  isOpen={modelPickerOpen}
-                  onOpenChange={setModelPickerOpen}
-                />
+                <div className="flex items-center gap-2">
+                  <ProviderToggle
+                    provider={(activeThread?.provider as 'claude-code' | 'codex') ?? pendingProvider}
+                    onProviderChange={handleProviderChange}
+                    disabled={isStreaming}
+                  />
+                  <span className="text-xs text-gray-700">|</span>
+                  <ModelSelector
+                    selectedModel={activeThread?.model}
+                    onModelChange={handleModelChange}
+                    thinkingEffort={activeThread?.thinkingEffort}
+                    onThinkingEffortChange={handleThinkingEffortChange}
+                    onFetchModels={() => window.api.getAvailableModels(
+                      (activeThread?.provider as string) ?? pendingProvider
+                    )}
+                    isOpen={modelPickerOpen}
+                    onOpenChange={setModelPickerOpen}
+                  />
+                </div>
                 <ModeToggle
                   mode={activeThread?.mode ? normalizeMode(activeThread.mode) : pendingMode}
                   onModeChange={handleModeChange}

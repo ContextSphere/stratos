@@ -34,8 +34,8 @@ export function registerThreadIpc(): void {
     return storage.setActiveThreadId(threadId)
   })
 
-  ipcMain.handle(IPC_CHANNELS.THREADS_CREATE, async (_event, title?: string, model?: string, cwd?: string) => {
-    const thread = await storage.createThread(title, model, cwd)
+  ipcMain.handle(IPC_CHANNELS.THREADS_CREATE, async (_event, title?: string, model?: string, cwd?: string, provider?: string) => {
+    const thread = await storage.createThread(title, model, cwd, provider)
     return thread
   })
 
@@ -99,9 +99,9 @@ export function registerThreadIpc(): void {
     await storage.updateThread(threadId, { worktree: undefined })
   })
 
-  ipcMain.handle(IPC_CHANNELS.THREADS_UPDATE, async (_event, threadId: string, updates: { title?: string; model?: string; cwd?: string; thinkingEffort?: 'low' | 'medium' | 'high' | 'max'; mode?: AgentMode; additionalCwds?: string[]; isGitRepo?: boolean; worktreeMode?: 'local' | 'worktree' }) => {
-    // Clear session on cwd or mode change
-    if (updates.cwd !== undefined || updates.mode !== undefined) {
+  ipcMain.handle(IPC_CHANNELS.THREADS_UPDATE, async (_event, threadId: string, updates: { title?: string; model?: string; cwd?: string; thinkingEffort?: 'low' | 'medium' | 'high' | 'max'; mode?: AgentMode; additionalCwds?: string[]; isGitRepo?: boolean; worktreeMode?: 'local' | 'worktree'; provider?: string }) => {
+    // Clear session on cwd, mode, or provider change
+    if (updates.cwd !== undefined || updates.mode !== undefined || updates.provider !== undefined) {
       clearSessionFn?.(threadId)
     }
     return storage.updateThread(threadId, updates)

@@ -21,11 +21,16 @@ export interface ThreadWorktree {
   sourceRepoPath: string
 }
 
+/** Supported provider identifiers */
+export type ProviderType = 'claude-code' | 'codex'
+
 export interface Thread {
   id: string
   title: string
   createdAt: number
   updatedAt: number
+  /** Provider backend for this thread (default: 'claude-code') */
+  provider?: ProviderType
   model?: string
   cwd?: string
   thinkingEffort?: 'low' | 'medium' | 'high' | 'max'

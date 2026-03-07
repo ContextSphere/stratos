@@ -1,5 +1,5 @@
 // Types
-export type { Thread, StoredMessage, StoredToolCall, AgentMode, ThreadWorktree, WorktreeProgressStep, WorktreeProgressData, StoredImageAttachment } from './types/thread'
+export type { Thread, StoredMessage, StoredToolCall, AgentMode, ProviderType, ThreadWorktree, WorktreeProgressStep, WorktreeProgressData, StoredImageAttachment } from './types/thread'
 export { normalizeMode } from './types/thread'
 export type { ModeConfig } from './types/mode'
 export { MODE_CONFIGS, AGENT_MODES } from './types/mode'
@@ -8,6 +8,7 @@ export { MODE_CONFIGS, AGENT_MODES } from './types/mode'
 export type { AgentProvider, AgentMessage, ProviderConfig, SendMessageParams, AgentDefinition, PermissionHandler, TokenUsage, ModelInfo, TodoItem } from './providers/types'
 export { READ_ONLY_TOOLS } from './providers/types'
 export { ClaudeCodeProvider } from './providers/claude-code.provider'
+export { CodexProvider } from './providers/codex.provider'
 export { createProvider, getAvailableProviders } from './providers/index'
 
 // Storage
