@@ -1,13 +1,16 @@
 import { execFileSync } from 'child_process'
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'path'
-import { is } from '@electron-toolkit/utils'
+
 
 // Fix PATH for packaged macOS apps
 // Always strip CLAUDECODE to prevent nested-session detection by the SDK
 delete process.env.CLAUDECODE
 
-if (app.isPackaged && process.platform === 'darwin') {
+// electron-vite sets ELECTRON_RENDERER_URL in dev mode; app.isPackaged is unreliable
+// when the Electron binary is renamed (e.g., for dock name patching)
+const isDev = !!process.env.ELECTRON_RENDERER_URL || !app.isPackaged
+if (!isDev && process.platform === 'darwin') {
   try {
     const userShell = process.env.SHELL || '/bin/zsh'
     const result = execFileSync(userShell, ['-ilc', 'echo -n "$PATH"'], {
@@ -32,7 +35,7 @@ import { getWorktreeInfo } from '@agentpanel/core'
 import { generateDockIcon } from './dock-icon'
 
 // Worktree instance isolation (automatic in dev mode, like ContextSphere)
-const worktree = app.isPackaged ? null : getWorktreeInfo()
+const worktree = isDev ? getWorktreeInfo() : null
 if (worktree) {
   app.setPath('userData', worktree.userDataPath)
   app.name = `agentpanel-${worktree.hash}`
@@ -97,7 +100,7 @@ if (!gotLock) {
 
     mainWindow.on('ready-to-show', () => {
       mainWindow!.show()
-      if (is.dev) {
+      if (isDev) {
         mainWindow!.webContents.openDevTools({ mode: 'detach' })
         if (worktree) {
           console.log(`[worktree] name=${worktree.name} hash=${worktree.hash}`)
@@ -128,7 +131,7 @@ if (!gotLock) {
       return { action: 'deny' }
     })
 
-    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    if (isDev && process.env['ELECTRON_RENDERER_URL']) {
       mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
     } else {
       mainWindow.loadFile(join(__dirname, '../renderer/index.html'))

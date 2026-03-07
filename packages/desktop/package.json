@@ -15,7 +15,8 @@
     "lint": "eslint src/",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:mac": "electron-vite build && electron-builder --mac"
+    "build:mac": "electron-vite build && electron-builder --mac",
+    "postinstall": "bash scripts/patch-electron-name.sh"
   },
   "dependencies": {
     "@agentpanel/core": "workspace:*",
