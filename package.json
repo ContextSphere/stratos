@@ -2,7 +2,7 @@
   "name": "agentpanel",
   "private": true,
   "scripts": {
-    "dev": "turbo dev --filter=@agentpanel/desktop",
+    "dev": "turbo dev --filter=@agentpanel/core --filter=@agentpanel/ui --filter=@agentpanel/desktop",
     "build": "turbo build",
     "test": "turbo test",
     "typecheck": "turbo typecheck",
