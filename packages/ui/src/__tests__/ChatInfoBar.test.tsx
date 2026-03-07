@@ -7,7 +7,7 @@ describe("ChatInfoBar", () => {
     cleanup();
   });
 
-  it("renders stats icon and tooltip content when session stats exist", () => {
+  it("renders the working directory bar without a stats icon (stats moved to bottom toolbar)", () => {
     render(
       <ChatInfoBar
         additionalCwds={[]}
@@ -23,13 +23,8 @@ describe("ChatInfoBar", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Session stats")).toBeInTheDocument();
-    expect(screen.getByText("Context")).toBeInTheDocument();
-    expect(screen.getByText("50%")).toBeInTheDocument();
-    expect(screen.getByText("Cost")).toBeInTheDocument();
-    expect(screen.getByText("$2.34")).toBeInTheDocument();
-    expect(screen.getByText("Tokens")).toBeInTheDocument();
-    expect(screen.getByText("1.3k")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Session stats")).not.toBeInTheDocument();
+    expect(screen.getByText("Working directory")).toBeInTheDocument();
   });
 
   it("does not render stats icon when session stats are empty", () => {
