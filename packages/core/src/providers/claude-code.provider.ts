@@ -32,21 +32,18 @@ export class ClaudeCodeProvider implements AgentProvider {
     const modeConfig = MODE_CONFIGS[mode]
     const isPlanMode = mode === 'plan'
 
-    const baseTools = isPlanMode
+    // `tools` controls built-in tools only. MCP tools from auto-discovered
+    // servers (via settingSources) and explicit mcpServers are handled
+    // separately by the SDK/CLI.
+    const tools = isPlanMode
       ? [...READ_ONLY_TOOLS]
       : [...(this.config.allowedTools ?? DEFAULT_TOOLS)]
-    const allowedTools = [...baseTools]
-    if (hasMcpServers) {
-      for (const serverName of Object.keys(this.config.mcpServers!)) {
-        allowedTools.push(`mcp__${serverName}__*`)
-      }
-    }
 
     const isBypass = mode === 'bypassPermissions'
     const cliPath = this.config.cliPath
 
     const options = {
-      tools: allowedTools,
+      tools,
       ...(cliPath ? { pathToClaudeCodeExecutable: cliPath } : {}),
       ...(params.model ?? this.config.model ? { model: params.model ?? this.config.model } : {}),
       cwd: params.cwd ?? this.config.cwd ?? process.env.HOME,

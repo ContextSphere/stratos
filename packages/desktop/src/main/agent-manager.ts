@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain, Notification } from "electron";
 import { execSync } from "child_process";
-import { existsSync, readFileSync, mkdirSync } from "fs";
+import { mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { IPC_CHANNELS } from "../common/ipc-channels";
@@ -23,59 +23,49 @@ import { loadSettings } from "./settings/settings.store";
 import { resolveToolBehavior } from "./agent-session-logic";
 
 /**
- * Build MCP servers for an agent session.
- * 1. Reads .mcp.json from the thread's cwd (project-level MCP servers).
- * 2. Dynamically adds chrome-devtools when the thread targets a different
- *    worktree than the one this app is running in (cross-worktree debugging).
+ * Build explicit MCP servers for an agent session.
+ *
+ * Project-level (.mcp.json) and user-level (~/.claude/.mcp.json) servers are
+ * auto-discovered by the SDK via `settingSources`, so we
+ * only need to inject servers that can't be statically configured — currently
+ * just chrome-devtools for cross-worktree debugging.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildMcpServers(cwd: string): Record<string, any> | undefined {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const servers: Record<string, any> = {};
+  // Add chrome-devtools for cross-worktree debugging (ContextSphere pattern)
+  if (!process.env.AGENTPANEL_WORKTREE) return undefined;
 
-  // 1. Load project-level .mcp.json
-  const mcpPath = join(cwd, ".mcp.json");
-  if (existsSync(mcpPath)) {
+  try {
+    let targetRoot: string;
     try {
-      const data = JSON.parse(readFileSync(mcpPath, "utf-8"));
-      if (data.mcpServers) {
-        Object.assign(servers, data.mcpServers);
-      }
-    } catch {}
-  }
+      targetRoot = execSync("git rev-parse --show-toplevel", {
+        cwd,
+        encoding: "utf-8",
+        timeout: 3000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+    } catch {
+      targetRoot = cwd;
+    }
+    const targetHash = deriveHash(targetRoot);
+    const selfHash = getWorktreeInfo().hash;
 
-  // 2. Add chrome-devtools for cross-worktree debugging (ContextSphere pattern)
-  if (process.env.AGENTPANEL_WORKTREE) {
-    try {
-      let targetRoot: string;
-      try {
-        targetRoot = execSync("git rev-parse --show-toplevel", {
-          cwd,
-          encoding: "utf-8",
-          timeout: 3000,
-          stdio: ["pipe", "pipe", "pipe"],
-        }).trim();
-      } catch {
-        targetRoot = cwd;
-      }
-      const targetHash = deriveHash(targetRoot);
-      const selfHash = getWorktreeInfo().hash;
-
-      // Only add chrome-devtools when targeting a different worktree
-      if (targetHash !== selfHash) {
-        const cdpPort = derivePort(targetHash, 9200, 9999);
-        servers["chrome-devtools"] = {
+    // Only add chrome-devtools when targeting a different worktree
+    if (targetHash !== selfHash) {
+      const cdpPort = derivePort(targetHash, 9200, 9999);
+      return {
+        "chrome-devtools": {
           command: "npx",
           args: [
             "chrome-devtools-mcp",
             `--browser-url=http://127.0.0.1:${cdpPort}`,
           ],
-        };
-      }
-    } catch {}
-  }
+        },
+      };
+    }
+  } catch {}
 
-  return Object.keys(servers).length > 0 ? servers : undefined;
+  return undefined;
 }
 
 function safeLog(fn: (...args: unknown[]) => void, ...args: unknown[]) {
@@ -384,7 +374,7 @@ export class AgentManager {
         cliPath: settings.cliPath as string | undefined,
         model: thread.model,
         cwd: threadCwd,
-        settingSources: ["project", "user"],
+        settingSources: ["project", "user", "local"],
         ...(mcpServers ? { mcpServers } : {}),
       });
       session = { provider, sessionId: thread.sessionId };
@@ -653,7 +643,7 @@ export class AgentManager {
     const settings = loadSettings();
     await provider.initialize({
       cliPath: settings.cliPath as string | undefined,
-      settingSources: ["project", "user"],
+      settingSources: ["project", "user", "local"],
     });
     try {
       const commands = await provider.discoverSlashCommands();
