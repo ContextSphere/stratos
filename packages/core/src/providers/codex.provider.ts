@@ -8,47 +8,7 @@ import type {
 
 import { spawn, type ChildProcess } from 'child_process'
 import * as readline from 'readline'
-import { createRequire } from 'module'
 import * as path from 'path'
-
-/**
- * Known Codex-compatible models.
- * The Codex SDK doesn't expose a model discovery API,
- * so we maintain a curated list. These work with both
- * ChatGPT auth and API key auth.
- */
-const CODEX_MODELS: ModelInfo[] = [
-  {
-    value: 'gpt-5.3-codex',
-    displayName: 'GPT-5.3 Codex',
-    description: 'Latest frontier agentic coding model'
-  },
-  {
-    value: 'gpt-5.2-codex',
-    displayName: 'GPT-5.2 Codex',
-    description: 'Advanced agentic coding model'
-  },
-  {
-    value: 'gpt-5.1-codex',
-    displayName: 'GPT-5.1 Codex',
-    description: 'Agentic coding model with deep reasoning'
-  },
-  {
-    value: 'gpt-5.1-codex-mini',
-    displayName: 'GPT-5.1 Codex Mini',
-    description: 'Fast, lightweight coding model'
-  },
-  {
-    value: 'gpt-5.4',
-    displayName: 'GPT-5.4',
-    description: 'Latest general-purpose model'
-  },
-  {
-    value: 'gpt-5.2',
-    displayName: 'GPT-5.2',
-    description: 'General-purpose model with coding capabilities'
-  }
-]
 
 /**
  * Find the Codex CLI binary shipped with @openai/codex via @openai/codex-sdk.
@@ -77,20 +37,6 @@ function findCodexBinary(): string {
   }
   if (!targetTriple) {
     throw new Error(`Unsupported platform: ${platform} (${arch})`)
-  }
-
-  const platformPackage: Record<string, string> = {
-    'x86_64-unknown-linux-musl': '@openai/codex-linux-x64',
-    'aarch64-unknown-linux-musl': '@openai/codex-linux-arm64',
-    'x86_64-apple-darwin': '@openai/codex-darwin-x64',
-    'aarch64-apple-darwin': '@openai/codex-darwin-arm64',
-    'x86_64-pc-windows-msvc': '@openai/codex-win32-x64',
-    'aarch64-pc-windows-msvc': '@openai/codex-win32-arm64'
-  }
-
-  const pkgName = platformPackage[targetTriple]
-  if (!pkgName) {
-    throw new Error(`No platform package for: ${targetTriple}`)
   }
 
   const binaryName = process.platform === 'win32' ? 'codex.exe' : 'codex'
@@ -145,22 +91,86 @@ function findCodexBinary(): string {
 }
 
 /**
+ * Map AgentPanel thinking effort to Codex reasoning effort.
+ *
+ * AgentPanel: 'low' | 'medium' | 'high' | 'max'
+ * Codex:      'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+ */
+function mapThinkingEffort(effort?: string): string | undefined {
+  switch (effort) {
+    case 'low': return 'low'
+    case 'medium': return 'medium'
+    case 'high': return 'high'
+    case 'max': return 'xhigh'
+    default: return undefined
+  }
+}
+
+/**
+ * Map AgentPanel mode to Codex approval policy and sandbox mode.
+ *
+ * Claude Code modes → Codex equivalents:
+ *
+ * plan              → read-only sandbox, never ask (sandbox enforces read-only)
+ * default           → workspace-write, untrusted (ask approval for everything)
+ * acceptEdits       → workspace-write, on-request (auto-accept file edits, prompt for commands)
+ * bypassPermissions → danger-full-access, never (auto-approve everything)
+ *
+ * Codex approval policy semantics:
+ *   untrusted  — always ask for approval (most restrictive, matches Claude "default")
+ *   on-request — ask when the model explicitly requests it (matches Claude "acceptEdits")
+ *   on-failure — ask only when something fails
+ *   never      — never ask, auto-approve everything (matches Claude "bypassPermissions")
+ */
+function mapModeToPolicy(mode?: string, configSandbox?: string): {
+  approvalPolicy: string
+  sandbox: string
+} {
+  switch (mode) {
+    case 'plan':
+      return { approvalPolicy: 'never', sandbox: 'read-only' }
+    case 'default':
+      return { approvalPolicy: 'untrusted', sandbox: configSandbox ?? 'workspace-write' }
+    case 'acceptEdits':
+      return { approvalPolicy: 'on-request', sandbox: configSandbox ?? 'workspace-write' }
+    case 'bypassPermissions':
+      return { approvalPolicy: 'never', sandbox: 'danger-full-access' }
+    default:
+      return { approvalPolicy: 'untrusted', sandbox: configSandbox ?? 'workspace-write' }
+  }
+}
+
+/**
  * OpenAI Codex provider implementation.
  *
- * Uses the Codex **app-server** protocol (JSON-RPC over stdio) which supports
+ * Uses the Codex **app-server** protocol (JSON-RPC 2.0 over stdio) which supports
  * true token-by-token text streaming via `item/agentMessage/delta` notifications.
  *
  * Protocol flow:
- *   initialize → thread/start → turn/start → listen for notifications
+ *   initialize → initialized (notification) → thread/start → turn/start → listen for notifications
  *
- * The older `codex exec --experimental-json` mode (used by @openai/codex-sdk)
- * does NOT support text streaming — it only emits item.completed with full text.
- * The app-server protocol solves this.
+ * Features implemented:
+ * - Text streaming via `item/agentMessage/delta`
+ * - Reasoning streaming via `item/reasoning/summaryTextDelta` and `item/reasoning/textDelta`
+ * - Command execution with output streaming via `item/commandExecution/outputDelta`
+ * - File change streaming via `item/fileChange/outputDelta`
+ * - Plan streaming via `item/plan/delta`
+ * - Approval handling via `item/commandExecution/requestApproval` and `item/fileChange/requestApproval`
+ * - Dynamic model discovery via `model/list` RPC
+ * - Thread resume via `thread/resume`
+ * - Image input support via `localImage` UserInput type
+ * - Thinking effort mapping
+ * - Mode support (plan/default/acceptEdits/bypassPermissions)
+ * - System prompt passthrough via `baseInstructions`/`developerInstructions`
+ * - Token usage and context window tracking
+ * - Turn status handling (completed/interrupted/failed)
+ * - Skills discovery via `skills/list`
  */
 export class CodexProvider implements AgentProvider {
   readonly name = 'codex'
   private config: ProviderConfig = {}
   private threadId?: string
+  private turnId?: string
   private appServer?: ChildProcess
   private rl?: readline.Interface
   private rpcId = 0
@@ -171,9 +181,17 @@ export class CodexProvider implements AgentProvider {
   private pendingRpc = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>()
   /** Notification queue for streaming events during a turn */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private notificationQueue: Array<{ method: string; params: any }> = []
+  private notificationQueue: Array<{ method: string; params: any; id?: number }> = []
   /** Resolves when a new notification arrives */
   private notificationResolve?: () => void
+  /** Cached dynamic model list */
+  private cachedModels?: ModelInfo[]
+  /** Track command output streaming per item */
+  private commandOutputBuffers = new Map<string, string>()
+  /** Track file change output streaming per item */
+  private fileChangeOutputBuffers = new Map<string, string>()
+  /** Track reasoning streaming per item */
+  private reasoningBuffers = new Map<string, { summary: string; content: string }>()
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config
@@ -197,6 +215,25 @@ export class CodexProvider implements AgentProvider {
   }
 
   /**
+   * Send a JSON-RPC notification (no id, no response expected).
+   */
+  private sendNotification(method: string, params: Record<string, unknown> = {}): void {
+    if (!this.appServer?.stdin) return
+    const msg = JSON.stringify({ jsonrpc: '2.0', method, params })
+    this.appServer.stdin.write(msg + '\n')
+  }
+
+  /**
+   * Send a JSON-RPC response to a server request (approval callbacks, etc.).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private sendResponse(id: number, result: any): void {
+    if (!this.appServer?.stdin) return
+    const msg = JSON.stringify({ jsonrpc: '2.0', id, result })
+    this.appServer.stdin.write(msg + '\n')
+  }
+
+  /**
    * Start the app-server process if not already running.
    */
   private async ensureAppServer(): Promise<void> {
@@ -212,6 +249,7 @@ export class CodexProvider implements AgentProvider {
       this.appServer = undefined
       this.initialized = false
       this.threadId = undefined
+      this.turnId = undefined
     })
 
     // Ignore stderr (logging noise)
@@ -227,7 +265,7 @@ export class CodexProvider implements AgentProvider {
       try {
         const msg = JSON.parse(line)
 
-        // JSON-RPC response
+        // JSON-RPC response (has id, no method)
         if (msg.id !== undefined && !msg.method) {
           const pending = this.pendingRpc.get(msg.id)
           if (pending) {
@@ -241,9 +279,14 @@ export class CodexProvider implements AgentProvider {
           return
         }
 
-        // JSON-RPC notification
+        // JSON-RPC server request (has both id and method) — e.g., approval requests
+        // or JSON-RPC notification (has method, no id)
         if (msg.method) {
-          this.notificationQueue.push({ method: msg.method, params: msg.params ?? {} })
+          this.notificationQueue.push({
+            method: msg.method,
+            params: msg.params ?? {},
+            id: msg.id // present for server requests, undefined for notifications
+          })
           if (this.notificationResolve) {
             this.notificationResolve()
             this.notificationResolve = undefined
@@ -260,6 +303,8 @@ export class CodexProvider implements AgentProvider {
         clientInfo: { name: 'agentpanel', title: 'AgentPanel', version: '0.1.0' },
         capabilities: { experimentalApi: false }
       })
+      // Send the `initialized` notification as required by the protocol handshake
+      this.sendNotification('initialized')
       this.initialized = true
     }
   }
@@ -268,7 +313,7 @@ export class CodexProvider implements AgentProvider {
    * Wait for the next notification, or return immediately if one is queued.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async waitForNotification(): Promise<{ method: string; params: any } | null> {
+  private async waitForNotification(): Promise<{ method: string; params: any; id?: number } | null> {
     if (this.notificationQueue.length > 0) {
       return this.notificationQueue.shift()!
     }
@@ -281,6 +326,36 @@ export class CodexProvider implements AgentProvider {
         }
       }
     })
+  }
+
+  /**
+   * Build the UserInput array for a turn/start request.
+   * Supports text and images (via localImage type).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private buildUserInput(params: SendMessageParams): any[] {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inputs: any[] = []
+
+    // Text input
+    if (params.prompt) {
+      inputs.push({ type: 'text', text: params.prompt, text_elements: [] })
+    }
+
+    // Image inputs — use localImage for file paths, image for data URLs
+    if (params.images && params.images.length > 0) {
+      for (const img of params.images) {
+        if (img.dataUrl.startsWith('data:')) {
+          // Data URL — use the URL directly as image type
+          inputs.push({ type: 'image', url: img.dataUrl })
+        } else {
+          // File path
+          inputs.push({ type: 'localImage', path: img.dataUrl })
+        }
+      }
+    }
+
+    return inputs
   }
 
   async *sendMessage(params: SendMessageParams): AsyncGenerator<AgentMessage> {
@@ -298,15 +373,20 @@ export class CodexProvider implements AgentProvider {
     }
 
     const model = params.model ?? this.config.model
-    const sandboxPolicy = this.config.sandboxPolicy ?? 'workspace-write'
+    const mode = params.mode ?? 'default'
+    const { approvalPolicy, sandbox } = mapModeToPolicy(mode, this.config.sandboxPolicy)
+    const effort = mapThinkingEffort(params.thinkingEffort)
 
-    // Start a new thread if we don't have one
+    // Determine if we should resume or start a new thread
+    const shouldResume = params.sessionId && this.threadId && params.sessionId === this.threadId
+
     if (!this.threadId) {
+      // Start a new thread
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const threadStartParams: Record<string, any> = {
-          approvalPolicy: 'never',
-          sandbox: sandboxPolicy,
+          approvalPolicy,
+          sandbox,
           experimentalRawEvents: false,
           persistExtendedHistory: false
         }
@@ -314,12 +394,19 @@ export class CodexProvider implements AgentProvider {
         if (params.cwd ?? this.config.cwd) {
           threadStartParams.cwd = params.cwd ?? this.config.cwd
         }
+        // Pass system prompt as base/developer instructions
+        if (this.config.systemPrompt) {
+          if (typeof this.config.systemPrompt === 'string') {
+            threadStartParams.developerInstructions = this.config.systemPrompt
+          } else if (this.config.systemPrompt.type === 'preset' && this.config.systemPrompt.append) {
+            threadStartParams.developerInstructions = this.config.systemPrompt.append
+          }
+        }
 
         const result = await this.sendRpc('thread/start', threadStartParams)
-        // Thread ID comes from response or from thread/started notification
         this.threadId = result?.thread?.id
 
-        // Drain any notifications emitted during thread start (thread/started, mcp_startup, etc.)
+        // Drain any notifications emitted during thread start
         while (this.notificationQueue.length > 0) {
           const notif = this.notificationQueue.shift()!
           if (notif.method === 'thread/started' && notif.params?.thread?.id) {
@@ -331,6 +418,9 @@ export class CodexProvider implements AgentProvider {
         yield { type: 'error', message: `Failed to start thread: ${errMsg}`, code: 'CODEX_THREAD_ERROR' }
         return
       }
+    } else if (shouldResume) {
+      // Thread already exists and matches sessionId — we can send another turn.
+      // The thread is already started, so we just start a new turn below.
     }
 
     if (!this.threadId) {
@@ -349,16 +439,26 @@ export class CodexProvider implements AgentProvider {
       }
     }
 
-    // Clear notification queue before starting turn
+    // Clear notification queue and streaming buffers before starting turn
     this.notificationQueue = []
+    this.commandOutputBuffers.clear()
+    this.fileChangeOutputBuffers.clear()
+    this.reasoningBuffers.clear()
+
+    // Build turn parameters
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const turnParams: Record<string, any> = {
+      threadId: this.threadId,
+      input: this.buildUserInput(params)
+    }
+    if (model) turnParams.model = model
+    if (effort) turnParams.effort = effort
+    if (params.cwd) turnParams.cwd = params.cwd
 
     // Start a turn
     try {
-      await this.sendRpc('turn/start', {
-        threadId: this.threadId,
-        input: [{ type: 'text', text: params.prompt, text_elements: [] }],
-        ...(model ? { model } : {})
-      })
+      const turnResult = await this.sendRpc('turn/start', turnParams)
+      this.turnId = turnResult?.turn?.id
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err)
       yield { type: 'error', message: `Failed to start turn: ${errMsg}`, code: 'CODEX_TURN_ERROR' }
@@ -366,15 +466,22 @@ export class CodexProvider implements AgentProvider {
     }
 
     // Listen for notifications until turn completes
+    yield* this.processTurnNotifications(params)
+  }
+
+  /**
+   * Process all notifications for the current turn until completion.
+   */
+  private async *processTurnNotifications(params: SendMessageParams): AsyncGenerator<AgentMessage> {
     let turnComplete = false
     let streamingText = ''
-    let currentItemId: string | undefined
+    let streamingReasoning = ''
 
     while (!turnComplete) {
       const notif = await this.waitForNotification()
       if (!notif) continue
 
-      const { method, params: p } = notif
+      const { method, params: p, id: requestId } = notif
 
       if (params.traceCallback) {
         params.traceCallback({
@@ -386,198 +493,538 @@ export class CodexProvider implements AgentProvider {
       }
 
       switch (method) {
-        // *** Text streaming delta — the key event ***
+        // =====================
+        // TEXT STREAMING
+        // =====================
         case 'item/agentMessage/delta': {
           const delta = p.delta ?? ''
           if (delta) {
             streamingText += delta
-            // Send just the delta (not accumulated text) — matches Claude provider contract
-            yield {
-              type: 'text',
-              content: delta,
-              isStreaming: true
-            }
+            yield { type: 'text', content: delta, isStreaming: true }
           }
           break
         }
 
-        // Item lifecycle
+        // =====================
+        // REASONING STREAMING
+        // =====================
+        case 'item/reasoning/summaryTextDelta': {
+          const delta = p.delta ?? ''
+          const itemId = p.itemId ?? ''
+          if (delta) {
+            const buf = this.reasoningBuffers.get(itemId) ?? { summary: '', content: '' }
+            buf.summary += delta
+            this.reasoningBuffers.set(itemId, buf)
+            yield { type: 'thinking', content: delta, isStreaming: true }
+            streamingReasoning += delta
+          }
+          break
+        }
+
+        case 'item/reasoning/textDelta': {
+          const delta = p.delta ?? ''
+          const itemId = p.itemId ?? ''
+          if (delta) {
+            const buf = this.reasoningBuffers.get(itemId) ?? { summary: '', content: '' }
+            buf.content += delta
+            this.reasoningBuffers.set(itemId, buf)
+            // Stream raw reasoning as thinking too
+            yield { type: 'thinking', content: delta, isStreaming: true }
+            streamingReasoning += delta
+          }
+          break
+        }
+
+        // =====================
+        // PLAN STREAMING
+        // =====================
+        case 'item/plan/delta': {
+          const delta = p.delta ?? ''
+          if (delta) {
+            // Plans render as thinking in the UI
+            yield { type: 'thinking', content: delta, isStreaming: true }
+          }
+          break
+        }
+
+        // =====================
+        // COMMAND EXECUTION OUTPUT STREAMING
+        // =====================
+        case 'item/commandExecution/outputDelta': {
+          const delta = p.delta ?? ''
+          const itemId = p.itemId ?? ''
+          if (delta) {
+            const current = this.commandOutputBuffers.get(itemId) ?? ''
+            this.commandOutputBuffers.set(itemId, current + delta)
+          }
+          break
+        }
+
+        // =====================
+        // FILE CHANGE OUTPUT STREAMING
+        // =====================
+        case 'item/fileChange/outputDelta': {
+          const delta = p.delta ?? ''
+          const itemId = p.itemId ?? ''
+          if (delta) {
+            const current = this.fileChangeOutputBuffers.get(itemId) ?? ''
+            this.fileChangeOutputBuffers.set(itemId, current + delta)
+          }
+          break
+        }
+
+        // =====================
+        // ITEM LIFECYCLE
+        // =====================
         case 'item/started': {
           const item = p.item ?? p
           const itemType = item?.type
-          currentItemId = item?.id
 
           if (itemType === 'agentMessage') {
-            // Reset text accumulator for new message
             streamingText = ''
+          }
+          if (itemType === 'reasoning') {
+            streamingReasoning = ''
+          }
+          if (itemType === 'commandExecution') {
+            // Emit tool_use at start so user sees the command being run
+            const toolCallId = item.id ?? `cmd_${Date.now()}`
+            yield {
+              type: 'tool_use',
+              toolName: 'Bash',
+              input: {
+                command: item.command ?? '',
+                ...(item.cwd ? { cwd: item.cwd } : {})
+              },
+              toolCallId
+            }
           }
           break
         }
 
         case 'item/completed': {
           const item = p.item ?? p
-          const itemType = item?.type
+          yield* this.handleItemCompleted(item, streamingText, streamingReasoning)
 
-          switch (itemType) {
-            case 'agentMessage': {
-              // If we already streamed deltas, just emit empty finalization.
-              // If we didn't stream (no deltas received), emit the full text.
-              if (streamingText) {
-                // Deltas were streamed; UI already has the text. Just finalize.
-                yield { type: 'text', content: '', isStreaming: false }
-              } else {
-                // No deltas were received — emit full text (fallback)
-                const finalText = item.text ?? ''
-                if (finalText) {
-                  yield { type: 'text', content: finalText, isStreaming: false }
-                }
-              }
-              streamingText = ''
-              break
-            }
-
-            case 'reasoning': {
-              const text = item.text ?? ''
-              if (text) {
-                yield { type: 'thinking', content: text, isStreaming: false }
-              }
-              break
-            }
-
-            case 'commandExecution': {
-              const toolCallId = item.id ?? `cmd_${Date.now()}`
-              yield {
-                type: 'tool_use',
-                toolName: 'Bash',
-                input: { command: item.command ?? '' },
-                toolCallId
-              }
-              const outputParts: string[] = []
-              if (item.aggregatedOutput) outputParts.push(item.aggregatedOutput)
-              if (item.exitCode !== undefined && item.exitCode !== 0) {
-                outputParts.push(`\nExit code: ${item.exitCode}`)
-              }
-              yield {
-                type: 'tool_result',
-                toolCallId,
-                output: outputParts.join('\n') || (item.status === 'completed' ? '(completed)' : `(${item.status})`)
-              }
-              break
-            }
-
-            case 'fileChange': {
-              const changes = item.changes ?? []
-              for (const change of changes) {
-                const toolCallId = `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-                const toolName = change.kind === 'add' ? 'Write' : change.kind === 'delete' ? 'Delete' : 'Edit'
-                yield {
-                  type: 'tool_use',
-                  toolName,
-                  input: { file_path: change.path ?? '', kind: change.kind ?? 'update' },
-                  toolCallId
-                }
-                yield {
-                  type: 'tool_result',
-                  toolCallId,
-                  output: `${change.kind ?? 'update'}: ${change.path ?? ''}`
-                }
-              }
-              break
-            }
-
-            case 'mcpToolCall': {
-              const toolCallId = item.id ?? `mcp_${Date.now()}`
-              yield {
-                type: 'tool_use',
-                toolName: `mcp__${item.server}__${item.tool}`,
-                input: item.arguments ?? {},
-                toolCallId
-              }
-              let output = ''
-              if (item.error) {
-                output = item.error.message ?? 'MCP tool call failed'
-              } else if (item.result) {
-                if (item.result.content && Array.isArray(item.result.content)) {
-                  output = item.result.content.map((b: { text?: string }) => b.text ?? '').join('\n')
-                } else {
-                  output = JSON.stringify(item.result)
-                }
-              }
-              yield { type: 'tool_result', toolCallId, output: output || `(${item.status})` }
-              break
-            }
-
-            case 'webSearch': {
-              const toolCallId = item.id ?? `search_${Date.now()}`
-              yield {
-                type: 'tool_use',
-                toolName: 'WebSearch',
-                input: { query: item.query ?? '' },
-                toolCallId
-              }
-              yield { type: 'tool_result', toolCallId, output: 'Search completed' }
-              break
-            }
-
-            case 'error': {
-              yield { type: 'error', message: item.message ?? 'Unknown item error', code: 'CODEX_ITEM_ERROR' }
-              break
-            }
-
-            default: {
-              // todoList or unknown types
-              const text = item.text ?? item.content ?? item.message
-              if (typeof text === 'string' && text) {
-                yield { type: 'text', content: text, isStreaming: false }
-              }
-              break
-            }
+          // Reset streaming state
+          if (item?.type === 'agentMessage') {
+            streamingText = ''
+          }
+          if (item?.type === 'reasoning') {
+            streamingReasoning = ''
           }
           break
         }
 
-        // Reasoning delta streaming
-        case 'item/reasoning/summaryTextDelta':
-        case 'item/reasoning/textDelta': {
-          // Could stream reasoning too, but keeping it simple for now
+        // =====================
+        // APPROVAL REQUESTS (server requests with id)
+        // =====================
+        case 'item/commandExecution/requestApproval': {
+          if (requestId !== undefined) {
+            yield* this.handleCommandApproval(p, requestId, params)
+          }
           break
         }
 
-        // Turn lifecycle
+        case 'item/fileChange/requestApproval': {
+          if (requestId !== undefined) {
+            yield* this.handleFileChangeApproval(p, requestId, params)
+          }
+          break
+        }
+
+        // =====================
+        // TURN LIFECYCLE
+        // =====================
+        case 'turn/started': {
+          const turn = p.turn ?? p
+          if (turn?.id) {
+            this.turnId = turn.id
+          }
+          break
+        }
+
         case 'turn/completed': {
           turnComplete = true
-          const usage = p.turn?.tokenUsage ?? p.tokenUsage
+          const turn = p.turn ?? p
+          const status = turn?.status ?? 'completed'
+
+          // Extract token usage
+          const usage = p.tokenUsage ?? turn?.tokenUsage
+          const tokenUsage = usage?.total ? {
+            inputTokens: usage.total.inputTokens ?? 0,
+            outputTokens: usage.total.outputTokens ?? 0
+          } : undefined
+
+          if (status === 'failed') {
+            const errorMsg = turn?.error?.message ?? 'Turn failed'
+            yield { type: 'error', message: errorMsg, code: 'CODEX_TURN_FAILED' }
+          }
+
           yield {
             type: 'result',
             content: '',
-            ...(usage ? {
-              usage: {
-                inputTokens: usage.total?.inputTokens ?? usage.input_tokens ?? 0,
-                outputTokens: usage.total?.outputTokens ?? usage.output_tokens ?? 0
-              }
-            } : {}),
-            stop_reason: 'end_turn'
+            ...(tokenUsage ? { usage: tokenUsage } : {}),
+            stop_reason: status === 'completed' ? 'end_turn'
+              : status === 'interrupted' ? 'stop_sequence'
+                : status === 'failed' ? 'end_turn'
+                  : 'end_turn'
           }
           break
         }
 
-        case 'turn/started':
-        case 'thread/started':
-        case 'thread/status/changed':
-        case 'thread/tokenUsage/updated':
-          // Lifecycle events — nothing to emit
+        // =====================
+        // TOKEN USAGE UPDATES
+        // =====================
+        case 'thread/tokenUsage/updated': {
+          // We extract usage at turn/completed — nothing to emit here
           break
+        }
 
+        // =====================
+        // THREAD NAME UPDATES
+        // =====================
+        case 'thread/name/updated': {
+          // Could be used to update the chat title; nothing to emit for now
+          break
+        }
+
+        // =====================
+        // CONTEXT COMPACTION
+        // =====================
+        case 'thread/compacted': {
+          // Agent compacted its context window — informational
+          break
+        }
+
+        // =====================
+        // MODEL REROUTED
+        // =====================
+        case 'model/rerouted': {
+          // Server rerouted to a different model — informational
+          break
+        }
+
+        // =====================
+        // ERRORS
+        // =====================
         case 'error': {
           yield { type: 'error', message: p.message ?? 'Unknown error', code: 'CODEX_ERROR' }
           turnComplete = true
           break
         }
 
+        // =====================
+        // LIFECYCLE / INFORMATIONAL — ignored
+        // =====================
+        case 'thread/started':
+        case 'thread/status/changed':
+        case 'thread/closed':
+        case 'thread/archived':
+        case 'thread/unarchived':
+        case 'skills/changed':
+        case 'serverRequest/resolved':
+        case 'item/mcpToolCall/progress':
+        case 'item/commandExecution/terminalInteraction':
+        case 'item/reasoning/summaryPartAdded':
+        case 'turn/plan/updated':
+        case 'turn/diff/updated':
+        case 'rawResponseItem/completed':
+        case 'configWarning':
+        case 'deprecationNotice':
+        case 'account/updated':
+        case 'account/rateLimits/updated':
+          break
+
         default:
           // Ignore other notifications (codex/event/*, mcp/*, etc.)
           break
       }
+    }
+  }
+
+  /**
+   * Handle a completed item notification.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private *handleItemCompleted(item: any, streamingText: string, streamingReasoning: string): Generator<AgentMessage> {
+    const itemType = item?.type
+
+    switch (itemType) {
+      case 'agentMessage': {
+        if (streamingText) {
+          // Deltas were streamed; UI already has the text. Just finalize.
+          yield { type: 'text', content: '', isStreaming: false }
+        } else {
+          // No deltas were received — emit full text (fallback)
+          const finalText = item.text ?? ''
+          if (finalText) {
+            yield { type: 'text', content: finalText, isStreaming: false }
+          }
+        }
+        break
+      }
+
+      case 'reasoning': {
+        if (streamingReasoning) {
+          // Already streamed via deltas — finalize
+          yield { type: 'thinking', content: '', isStreaming: false }
+        } else {
+          // Fallback: emit summary or content
+          const summaries = item.summary ?? []
+          const contents = item.content ?? []
+          const text = summaries.join('\n') || contents.join('\n') || ''
+          if (text) {
+            yield { type: 'thinking', content: text, isStreaming: false }
+          }
+        }
+        // Clean up buffer
+        if (item.id) this.reasoningBuffers.delete(item.id)
+        break
+      }
+
+      case 'plan': {
+        // Plan completed — finalize thinking
+        const text = item.text ?? ''
+        if (text) {
+          yield { type: 'thinking', content: '', isStreaming: false }
+        }
+        break
+      }
+
+      case 'commandExecution': {
+        const toolCallId = item.id ?? `cmd_${Date.now()}`
+        // Use streamed output if available, otherwise fall back to aggregatedOutput
+        const streamedOutput = this.commandOutputBuffers.get(toolCallId)
+        const output = streamedOutput ?? item.aggregatedOutput ?? ''
+        const outputParts: string[] = []
+        if (output) outputParts.push(output)
+        if (item.exitCode !== undefined && item.exitCode !== null && item.exitCode !== 0) {
+          outputParts.push(`\nExit code: ${item.exitCode}`)
+        }
+        if (item.durationMs !== undefined && item.durationMs !== null) {
+          outputParts.push(`\nDuration: ${item.durationMs}ms`)
+        }
+
+        // If the tool_use was already emitted at item/started, just emit tool_result
+        yield {
+          type: 'tool_result',
+          toolCallId,
+          output: outputParts.join('') || (item.status === 'completed' ? '(completed)' : `(${item.status})`)
+        }
+
+        // Clean up buffer
+        this.commandOutputBuffers.delete(toolCallId)
+        break
+      }
+
+      case 'fileChange': {
+        const changes = item.changes ?? []
+        const itemId = item.id
+        const streamedDiff = itemId ? this.fileChangeOutputBuffers.get(itemId) : undefined
+
+        for (const change of changes) {
+          const toolCallId = `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+          const toolName = change.kind === 'add' ? 'Write'
+            : change.kind === 'delete' ? 'Delete'
+              : 'Edit'
+          yield {
+            type: 'tool_use',
+            toolName,
+            input: { file_path: change.path ?? '', kind: change.kind ?? 'update' },
+            toolCallId
+          }
+          yield {
+            type: 'tool_result',
+            toolCallId,
+            output: streamedDiff
+              ? `${change.kind ?? 'update'}: ${change.path ?? ''}\n${streamedDiff}`
+              : `${change.kind ?? 'update'}: ${change.path ?? ''}`
+          }
+        }
+
+        // Clean up buffer
+        if (itemId) this.fileChangeOutputBuffers.delete(itemId)
+        break
+      }
+
+      case 'mcpToolCall': {
+        const toolCallId = item.id ?? `mcp_${Date.now()}`
+        yield {
+          type: 'tool_use',
+          toolName: `mcp__${item.server}__${item.tool}`,
+          input: item.arguments ?? {},
+          toolCallId
+        }
+        let output = ''
+        if (item.error) {
+          output = item.error.message ?? 'MCP tool call failed'
+        } else if (item.result) {
+          if (item.result.content && Array.isArray(item.result.content)) {
+            output = item.result.content.map((b: { text?: string }) => b.text ?? '').join('\n')
+          } else {
+            output = JSON.stringify(item.result)
+          }
+        }
+        const durationSuffix = item.durationMs ? ` (${item.durationMs}ms)` : ''
+        yield { type: 'tool_result', toolCallId, output: (output || `(${item.status})`) + durationSuffix }
+        break
+      }
+
+      case 'dynamicToolCall': {
+        const toolCallId = item.id ?? `dyn_${Date.now()}`
+        yield {
+          type: 'tool_use',
+          toolName: item.tool ?? 'DynamicTool',
+          input: item.arguments ?? {},
+          toolCallId
+        }
+        let output = ''
+        if (item.contentItems && Array.isArray(item.contentItems)) {
+          output = item.contentItems
+            .map((ci: { text?: string }) => ci.text ?? '')
+            .filter(Boolean)
+            .join('\n')
+        }
+        const success = item.success === true ? '(success)' : item.success === false ? '(failed)' : `(${item.status})`
+        yield { type: 'tool_result', toolCallId, output: output || success }
+        break
+      }
+
+      case 'webSearch': {
+        const toolCallId = item.id ?? `search_${Date.now()}`
+        yield {
+          type: 'tool_use',
+          toolName: 'WebSearch',
+          input: { query: item.query ?? '' },
+          toolCallId
+        }
+        yield { type: 'tool_result', toolCallId, output: 'Search completed' }
+        break
+      }
+
+      case 'imageView': {
+        const toolCallId = item.id ?? `imgview_${Date.now()}`
+        yield {
+          type: 'tool_use',
+          toolName: 'Read',
+          input: { file_path: item.path ?? '' },
+          toolCallId
+        }
+        yield { type: 'tool_result', toolCallId, output: `Viewed image: ${item.path ?? ''}` }
+        break
+      }
+
+      case 'imageGeneration': {
+        const toolCallId = item.id ?? `imggen_${Date.now()}`
+        yield {
+          type: 'tool_use',
+          toolName: 'ImageGeneration',
+          input: { prompt: item.revisedPrompt ?? '' },
+          toolCallId
+        }
+        yield { type: 'tool_result', toolCallId, output: item.result ?? `(${item.status})` }
+        break
+      }
+
+      case 'contextCompaction': {
+        // Informational — the agent compacted its context
+        yield { type: 'text', content: '\n*[Context compacted]*\n', isStreaming: false }
+        break
+      }
+
+      case 'error': {
+        yield { type: 'error', message: item.message ?? 'Unknown item error', code: 'CODEX_ITEM_ERROR' }
+        break
+      }
+
+      default: {
+        // Unknown item types
+        const text = item?.text ?? item?.content ?? item?.message
+        if (typeof text === 'string' && text) {
+          yield { type: 'text', content: text, isStreaming: false }
+        }
+        break
+      }
+    }
+  }
+
+  /**
+   * Handle command execution approval request.
+   * Maps to the permissionHandler in SendMessageParams.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async *handleCommandApproval(p: any, requestId: number, params: SendMessageParams): AsyncGenerator<AgentMessage> {
+    const command = p.command ?? ''
+    const cwd = p.cwd ?? ''
+    const reason = p.reason ?? undefined
+
+    // Emit a permission_request so the UI can show an approval dialog
+    const permRequestId = `cmd_approval_${requestId}`
+    yield {
+      type: 'permission_request',
+      toolName: 'Bash',
+      input: {
+        command,
+        cwd,
+        ...(reason ? { reason } : {})
+      },
+      requestId: permRequestId
+    }
+
+    // Ask the permission handler
+    try {
+      const result = await params.permissionHandler('Bash', {
+        command,
+        cwd,
+        ...(reason ? { reason } : {})
+      })
+
+      if (result.approved) {
+        this.sendResponse(requestId, { decision: 'accept' })
+      } else {
+        this.sendResponse(requestId, { decision: 'decline' })
+      }
+    } catch {
+      // On error, decline
+      this.sendResponse(requestId, { decision: 'decline' })
+    }
+  }
+
+  /**
+   * Handle file change approval request.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async *handleFileChangeApproval(p: any, requestId: number, params: SendMessageParams): AsyncGenerator<AgentMessage> {
+    const reason = p.reason ?? undefined
+    const grantRoot = p.grantRoot ?? undefined
+
+    // Emit a permission_request so the UI can show an approval dialog
+    const permRequestId = `file_approval_${requestId}`
+    yield {
+      type: 'permission_request',
+      toolName: 'Edit',
+      input: {
+        ...(reason ? { reason } : {}),
+        ...(grantRoot ? { grantRoot } : {})
+      },
+      requestId: permRequestId
+    }
+
+    // Ask the permission handler
+    try {
+      const result = await params.permissionHandler('Edit', {
+        ...(reason ? { reason } : {}),
+        ...(grantRoot ? { grantRoot } : {})
+      })
+
+      if (result.approved) {
+        this.sendResponse(requestId, { decision: 'accept' })
+      } else {
+        this.sendResponse(requestId, { decision: 'decline' })
+      }
+    } catch {
+      this.sendResponse(requestId, { decision: 'decline' })
     }
   }
 
@@ -595,11 +1042,69 @@ export class CodexProvider implements AgentProvider {
     return this.threadId === sessionId
   }
 
+  /**
+   * Get available models via `model/list` RPC.
+   * Falls back to static list if app-server isn't available.
+   */
   async getAvailableModels(): Promise<ModelInfo[]> {
-    return CODEX_MODELS
+    if (this.cachedModels) return this.cachedModels
+
+    try {
+      await this.ensureAppServer()
+      const result = await this.sendRpc('model/list', { includeHidden: false })
+      const models: ModelInfo[] = (result?.data ?? []).map((m: {
+        id: string
+        model: string
+        displayName: string
+        description: string
+        isDefault?: boolean
+        hidden?: boolean
+      }) => ({
+        value: m.model ?? m.id,
+        displayName: m.displayName ?? m.model ?? m.id,
+        description: m.description ?? ''
+      }))
+
+      if (models.length > 0) {
+        this.cachedModels = models
+        return models
+      }
+    } catch {
+      // Fall through to static list
+    }
+
+    // Fallback static list
+    return [
+      { value: 'gpt-5.3-codex', displayName: 'GPT-5.3 Codex', description: 'Latest frontier agentic coding model' },
+      { value: 'gpt-5.2-codex', displayName: 'GPT-5.2 Codex', description: 'Advanced agentic coding model' },
+      { value: 'gpt-5.1-codex', displayName: 'GPT-5.1 Codex', description: 'Agentic coding model with deep reasoning' },
+      { value: 'gpt-5.1-codex-mini', displayName: 'GPT-5.1 Codex Mini', description: 'Fast, lightweight coding model' },
+      { value: 'gpt-5.4', displayName: 'GPT-5.4', description: 'Latest general-purpose model' },
+      { value: 'gpt-5.2', displayName: 'GPT-5.2', description: 'General-purpose model with coding capabilities' }
+    ]
   }
 
+  /**
+   * Discover available skills via `skills/list` RPC.
+   */
   async discoverSlashCommands(): Promise<{ name: string; description?: string }[]> {
+    try {
+      await this.ensureAppServer()
+      const result = await this.sendRpc('skills/list', {
+        cwds: this.config.cwd ? [this.config.cwd] : []
+      })
+
+      // Result contains skills; map to slash command format
+      const skills = result?.skills ?? result?.data ?? []
+      if (Array.isArray(skills)) {
+        return skills.map((skill: { name?: string; description?: string }) => ({
+          name: skill.name ? (skill.name.startsWith('/') ? skill.name : `/${skill.name}`) : '/unknown',
+          description: skill.description
+        }))
+      }
+    } catch {
+      // Skills discovery is optional
+    }
     return []
   }
 
@@ -613,9 +1118,14 @@ export class CodexProvider implements AgentProvider {
       this.appServer = undefined
     }
     this.threadId = undefined
+    this.turnId = undefined
     this.sessionInitSent = false
     this.initialized = false
     this.pendingRpc.clear()
     this.notificationQueue = []
+    this.cachedModels = undefined
+    this.commandOutputBuffers.clear()
+    this.fileChangeOutputBuffers.clear()
+    this.reasoningBuffers.clear()
   }
 }

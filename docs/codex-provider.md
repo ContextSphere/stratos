@@ -2,7 +2,7 @@
 
 ## Overview
 
-AgentPanel now supports **OpenAI Codex** as a second provider alongside Claude Code. Users can select which provider to use per-thread, enabling them to leverage different AI coding models for different tasks.
+AgentPanel supports **OpenAI Codex** as a second provider alongside Claude Code. Users can select which provider to use per-thread via the provider toggle in the bottom toolbar.
 
 ## Architecture
 
@@ -23,171 +23,281 @@ interface AgentProvider {
 }
 ```
 
-Providers are registered in `packages/core/src/providers/index.ts`:
-
-```typescript
-const registry = {
-  'claude-code': ClaudeCodeProvider,
-  'codex': CodexProvider
-}
-```
-
 ### Thread-Level Provider Selection
 
 Each thread stores a `provider` field (`'claude-code' | 'codex'`). Default is `'claude-code'` for backward compatibility. The `AgentManager` in `packages/desktop/src/main/agent-manager.ts` uses `createProvider(thread.provider)` to instantiate the correct provider per thread.
 
-## Codex SDK Integration
+## App-Server Protocol (JSON-RPC 2.0 over stdio)
 
-### Package
+### Why Not the SDK?
 
-- **npm:** `@openai/codex-sdk`
-- **Requires:** Node.js 18+, `codex` CLI installed globally
-- **API key:** Reads `OPENAI_API_KEY` from environment
+The original implementation used `@openai/codex-sdk`'s TypeScript API which internally spawns `codex exec --experimental-json`. This mode has a critical limitation: **it only emits `item.completed` events** — there are no `item.started` or `item.updated` events, meaning no token-by-token text streaming. Text appears all at once after the model finishes.
 
-### How It Works
+This was confirmed through exhaustive testing across multiple models (`gpt-5.3-codex`, `gpt-5.2-codex`, `gpt-5.1-codex`) and SDK versions (`0.1.0-alpha.12`, `0.1.0-alpha.15`). The `codex exec` protocol simply does not support streaming deltas.
 
-The Codex SDK wraps the `codex` CLI, communicating via JSONL events over stdin/stdout. The `CodexProvider` uses:
+### App-Server Protocol
 
-1. `new Codex({ config })` — creates an instance with approval and sandbox settings
-2. `codex.startThread({ workingDirectory })` or `codex.resumeThread(threadId)` — manages conversation threads
-3. `thread.runStreamed(prompt)` — returns an async iterable of events
+The **app-server** is a different subcommand (`codex app-server`) that uses bidirectional JSON-RPC 2.0 over stdio and supports true token-by-token streaming via `item/agentMessage/delta` notifications.
 
-### Event Mapping
+**Key documentation:** [developers.openai.com/codex/app-server](https://developers.openai.com/codex/app-server/)
 
-The SDK emits two event types from `runStreamed()`:
+### Protocol Flow
 
-| Codex Event | AgentMessage(s) |
-|---|---|
-| `item.completed` — agentMessage | `{ type: 'text', content, isStreaming: false }` |
-| `item.completed` — commandExecution | `tool_use` (Bash) + `tool_result` (stdout/stderr/exitCode) |
-| `item.completed` — fileChange | `tool_use` (Write/Edit per change) + `tool_result` (diff) |
-| `item.completed` — mcpToolCall | `tool_use` (mcp__server__tool) + `tool_result` |
-| `item.completed` — webSearch | `tool_use` (WebSearch) + `tool_result` |
-| `turn.completed` | `{ type: 'result', content, usage }` |
-
-### Available Models
-
-The provider returns a curated list of Codex-compatible models:
-
-| Model ID | Display Name |
-|---|---|
-| `codex-mini-latest` | Codex Mini |
-| `o4-mini` | o4-mini |
-| `o3` | o3 |
-| `gpt-4.1` | GPT-4.1 |
-| `gpt-4.1-mini` | GPT-4.1 Mini |
-
-## Approval & Security Model
-
-### Key Difference from Claude
-
-Claude Code uses a `canUseTool` callback — every tool call pauses for UI-level approval. The Codex SDK **does not expose approval callbacks**. Instead, it uses startup-level policies.
-
-### Codex App-Server Protocol (Background)
-
-Under the hood, the Codex CLI uses a bidirectional JSON-RPC 2.0 protocol (the "app-server protocol") that supports interactive approvals:
-
-1. **Command execution:** Server sends `item/commandExecution/requestApproval` → client responds with `accept`, `acceptForSession`, `decline`, `cancel`
-2. **File changes:** Server sends `item/fileChange/requestApproval` → same response options
-
-However, the TypeScript SDK only exposes `item.completed` and `turn.completed` events — it does not surface these approval requests to SDK consumers.
-
-### Our Approach
-
-The `CodexProvider` runs with:
-
-```typescript
-config: {
-  approval_policy: 'never',    // Auto-approve all tool calls
-  sandbox: 'workspace-write'   // Sandboxed to workspace directory
-}
+```
+Client                          Server (codex app-server)
+  |                                 |
+  |-- initialize ------------------>|  (handshake)
+  |<------------ initializeResult --|
+  |-- initialized (notification) -->|  (required, confirms handshake)
+  |                                 |
+  |-- thread/start ---------------->|  (create thread with config)
+  |<------------ thread/started ----|  (notification with threadId)
+  |<----------- threadStartResult --|
+  |                                 |
+  |-- turn/start ------------------>|  (send user message)
+  |<------------ turn/started ------|
+  |<-- item/started ----------------|  (agentMessage begins)
+  |<-- item/agentMessage/delta -----|  (token-by-token streaming)
+  |<-- item/agentMessage/delta -----|
+  |<-- ...                          |
+  |<-- item/completed --------------|  (agentMessage finalized)
+  |<-- item/started ----------------|  (commandExecution begins)
+  |<-- item/commandExecution/       |
+  |    outputDelta -----------------|  (streaming command output)
+  |<-- item/completed --------------|
+  |<-- turn/completed --------------|  (turn done with status + usage)
 ```
 
-This means:
-- **All tool calls auto-execute** within the sandbox — no per-tool UI approval
-- **Safety is enforced by the Codex sandbox** — file writes are restricted to the workspace directory
-- Users see tool executions in the ChatView after they happen
-- This is a different UX from Claude's interactive approval model
+### Message Types
 
-### Future Enhancement: Full Approval Flow
+**Client → Server (requests):**
 
-To match Claude's per-tool approval UX, we could bypass the SDK and talk directly to the Codex app-server via JSON-RPC over stdio. This would give us:
-- `item/commandExecution/requestApproval` events to intercept
-- `item/fileChange/requestApproval` events to intercept
-- Full control over approval decisions
-
-This is documented at [developers.openai.com/codex/app-server](https://developers.openai.com/codex/app-server/).
-
-### Approval Modes Available in Codex
-
-| Mode | Behavior |
+| Method | Purpose |
 |---|---|
-| `on-request` | Interactive — pauses for approval before command execution |
-| `never` | Auto-approve everything (what we use) |
-| `untrusted` | Deprecated — similar to `on-request` |
-| `reject` object | Granular auto-reject of specific categories |
+| `initialize` | Handshake with client info and capabilities |
+| `thread/start` | Create new thread with model, cwd, sandbox, approval settings |
+| `thread/resume` | Resume existing thread by threadId |
+| `turn/start` | Send user message, start a new turn |
+| `turn/steer` | Append input to an in-flight turn |
+| `turn/interrupt` | Cancel the current turn |
+| `model/list` | Discover available models dynamically |
+| `skills/list` | Discover available skills (slash commands) |
 
-### Sandbox Policies
+**Client → Server (notifications):**
+
+| Method | Purpose |
+|---|---|
+| `initialized` | Required after `initialize` response — confirms handshake |
+
+**Server → Client (notifications):**
+
+| Method | Purpose |
+|---|---|
+| `item/agentMessage/delta` | Token-by-token text streaming (the key event) |
+| `item/reasoning/summaryTextDelta` | Reasoning summary streaming |
+| `item/reasoning/textDelta` | Raw reasoning streaming |
+| `item/plan/delta` | Plan streaming |
+| `item/commandExecution/outputDelta` | Command stdout/stderr streaming |
+| `item/fileChange/outputDelta` | File diff streaming |
+| `item/started` | Item begins (agentMessage, commandExecution, fileChange, etc.) |
+| `item/completed` | Item finalized with full data |
+| `turn/started` | Turn begins |
+| `turn/completed` | Turn ends with status and token usage |
+| `thread/tokenUsage/updated` | Running token usage updates |
+| `thread/name/updated` | Auto-generated thread name |
+| `thread/compacted` | Context window was compacted |
+| `model/rerouted` | Server rerouted to a different model |
+
+**Server → Client (requests, require response):**
+
+| Method | Purpose |
+|---|---|
+| `item/commandExecution/requestApproval` | Command needs user approval |
+| `item/fileChange/requestApproval` | File change needs user approval |
+
+### Item Types (camelCase)
+
+| Type | Description |
+|---|---|
+| `agentMessage` | Text response from the model |
+| `reasoning` | Model's internal reasoning (summary + content) |
+| `plan` | Structured plan for the task |
+| `commandExecution` | Shell command with command, cwd, exitCode, aggregatedOutput, durationMs |
+| `fileChange` | File modifications with changes array (kind: add/update/delete, path) |
+| `mcpToolCall` | MCP server tool invocation |
+| `dynamicToolCall` | Dynamic tool invocation |
+| `webSearch` | Web search query |
+| `imageView` | Image file viewed |
+| `imageGeneration` | Image generated |
+| `contextCompaction` | Context window compacted |
+| `error` | Error item |
+
+### Type Bindings
+
+Generated TypeScript types are available from the binary itself:
+
+```bash
+codex app-server generate-ts --out /tmp/codex-ts
+```
+
+Key type files:
+- `ServerNotification.ts` — Full union of all notification types
+- `ClientRequest.ts` — Full union of all RPC methods
+- `ServerRequest.ts` — Server-initiated requests (approvals, dynamic tools)
+- `v2/ThreadStartParams.ts` — Thread configuration
+- `v2/TurnStartParams.ts` — Turn input parameters
+- `v2/UserInput.ts` — Input types (text, image, localImage, skill, mention)
+- `v2/AskForApproval.ts` — Approval policy enum
+- `v2/SandboxMode.ts` — Sandbox policy enum
+- `v2/Model.ts` — Model metadata from `model/list`
+
+## Streaming Contract
+
+The UI expects each `{ type: 'text', content, isStreaming: true }` message to contain **only the new delta characters**, not the accumulated text. The UI appends each delta.
+
+```
+// CORRECT — send just the delta
+yield { type: 'text', content: delta, isStreaming: true }
+
+// WRONG — would cause text duplication
+yield { type: 'text', content: accumulatedText, isStreaming: true }
+```
+
+On `item/completed` for `agentMessage`, if deltas were already streamed, emit empty content to finalize:
+```
+yield { type: 'text', content: '', isStreaming: false }
+```
+
+## Mode Mapping
+
+AgentPanel has four permission modes that map to Codex approval policies and sandbox modes:
+
+| AgentPanel Mode | Claude Code Behavior | Codex `approvalPolicy` | Codex `sandbox` |
+|---|---|---|---|
+| **plan** | Read-only, no file modifications | `never` | `read-only` |
+| **default** | Prompts for every tool use | `untrusted` | `workspace-write` |
+| **acceptEdits** | Auto-accepts edits, prompts for commands | `on-request` | `workspace-write` |
+| **bypassPermissions** | Skips all permission prompts | `never` | `danger-full-access` |
+
+### Codex Approval Policy Semantics
 
 | Policy | Behavior |
 |---|---|
-| `read-only` | Read-only filesystem access |
-| `workspace-write` | Write access to workspace directory (our default) |
-| `danger-full-access` | No restrictions |
+| `untrusted` | Always ask for approval before any tool execution (most restrictive) |
+| `on-request` | Ask when the model explicitly requests it (file changes auto-approve, commands may prompt) |
+| `on-failure` | Ask only when a command fails |
+| `never` | Never ask — auto-approve everything |
+| `{ reject: {...} }` | Granular auto-reject of specific categories (sandbox_approval, rules, mcp_elicitations) |
 
-## Files Modified/Created
+### Codex Sandbox Policies
 
-| File | Change |
+| Policy | Behavior |
 |---|---|
-| `packages/core/src/providers/codex.provider.ts` | **NEW** — CodexProvider implementation |
-| `packages/core/src/providers/index.ts` | Register CodexProvider in registry |
-| `packages/core/src/providers/types.ts` | Provider-agnostic AgentDefinition, added `sandboxPolicy` to ProviderConfig |
-| `packages/core/src/types/thread.ts` | Added `ProviderType` type and `provider` field to `Thread` |
-| `packages/core/src/index.ts` | Export `CodexProvider` and `ProviderType` |
-| `packages/core/src/storage/types.ts` | `createThread()` accepts `provider` param |
-| `packages/core/src/storage/file-adapter.ts` | Persist `provider` field on thread creation |
-| `packages/core/package.json` | Added `@openai/codex-sdk` dependency |
-| `packages/desktop/src/main/agent-manager.ts` | Use `createProvider()` registry instead of hardcoded `ClaudeCodeProvider` |
-| `packages/desktop/src/main/threads/thread.ipc.ts` | Accept `provider` in thread create/update |
-| `packages/desktop/src/preload/index.ts` | Pass `provider` through IPC bridge |
-| `packages/desktop/src/renderer/hooks/useThreads.ts` | `createThread()` accepts `provider` |
-| `packages/desktop/src/renderer/App.tsx` | Added `ProviderToggle` to toolbar, wired provider selection |
-| `packages/ui/src/components/ProviderToggle.tsx` | **NEW** — Provider toggle UI component |
-| `packages/ui/src/index.ts` | Export `ProviderToggle` |
+| `read-only` | Read-only filesystem access — no file writes, no commands that modify state |
+| `workspace-write` | Write access restricted to workspace directory (default) |
+| `danger-full-access` | No filesystem restrictions — full access |
 
-## Usage
+## Approval Flow
 
-### Prerequisites
+When `approvalPolicy` is `untrusted` or `on-request`, the server sends approval requests as JSON-RPC server requests (have both `id` and `method`). These require a response:
 
-1. Install the Codex CLI: `npm install -g @openai/codex`
-2. Set your API key: `export OPENAI_API_KEY=sk-...`
-3. Authenticate: `codex login`
+**Command approval:**
+```json
+// Server → Client
+{ "jsonrpc": "2.0", "id": 42, "method": "item/commandExecution/requestApproval",
+  "params": { "threadId": "...", "turnId": "...", "itemId": "...",
+    "command": "npm install", "cwd": "/project" }}
 
-### In AgentPanel
+// Client → Server
+{ "jsonrpc": "2.0", "id": 42, "result": { "decision": "accept" }}
+// or: "acceptForSession", "decline", "cancel"
+```
 
-1. Click the **provider toggle** in the bottom toolbar (shows "Claude" / "Codex")
-2. Select **Codex** before creating a new thread (or switch on an existing thread)
-3. The model dropdown updates to show Codex-compatible models
-4. Send messages as usual — tool executions appear in the chat
+**File change approval:**
+```json
+// Server → Client
+{ "jsonrpc": "2.0", "id": 43, "method": "item/fileChange/requestApproval",
+  "params": { "threadId": "...", "turnId": "...", "itemId": "...",
+    "reason": "Write access to /outside/project" }}
 
-### Switching Providers
+// Client → Server
+{ "jsonrpc": "2.0", "id": 43, "result": { "decision": "accept" }}
+```
 
-Switching provider on an existing thread clears the session (since sessions are provider-specific). A new session will be created on the next message.
+The provider routes these through `SendMessageParams.permissionHandler` which is the same handler used by the Claude provider, ensuring consistent UX.
 
-## Limitations
+## Thinking Effort Mapping
 
-1. **No streaming text:** The SDK provides `item.completed` events (final state only). Text appears all at once, not token-by-token like Claude.
-2. **No approval UI:** Tool calls auto-execute within sandbox. No per-tool approve/deny.
-3. **No slash commands:** Codex doesn't support slash commands.
-4. **Image support:** Limited — Codex SDK uses `local_image` with file paths, not base64. Base64 images from the UI are not yet converted.
-5. **No thinking/reasoning stream:** Unlike Claude's `thinking` blocks, Codex reasoning is not surfaced.
+| AgentPanel | Codex (`ReasoningEffort`) |
+|---|---|
+| `low` | `low` |
+| `medium` | `medium` |
+| `high` | `high` |
+| `max` | `xhigh` |
+
+Note: Codex also supports `none` and `minimal` but AgentPanel doesn't expose these.
+
+## Binary Discovery
+
+The Codex CLI binary is bundled inside `@openai/codex-sdk` under a platform-specific path:
+```
+node_modules/@openai/codex/vendor/<target-triple>/codex/codex
+```
+
+**Challenge:** The SDK package has `"type": "module"` with restricted ESM `exports` — `require.resolve('@openai/codex-sdk')` fails in Electron's CJS context.
+
+**Solution:** Walk up the directory tree from `__dirname`, `process.cwd()`, and Electron's `resourcesPath`, checking:
+1. pnpm hoisted layout: `node_modules/.pnpm/@openai+codex@*-<platform>-<arch>/...`
+2. Direct `node_modules/@openai/codex/` layout (npm/yarn)
+3. SDK symlink chain: `node_modules/@openai/codex-sdk/node_modules/@openai/codex/`
+
+## Available Models
+
+Models are discovered dynamically via `model/list` RPC. With ChatGPT Plus auth (not API key), the available models are the GPT-5.x family:
+
+| Model | Description |
+|---|---|
+| `gpt-5.3-codex` | Latest frontier agentic coding model |
+| `gpt-5.2-codex` | Advanced agentic coding model |
+| `gpt-5.1-codex` | Agentic coding model with deep reasoning |
+| `gpt-5.1-codex-mini` | Fast, lightweight coding model |
+| `gpt-5.4` | Latest general-purpose model |
+| `gpt-5.2` | General-purpose model with coding capabilities |
+
+**Note:** Models like `codex-mini-latest`, `o4-mini`, `gpt-4.1` require an API key and are NOT available with ChatGPT Plus auth. The `model/list` RPC returns only models the user can actually use.
+
+## Key Learnings
+
+1. **SDK `codex exec` does NOT support text streaming** — only `item.completed` events. This was confirmed across 3 models and 2 SDK versions. The app-server protocol is required for real streaming.
+
+2. **The `initialized` notification is required** — Without sending `initialized` after the `initialize` handshake, subsequent RPC calls may fail or behave unexpectedly.
+
+3. **`persistExtendedHistory: true` requires `experimentalApi` capability** — Set to `false` unless the `experimentalApi` flag is enabled in the initialize handshake.
+
+4. **Server requests vs notifications** — Approval requests are server-initiated *requests* (have `id` + `method`) and require a JSON-RPC response. Regular streaming events are *notifications* (only `method`, no `id`). Both arrive on the same stdout line stream.
+
+5. **ChatGPT auth vs API key** — The available models differ significantly depending on auth type. Use `model/list` for dynamic discovery instead of hardcoding.
+
+6. **`untrusted` is not deprecated** — Despite earlier documentation suggestions, `untrusted` is the correct policy for "ask for everything" behavior (matching Claude Code's `default` mode).
+
+## Files
+
+| File | Description |
+|---|---|
+| `packages/core/src/providers/codex.provider.ts` | CodexProvider implementation (app-server protocol) |
+| `packages/core/src/providers/types.ts` | Provider interface, AgentMessage types, ProviderConfig |
+| `packages/core/src/providers/index.ts` | Provider registry |
+| `packages/core/src/types/thread.ts` | `ProviderType` type, `provider` field on Thread |
+| `packages/core/src/types/mode.ts` | Mode configs (plan/default/acceptEdits/bypassPermissions) |
+| `packages/desktop/src/main/agent-manager.ts` | Provider instantiation per thread |
+| `packages/desktop/package.json` | `@openai/codex-sdk` dependency (for binary) |
+| `packages/ui/src/components/ProviderToggle.tsx` | Provider toggle UI component |
 
 ## References
 
-- [Codex SDK Documentation](https://developers.openai.com/codex/sdk/)
-- [Codex App-Server Protocol](https://developers.openai.com/codex/app-server/)
-- [Codex CLI Reference](https://developers.openai.com/codex/cli/reference/)
-- [Codex Agent Approvals & Security](https://developers.openai.com/codex/agent-approvals-security)
-- [Codex Config Reference](https://developers.openai.com/codex/config-reference/)
-- [GitHub: openai/codex](https://github.com/openai/codex)
-- [GitHub: openai/codex SDK TypeScript](https://github.com/openai/codex/tree/main/sdk/typescript)
+- [Codex App-Server Protocol](https://developers.openai.com/codex/app-server/) — Primary protocol documentation
+- [Codex Agent Approvals & Security](https://developers.openai.com/codex/agent-approvals-security) — Approval policies and sandbox modes
+- [Codex Config Reference](https://developers.openai.com/codex/config-reference/) — Configuration options
+- [Codex CLI Reference](https://developers.openai.com/codex/cli/reference/) — CLI subcommands
+- [Codex SDK (TypeScript)](https://github.com/openai/codex/tree/main/sdk/typescript) — SDK source (not used directly, but provides the binary)
+- [GitHub: openai/codex](https://github.com/openai/codex) — Main repository
