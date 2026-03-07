@@ -73,7 +73,7 @@ export class FileStorageAdapter implements StorageAdapter {
     return threads.find((t) => t.id === threadId) ?? null;
   }
 
-  createThread(title = "New chat", model?: string, cwd?: string): Thread {
+  createThread(title = "New chat", model?: string, cwd?: string, provider?: string): Thread {
     const id = `thread_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     const now = Date.now();
     const thread: Thread = {
@@ -81,6 +81,7 @@ export class FileStorageAdapter implements StorageAdapter {
       title,
       createdAt: now,
       updatedAt: now,
+      ...(provider ? { provider: provider as Thread["provider"] } : {}),
       ...(model ? { model } : {}),
       ...(cwd ? { cwd } : {}),
     };

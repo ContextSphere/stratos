@@ -16,6 +16,7 @@ import {
   ModelSelector,
   ModeToggle,
   WorktreeToggle,
+  ProviderToggle,
 } from "@agentpanel/ui";
 
 import { Group, Panel, Separator } from "react-resizable-panels";
@@ -77,6 +78,7 @@ export default function App(): React.ReactElement {
   const [showGitHubDialog, setShowGitHubDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [pendingMode, setPendingMode] = useState<AgentMode>();
+  const [pendingProvider, setPendingProvider] = useState<"claude-code" | "codex">("claude-code");
   const [pendingAdditionalCwds, setPendingAdditionalCwds] = useState<string[]>(
     [],
   );
@@ -135,7 +137,7 @@ export default function App(): React.ReactElement {
     async (folderId: string) => {
       const folder = folders.find((f) => f.id === folderId);
       if (!folder) return;
-      const thread = await createThread("New chat", undefined, folder.path);
+      const thread = await createThread("New chat", undefined, folder.path, pendingProvider);
       // Use folder's git repo info
       if (folder.isGitRepo) {
         await window.api.threadsUpdate(thread.id, {
@@ -147,7 +149,7 @@ export default function App(): React.ReactElement {
       await setActiveThreadId(thread.id);
       inputRef.current?.focus();
     },
-    [folders, createThread, setActiveThreadId, refreshThreads],
+    [folders, createThread, setActiveThreadId, refreshThreads, pendingProvider],
   );
 
   const handleDeleteThread = useCallback(
@@ -232,6 +234,18 @@ export default function App(): React.ReactElement {
     },
     [activeThreadId, refreshThreads],
   );
+
+  const handleProviderChange = useCallback(
+    async (provider: 'claude-code' | 'codex') => {
+      if (!activeThreadId) {
+        setPendingProvider(provider)
+        return
+      }
+      await window.api.threadsUpdate(activeThreadId, { provider })
+      await refreshThreads()
+    },
+    [activeThreadId, refreshThreads],
+  )
 
   const handleWorktreeModeChange = useCallback(
     async (mode: "local" | "worktree") => {
@@ -447,18 +461,28 @@ export default function App(): React.ReactElement {
               slashCommands={slashCommands}
             />
 
-            {/* Toolbar: model + mode */}
+            {/* Toolbar: provider + model + mode */}
             <div className="flex-shrink-0 bg-[#0f0f0f] px-4 pb-2">
               <div className="flex items-center justify-between">
-                <ModelSelector
-                  selectedModel={activeThread?.model}
-                  onModelChange={handleModelChange}
-                  thinkingEffort={activeThread?.thinkingEffort}
-                  onThinkingEffortChange={handleThinkingEffortChange}
-                  onFetchModels={() => window.api.getAvailableModels()}
-                  isOpen={modelPickerOpen}
-                  onOpenChange={setModelPickerOpen}
-                />
+                <div className="flex items-center gap-2">
+                  <ProviderToggle
+                    provider={(activeThread?.provider as 'claude-code' | 'codex') ?? pendingProvider}
+                    onProviderChange={handleProviderChange}
+                    disabled={isStreaming}
+                  />
+                  <span className="text-xs text-gray-700">|</span>
+                  <ModelSelector
+                    selectedModel={activeThread?.model}
+                    onModelChange={handleModelChange}
+                    thinkingEffort={activeThread?.thinkingEffort}
+                    onThinkingEffortChange={handleThinkingEffortChange}
+                    onFetchModels={() => window.api.getAvailableModels(
+                      (activeThread?.provider as string) ?? pendingProvider
+                    )}
+                    isOpen={modelPickerOpen}
+                    onOpenChange={setModelPickerOpen}
+                  />
+                </div>
                 <ModeToggle
                   mode={
                     activeThread?.mode

@@ -5,6 +5,7 @@ export type {
   StoredMessage,
   StoredToolCall,
   AgentMode,
+  ProviderType,
   ThreadWorktree,
   WorktreeProgressStep,
   WorktreeProgressData,
@@ -28,6 +29,7 @@ export type {
 } from "./providers/types";
 export { READ_ONLY_TOOLS } from "./providers/types";
 export { ClaudeCodeProvider } from "./providers/claude-code.provider";
+export { CodexProvider } from "./providers/codex.provider";
 export { createProvider, getAvailableProviders } from "./providers/index";
 
 // Storage

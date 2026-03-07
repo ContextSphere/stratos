@@ -8,7 +8,7 @@ import type { Thread, Folder, StoredMessage } from "../types/thread";
 export interface StorageAdapter {
   listThreads(): Thread[];
   getThread(threadId: string): Thread | null;
-  createThread(title?: string, model?: string, cwd?: string): Thread;
+  createThread(title?: string, model?: string, cwd?: string, provider?: string): Thread;
   updateThread(threadId: string, updates: Partial<Thread>): Thread | null;
   deleteThread(threadId: string): boolean;
   getActiveThreadId(): string | null;

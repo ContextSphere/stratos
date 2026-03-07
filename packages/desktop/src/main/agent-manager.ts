@@ -6,6 +6,8 @@ import { homedir } from "os";
 import { IPC_CHANNELS } from "../common/ipc-channels";
 import {
   ClaudeCodeProvider,
+  CodexProvider,
+  createProvider,
   FileStorageAdapter,
   appendTraceEntry,
   normalizeMode,
@@ -18,6 +20,7 @@ import type {
   AgentMessage,
   PermissionHandler,
   SendMessageParams,
+  ProviderType,
 } from "@agentpanel/core";
 import { loadSettings } from "./settings/settings.store";
 import { resolveToolBehavior } from "./agent-session-logic";
@@ -164,8 +167,8 @@ export class AgentManager {
       },
     );
 
-    ipcMain.handle(IPC_CHANNELS.GET_AVAILABLE_MODELS, async () => {
-      const provider = new ClaudeCodeProvider();
+    ipcMain.handle(IPC_CHANNELS.GET_AVAILABLE_MODELS, async (_event, providerName?: string) => {
+      const provider = createProvider((providerName ?? "claude-code") as ProviderType);
       const settings = loadSettings();
       await provider.initialize({
         cliPath: settings.cliPath as string | undefined,
@@ -366,15 +369,20 @@ export class AgentManager {
     // Get or create a session for this thread
     let session = this.sessions.get(threadId);
     if (!session) {
-      const provider = new ClaudeCodeProvider();
+      const providerName = (thread.provider ?? "claude-code") as ProviderType;
+      const provider = createProvider(providerName);
       const settings = loadSettings();
       const threadCwd = thread.cwd ?? process.env.HOME!;
       const mcpServers = buildMcpServers(threadCwd);
       await provider.initialize({
-        cliPath: settings.cliPath as string | undefined,
+        ...(providerName === "claude-code"
+          ? {
+              cliPath: settings.cliPath as string | undefined,
+              settingSources: ["project", "user", "local"] as ("project" | "user" | "local")[],
+            }
+          : {}),
         model: thread.model,
         cwd: threadCwd,
-        settingSources: ["project", "user", "local"],
         ...(mcpServers ? { mcpServers } : {}),
       });
       session = { provider, sessionId: thread.sessionId };

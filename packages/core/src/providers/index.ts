@@ -1,12 +1,14 @@
 import type { AgentProvider } from './types'
 import { ClaudeCodeProvider } from './claude-code.provider'
+import { CodexProvider } from './codex.provider'
 
 export type { AgentProvider, AgentMessage, ProviderConfig, SendMessageParams, AgentDefinition } from './types'
 
 type ProviderConstructor = new () => AgentProvider
 
 const registry: Record<string, ProviderConstructor> = {
-  'claude-code': ClaudeCodeProvider
+  'claude-code': ClaudeCodeProvider,
+  'codex': CodexProvider
 }
 
 export function createProvider(name: string): AgentProvider {

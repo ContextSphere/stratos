@@ -126,6 +126,8 @@ export interface ProviderConfig {
   agents?: Record<string, AgentDefinition>;
   /** Path to the Claude Code CLI executable (for packaged Electron builds) */
   cliPath?: string;
+  /** Codex sandbox policy (default: 'workspace-write') */
+  sandboxPolicy?: "read-only" | "workspace-write" | "danger-full-access";
 }
 
 export interface TokenUsage {

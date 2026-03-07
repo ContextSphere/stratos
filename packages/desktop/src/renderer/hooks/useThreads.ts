@@ -6,7 +6,7 @@ interface UseThreadsReturn {
   activeThreadId: string | null
   activeThread: Thread | null
   setActiveThreadId: (id: string | null) => Promise<void>
-  createThread: (title?: string, model?: string, cwd?: string) => Promise<Thread>
+  createThread: (title?: string, model?: string, cwd?: string, provider?: string) => Promise<Thread>
   deleteThread: (id: string) => Promise<boolean>
   refreshThreads: () => Promise<void>
   isCreatingThread: boolean
@@ -31,10 +31,10 @@ export function useThreads(): UseThreadsReturn {
     setActiveThreadIdState(id)
   }, [])
 
-  const createThread = useCallback(async (title?: string, model?: string, cwd?: string) => {
+  const createThread = useCallback(async (title?: string, model?: string, cwd?: string, provider?: string) => {
     setIsCreatingThread(true)
     try {
-      const thread = (await window.api.threadsCreate(title, model, cwd)) as Thread
+      const thread = (await window.api.threadsCreate(title, model, cwd, provider)) as Thread
       await refreshThreads()
       return thread
     } finally { setIsCreatingThread(false) }

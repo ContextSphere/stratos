@@ -15,8 +15,8 @@ const api = {
   interrupt: (threadId?: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.INTERRUPT, threadId),
 
-  getAvailableModels: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.GET_AVAILABLE_MODELS),
+  getAvailableModels: (provider?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_AVAILABLE_MODELS, provider),
 
   selectDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.SELECT_DIRECTORY, defaultPath),
@@ -210,8 +210,8 @@ const api = {
   threadsGetActive: () => ipcRenderer.invoke(IPC_CHANNELS.THREADS_GET_ACTIVE),
   threadsSetActive: (threadId: string | null) =>
     ipcRenderer.invoke(IPC_CHANNELS.THREADS_SET_ACTIVE, threadId),
-  threadsCreate: (title?: string, model?: string, cwd?: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.THREADS_CREATE, title, model, cwd),
+  threadsCreate: (title?: string, model?: string, cwd?: string, provider?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.THREADS_CREATE, title, model, cwd, provider),
   threadsGet: (threadId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.THREADS_GET, threadId),
   threadsUpdate: (
@@ -225,6 +225,7 @@ const api = {
       additionalCwds?: string[];
       isGitRepo?: boolean;
       worktreeMode?: "local" | "worktree";
+      provider?: string;
     },
   ) => ipcRenderer.invoke(IPC_CHANNELS.THREADS_UPDATE, threadId, updates),
   threadsDelete: (threadId: string) =>
