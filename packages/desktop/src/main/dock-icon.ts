@@ -3,11 +3,11 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 
 /**
- * Load the real app icon and shift its hue by a deterministic amount derived
- * from the worktree hash. Each worktree gets a distinctly colored variant of
- * the icon, making it easy to tell dev instances apart in the dock.
+ * Load the real app icon. For linked worktrees, shift its hue by a
+ * deterministic amount so each worktree gets a distinctly colored variant.
+ * The main worktree keeps the original icon.
  */
-export function generateDockIcon(hash: string): Electron.NativeImage {
+export function generateDockIcon(hash: string, isLinkedWorktree = false): Electron.NativeImage {
   const iconPath = join(__dirname, '../../build/icon.png')
   if (!existsSync(iconPath)) {
     return nativeImage.createEmpty()
@@ -15,6 +15,11 @@ export function generateDockIcon(hash: string): Electron.NativeImage {
 
   const size = 128
   const baseIcon = nativeImage.createFromPath(iconPath).resize({ width: size, height: size })
+
+  if (!isLinkedWorktree) {
+    return baseIcon
+  }
+
   const bitmap = baseIcon.toBitmap() // BGRA format
 
   // Deterministic hue shift from hash (30–330° to always look different from original)

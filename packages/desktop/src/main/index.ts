@@ -27,6 +27,7 @@ import { registerClaudeIpc, unregisterClaudeIpc } from './integrations/claude.ip
 import { registerDirectoryIpc, unregisterDirectoryIpc } from './settings/directory.ipc'
 import { registerSettingsIpc, unregisterSettingsIpc } from './settings/settings.ipc'
 import { registerSkillsIpc, unregisterSkillsIpc, setSlashCommandsGetter } from './skills/skills.ipc'
+import { statSync } from 'fs'
 import { getWorktreeInfo } from '@agentpanel/core'
 import { generateDockIcon } from './dock-icon'
 
@@ -167,7 +168,8 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     if (process.platform === 'darwin' && worktree) {
-      app.dock?.setIcon(generateDockIcon(worktree.hash))
+      const isLinked = !statSync(join(worktree.root, '.git')).isDirectory()
+      app.dock?.setIcon(generateDockIcon(worktree.hash, isLinked))
     }
     createWindow()
     app.on('activate', () => {
