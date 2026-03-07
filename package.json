@@ -7,13 +7,25 @@
     "test": "turbo test",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
-    "build:mac": "turbo build:mac --filter=@agentpanel/desktop"
+    "build:mac": "turbo build:mac --filter=@agentpanel/desktop",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "turbo": "^2.5.4",
-    "typescript": "^5.9.3",
+    "eslint": "^9.39.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.3.2",
     "prettier": "^3.8.1",
-    "eslint": "^9.39.2"
+    "turbo": "^2.5.4",
+    "typescript": "^5.9.3"
   },
-  "packageManager": "pnpm@9.15.4"
+  "packageManager": "pnpm@9.15.4",
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  }
 }
