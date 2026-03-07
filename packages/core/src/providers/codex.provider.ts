@@ -46,6 +46,21 @@ const CODEX_MODELS: ModelInfo[] = [
 // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func, @typescript-eslint/no-explicit-any
 const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>
 
+/** Small async delay helper */
+const delay = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms))
+
+/**
+ * Average characters per token (rough estimate).
+ * Used to approximate word-boundary chunking for simulated streaming.
+ */
+const CHARS_PER_CHUNK = 12
+
+/**
+ * Minimum delay between streamed chunks (ms).
+ * Tuned to feel natural — fast enough to not feel laggy, slow enough to read.
+ */
+const STREAM_DELAY_MS = 15
+
 /**
  * OpenAI Codex provider implementation.
  *
@@ -54,8 +69,10 @@ const dynamicImport = new Function('specifier', 'return import(specifier)') as (
  * auto-execute within sandbox) since the SDK doesn't expose approval
  * callbacks. Safety is ensured by the Codex sandbox (default: workspace-write).
  *
- * The SDK is dynamically imported to avoid hard failures when the
- * package isn't installed.
+ * The Codex CLI does NOT emit incremental item.updated events for agent
+ * messages — text arrives as a single item.completed with the full content.
+ * To provide a streaming UX, we chunk the completed text and yield pieces
+ * with small async delays (simulated streaming).
  */
 export class CodexProvider implements AgentProvider {
   readonly name = 'codex'
@@ -66,12 +83,7 @@ export class CodexProvider implements AgentProvider {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private activeThread?: any
   private sessionInitSent = false
-  /**
-   * Tracks how many characters of text we've already emitted per item ID.
-   * Used to compute deltas for streaming: on each item.updated we yield
-   * only the new portion of text, not the full accumulated string.
-   */
-  private emittedTextLengths = new Map<string, number>()
+  private interrupted = false
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config
@@ -104,8 +116,6 @@ export class CodexProvider implements AgentProvider {
     }
 
     // Create Codex instance if not already created.
-    // CodexOptions accepts { config, codexPathOverride, baseUrl, apiKey, env }.
-    // config is a CodexConfigObject passed as --config key=value overrides.
     if (!this.codexInstance) {
       this.codexInstance = new Codex({})
     }
@@ -138,7 +148,6 @@ export class CodexProvider implements AgentProvider {
       return
     }
 
-    // Build input
     const input: string = params.prompt
 
     // Emit session_init on first message
@@ -153,12 +162,16 @@ export class CodexProvider implements AgentProvider {
       }
     }
 
+    this.interrupted = false
+
     // Run with streaming
     try {
       const streamed = await this.activeThread.runStreamed(input)
       const events = streamed.events ?? streamed
 
       for await (const event of events) {
+        if (this.interrupted) break
+
         if (params.traceCallback) {
           params.traceCallback({
             timestamp: Date.now(),
@@ -173,7 +186,28 @@ export class CodexProvider implements AgentProvider {
           this.threadId = event.thread_id
         }
 
-        yield* this.transformEvent(event)
+        // The Codex CLI does not emit item.started/item.updated for agent_message —
+        // text arrives as a single item.completed. We simulate streaming by chunking.
+        if (event.type === 'item.completed' && event.item) {
+          yield* this.streamItem(event.item)
+        } else if (event.type === 'turn.completed') {
+          const usage = event.usage
+          yield {
+            type: 'result',
+            content: '',
+            ...(usage ? {
+              usage: {
+                inputTokens: usage.input_tokens ?? 0,
+                outputTokens: usage.output_tokens ?? 0
+              }
+            } : {}),
+            stop_reason: 'end_turn'
+          }
+        } else if (event.type === 'turn.failed') {
+          yield { type: 'error', message: event.error?.message ?? 'Turn failed', code: 'CODEX_TURN_FAILED' }
+        } else if (event.type === 'error') {
+          yield { type: 'error', message: event.message ?? 'Unknown error', code: 'CODEX_ERROR' }
+        }
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err)
@@ -181,162 +215,27 @@ export class CodexProvider implements AgentProvider {
     }
   }
 
-  async interrupt(): Promise<void> {
-    // The Codex SDK doesn't expose a direct interrupt method on threads.
-    // Disposing and recreating is the safest approach.
-    this.activeThread = undefined
-    this.codexInstance = undefined
-    this.emittedTextLengths.clear()
-  }
-
-  canResume(sessionId: string): boolean {
-    return this.threadId === sessionId
-  }
-
-  async getAvailableModels(): Promise<ModelInfo[]> {
-    return CODEX_MODELS
-  }
-
-  async discoverSlashCommands(): Promise<{ name: string; description?: string }[]> {
-    // Codex doesn't support slash commands
-    return []
-  }
-
-  async dispose(): Promise<void> {
-    this.activeThread = undefined
-    this.codexInstance = undefined
-    this.threadId = undefined
-    this.sessionInitSent = false
-    this.emittedTextLengths.clear()
-  }
-
   /**
-   * Transform Codex SDK events into AgentPanel AgentMessage format.
+   * Stream a completed item's content. For text items (agent_message, reasoning),
+   * chunks the text and yields pieces with async delays. For tool items, yields
+   * immediately.
    *
-   * SDK event types (from d.ts):
-   *   thread.started, turn.started, turn.completed, turn.failed,
-   *   item.started, item.updated, item.completed, error
-   *
-   * SDK item types (snake_case):
-   *   agent_message, reasoning, command_execution, file_change,
-   *   mcp_tool_call, web_search, todo_list, error
-   *
-   * Streaming strategy:
-   *   For text-bearing items (agent_message, reasoning) we track the emitted
-   *   character count per item ID. On item.started / item.updated we yield only
-   *   the NEW delta (isStreaming: true). On item.completed we yield any remaining
-   *   delta (isStreaming: false) and clean up the tracking entry.
+   * Note: this is an async generator so we can `await delay()` between chunks.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private *transformEvent(event: any): Generator<AgentMessage> {
-    switch (event.type) {
-      case 'item.started':
-      case 'item.updated': {
-        const item = event.item
-        if (!item) break
-        yield* this.emitStreamingDelta(item)
-        break
-      }
-
-      case 'item.completed': {
-        const item = event.item
-        if (!item) break
-        yield* this.emitCompletedItem(item)
-        break
-      }
-
-      case 'turn.completed': {
-        // Clear all tracking state for the turn
-        this.emittedTextLengths.clear()
-        const usage = event.usage
-        yield {
-          type: 'result',
-          content: '',
-          ...(usage ? {
-            usage: {
-              inputTokens: usage.input_tokens ?? 0,
-              outputTokens: usage.output_tokens ?? 0
-            }
-          } : {}),
-          stop_reason: 'end_turn'
-        }
-        break
-      }
-
-      case 'turn.failed': {
-        this.emittedTextLengths.clear()
-        const errorMsg = event.error?.message ?? 'Turn failed'
-        yield { type: 'error', message: errorMsg, code: 'CODEX_TURN_FAILED' }
-        break
-      }
-
-      case 'error': {
-        yield { type: 'error', message: event.message ?? 'Unknown error', code: 'CODEX_ERROR' }
-        break
-      }
-
-      default:
-        // Ignore thread.started, turn.started
-        break
-    }
-  }
-
-  /**
-   * Yield a streaming text delta for in-progress items (item.started / item.updated).
-   * Only emits for text-bearing types (agent_message, reasoning).
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private *emitStreamingDelta(item: any): Generator<AgentMessage> {
-    if (item.type === 'agent_message') {
-      const text = item.text ?? ''
-      const id = item.id ?? 'msg'
-      const prev = this.emittedTextLengths.get(id) ?? 0
-      if (text.length > prev) {
-        const delta = text.slice(prev)
-        this.emittedTextLengths.set(id, text.length)
-        yield { type: 'text', content: delta, isStreaming: true }
-      }
-    } else if (item.type === 'reasoning') {
-      const text = item.text ?? ''
-      const id = item.id ?? 'reasoning'
-      const prev = this.emittedTextLengths.get(id) ?? 0
-      if (text.length > prev) {
-        const delta = text.slice(prev)
-        this.emittedTextLengths.set(id, text.length)
-        yield { type: 'thinking', content: delta, isStreaming: true }
-      }
-    }
-    // For non-text items (command_execution, file_change, etc.)
-    // we wait for item.completed to emit them in full.
-  }
-
-  /**
-   * Yield the final output for a completed item.
-   * For text items, emits only the remaining un-emitted delta.
-   * For tool items, emits the full tool_use + tool_result.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private *emitCompletedItem(item: any): Generator<AgentMessage> {
+  private async *streamItem(item: any): AsyncGenerator<AgentMessage> {
     switch (item.type) {
       case 'agent_message': {
         const text = item.text ?? ''
-        const id = item.id ?? 'msg'
-        const prev = this.emittedTextLengths.get(id) ?? 0
-        if (text.length > prev) {
-          yield { type: 'text', content: text.slice(prev), isStreaming: false }
-        }
-        this.emittedTextLengths.delete(id)
+        if (!text) break
+        yield* this.simulateTextStream(text, 'text')
         break
       }
 
       case 'reasoning': {
         const text = item.text ?? ''
-        const id = item.id ?? 'reasoning'
-        const prev = this.emittedTextLengths.get(id) ?? 0
-        if (text.length > prev) {
-          yield { type: 'thinking', content: text.slice(prev), isStreaming: false }
-        }
-        this.emittedTextLengths.delete(id)
+        if (!text) break
+        yield* this.simulateTextStream(text, 'thinking')
         break
       }
 
@@ -369,10 +268,7 @@ export class CodexProvider implements AgentProvider {
           yield {
             type: 'tool_use',
             toolName,
-            input: {
-              file_path: change.path ?? '',
-              kind: change.kind ?? 'update'
-            },
+            input: { file_path: change.path ?? '', kind: change.kind ?? 'update' },
             toolCallId
           }
           yield {
@@ -397,16 +293,12 @@ export class CodexProvider implements AgentProvider {
           output = item.error.message ?? 'MCP tool call failed'
         } else if (item.result) {
           if (item.result.content && Array.isArray(item.result.content)) {
-            output = item.result.content.map((b: { text?: string; type?: string }) => b.text ?? '').join('\n')
+            output = item.result.content.map((b: { text?: string }) => b.text ?? '').join('\n')
           } else {
             output = JSON.stringify(item.result)
           }
         }
-        yield {
-          type: 'tool_result',
-          toolCallId,
-          output: output || `(${item.status})`
-        }
+        yield { type: 'tool_result', toolCallId, output: output || `(${item.status})` }
         break
       }
 
@@ -418,11 +310,7 @@ export class CodexProvider implements AgentProvider {
           input: { query: item.query ?? '' },
           toolCallId
         }
-        yield {
-          type: 'tool_result',
-          toolCallId,
-          output: 'Search completed'
-        }
+        yield { type: 'tool_result', toolCallId, output: 'Search completed' }
         break
       }
 
@@ -451,4 +339,86 @@ export class CodexProvider implements AgentProvider {
       }
     }
   }
+
+  /**
+   * Simulate token-level streaming for a block of text.
+   *
+   * Splits on word boundaries (~CHARS_PER_CHUNK chars) and yields
+   * each chunk with a small delay so the UI renders progressively.
+   */
+  private async *simulateTextStream(
+    text: string,
+    msgType: 'text' | 'thinking'
+  ): AsyncGenerator<AgentMessage> {
+    const chunks = chunkText(text, CHARS_PER_CHUNK)
+    const lastIdx = chunks.length - 1
+
+    for (let i = 0; i <= lastIdx; i++) {
+      if (this.interrupted) break
+
+      const isLast = i === lastIdx
+      if (msgType === 'text') {
+        yield { type: 'text', content: chunks[i], isStreaming: !isLast }
+      } else {
+        yield { type: 'thinking', content: chunks[i], isStreaming: !isLast }
+      }
+
+      if (!isLast) {
+        await delay(STREAM_DELAY_MS)
+      }
+    }
+  }
+
+  async interrupt(): Promise<void> {
+    this.interrupted = true
+    this.activeThread = undefined
+    this.codexInstance = undefined
+  }
+
+  canResume(sessionId: string): boolean {
+    return this.threadId === sessionId
+  }
+
+  async getAvailableModels(): Promise<ModelInfo[]> {
+    return CODEX_MODELS
+  }
+
+  async discoverSlashCommands(): Promise<{ name: string; description?: string }[]> {
+    return []
+  }
+
+  async dispose(): Promise<void> {
+    this.interrupted = true
+    this.activeThread = undefined
+    this.codexInstance = undefined
+    this.threadId = undefined
+    this.sessionInitSent = false
+  }
+}
+
+/**
+ * Split text into chunks at word boundaries, each ~targetLen characters.
+ * Never breaks mid-word. Returns at least one chunk.
+ */
+function chunkText(text: string, targetLen: number): string[] {
+  if (text.length <= targetLen) return [text]
+
+  const chunks: string[] = []
+  let pos = 0
+  while (pos < text.length) {
+    if (pos + targetLen >= text.length) {
+      // Remainder fits in one chunk
+      chunks.push(text.slice(pos))
+      break
+    }
+    // Find the last space within the target window
+    let end = pos + targetLen
+    const spaceIdx = text.lastIndexOf(' ', end)
+    if (spaceIdx > pos) {
+      end = spaceIdx + 1 // include the space in this chunk
+    }
+    chunks.push(text.slice(pos, end))
+    pos = end
+  }
+  return chunks
 }
