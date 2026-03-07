@@ -61,6 +61,10 @@ export const IPC_CHANNELS = {
   PREVIEW_OPEN_URL: "preview:open-url",
   PREVIEW_OPEN_MARKDOWN: "preview:open-markdown",
 
+  // File explorer
+  FILES_LIST_DIR: "files:list-dir",
+  FILES_READ_FILE: "files:read-file",
+
   // Skills
   SKILLS_LIST: "skills:list",
   SLASH_COMMANDS_LIST: "skills:slash-commands",

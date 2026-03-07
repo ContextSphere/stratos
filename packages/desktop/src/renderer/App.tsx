@@ -69,6 +69,7 @@ export default function App(): React.ReactElement {
     openUrl,
     openMarkdown,
     openArtifactEditor,
+    openFileExplorer,
     close: closePreview,
   } = usePreview();
   const { latestTodoData, showTaskPanel, setShowTaskPanel } =
@@ -256,6 +257,14 @@ export default function App(): React.ReactElement {
     [activeThreadId, refreshThreads],
   );
 
+  const handleToggleFileExplorer = useCallback(() => {
+    if (preview.isOpen && preview.type === "file-explorer") {
+      closePreview();
+    } else if (activeThread?.cwd) {
+      openFileExplorer(activeThread.cwd);
+    }
+  }, [preview, closePreview, openFileExplorer, activeThread]);
+
   // Ctrl+Tab to cycle modes
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -432,6 +441,7 @@ export default function App(): React.ReactElement {
               isGitRepo={activeThread?.isGitRepo}
               hasMessages={messages.length > 0}
               onWorktreeModeChange={handleWorktreeModeChange}
+              onToggleFileExplorer={handleToggleFileExplorer}
             />
 
             {/* Chat messages */}
@@ -501,7 +511,14 @@ export default function App(): React.ReactElement {
           <>
             <Separator className="w-1.5 bg-[#1a1a1a] hover:bg-blue-600 transition-colors cursor-col-resize" />
             <Panel defaultSize={30} minSize={20}>
-              <PreviewPane preview={preview} onClose={closePreview} />
+              <PreviewPane
+                preview={preview}
+                onClose={closePreview}
+                filesBridge={{
+                  listDirectory: window.api.filesListDir,
+                  readFile: window.api.filesReadFile,
+                }}
+              />
             </Panel>
           </>
         )}

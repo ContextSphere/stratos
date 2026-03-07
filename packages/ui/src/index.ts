@@ -6,6 +6,7 @@ export { ChatInfoBar, type SessionStats } from './components/ChatInfoBar'
 export { ToolCallCard } from './components/ToolCallCard'
 export { TaskCard } from './components/TaskCard'
 export { FileChangeViewer } from './components/FileChangeViewer'
+export { FileExplorer } from './components/FileExplorer'
 export { QuestionBlock } from './components/QuestionBlock'
 export { QuestionSequence } from './components/QuestionSequence'
 export { PlanReviewBlock } from './components/PlanReviewBlock'
@@ -32,9 +33,9 @@ export { MarkdownPreview } from './components/preview/MarkdownPreview'
 export * from './components/shared'
 
 // Bridges
-export { AgentPanelProvider, useAgentPanel, useChatBridge, useThreadBridge, useSettingsBridge, usePreviewBridge } from './bridges/AgentPanelProvider'
+export { AgentPanelProvider, useAgentPanel, useChatBridge, useThreadBridge, useSettingsBridge, usePreviewBridge, useFilesBridge } from './bridges/AgentPanelProvider'
 export type { AgentPanelContextValue } from './bridges/AgentPanelProvider'
-export type { ChatBridge, ThreadBridge, SettingsBridge, PreviewBridge, StreamEvent, ImageAttachment as BridgeImageAttachment } from './bridges/types'
+export type { ChatBridge, ThreadBridge, SettingsBridge, PreviewBridge, FilesBridge, StreamEvent, ImageAttachment as BridgeImageAttachment } from './bridges/types'
 
 // Hooks
 export { useTodoData } from './hooks/useTodoData'

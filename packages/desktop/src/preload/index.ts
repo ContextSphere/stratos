@@ -262,6 +262,19 @@ const api = {
     );
   },
 
+  // File explorer
+  filesListDir: (
+    dirPath: string,
+    rootPath: string,
+  ): Promise<{ name: string; type: "file" | "directory"; size: number }[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_LIST_DIR, dirPath, rootPath),
+
+  filesReadFile: (
+    filePath: string,
+    rootPath: string,
+  ): Promise<{ content: string; isBinary: boolean }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_READ_FILE, filePath, rootPath),
+
   // Skills
   skills: {
     list: (): Promise<
