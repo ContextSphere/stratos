@@ -1,62 +1,149 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { ThreadList } from '../components/ThreadList'
-import type { Thread } from '@agentpanel/core'
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, cleanup } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { ThreadList } from "../components/ThreadList";
+import type { Thread, Folder } from "@agentpanel/core";
 
-function makeThread(id: string, title: string): Thread {
-  return { id, title, createdAt: Date.now(), updatedAt: Date.now() }
+function makeThread(id: string, title: string, cwd?: string): Thread {
+  return { id, title, createdAt: Date.now(), updatedAt: Date.now(), cwd };
+}
+
+function makeFolder(id: string, name: string, path: string): Folder {
+  return { id, name, path, createdAt: Date.now() };
 }
 
 const baseProps = {
   onThreadClick: vi.fn(),
-  onCreateThread: vi.fn(),
+  onCreateThreadInFolder: vi.fn(),
+  onAddFolder: vi.fn(),
+  onRemoveFolder: vi.fn(),
+  onToggleFolderCollapsed: vi.fn(),
   onDeleteThread: vi.fn(),
   runningThreadIds: [] as string[],
-  threadNotifications: new Map<string, string>()
-}
+  threadNotifications: new Map<string, string>(),
+};
 
-describe('ThreadList', () => {
-  afterEach(() => { cleanup(); vi.clearAllMocks() })
+describe("ThreadList", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
 
-  it('shows "No threads yet" when list is empty', () => {
-    render(<ThreadList {...baseProps} threads={[]} activeThreadId={null} />)
-    expect(screen.getByText('No threads yet')).toBeInTheDocument()
-  })
+  it("shows empty state when no folders", () => {
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={[]}
+        folders={[]}
+        activeThreadId={null}
+      />,
+    );
+    expect(screen.getByText("Add a folder")).toBeInTheDocument();
+  });
 
-  it('renders thread titles', () => {
-    const threads = [makeThread('a', 'Alpha'), makeThread('b', 'Beta')]
-    render(<ThreadList {...baseProps} threads={threads} activeThreadId={null} />)
-    expect(screen.getByText('Alpha')).toBeInTheDocument()
-    expect(screen.getByText('Beta')).toBeInTheDocument()
-  })
+  it("renders folder names", () => {
+    const folders = [makeFolder("f1", "my-project", "/home/user/my-project")];
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={[]}
+        folders={folders}
+        activeThreadId={null}
+      />,
+    );
+    expect(screen.getByText("my-project")).toBeInTheDocument();
+  });
 
-  it('highlights the active thread', () => {
-    const threads = [makeThread('a', 'Alpha'), makeThread('b', 'Beta')]
-    render(<ThreadList {...baseProps} threads={threads} activeThreadId="a" />)
-    const alphaEl = screen.getByText('Alpha').closest('div[class*="rounded-lg"]')!
-    expect(alphaEl.className).toContain('bg-[#2a2a2a]')
-    const betaEl = screen.getByText('Beta').closest('div[class*="rounded-lg"]')!
-    expect(betaEl.className).not.toContain('bg-[#2a2a2a]')
-  })
+  it("renders threads under their folder", () => {
+    const folders = [makeFolder("f1", "my-project", "/home/user/my-project")];
+    const threads = [makeThread("a", "Alpha", "/home/user/my-project")];
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={threads}
+        folders={folders}
+        activeThreadId={null}
+      />,
+    );
+    expect(screen.getByText("Alpha")).toBeInTheDocument();
+  });
 
-  it('calls onThreadClick with correct id', async () => {
-    const user = userEvent.setup()
-    const threads = [makeThread('a', 'Alpha')]
-    render(<ThreadList {...baseProps} threads={threads} activeThreadId={null} />)
-    await user.click(screen.getByText('Alpha'))
-    expect(baseProps.onThreadClick).toHaveBeenCalledWith('a')
-  })
+  it('shows "No threads" for empty folders', () => {
+    const folders = [makeFolder("f1", "my-project", "/home/user/my-project")];
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={[]}
+        folders={folders}
+        activeThreadId={null}
+      />,
+    );
+    expect(screen.getByText("No threads")).toBeInTheDocument();
+  });
 
-  it('calls onCreateThread when new thread button is clicked', async () => {
-    const user = userEvent.setup()
-    render(<ThreadList {...baseProps} threads={[]} activeThreadId={null} />)
-    await user.click(screen.getByTitle('New thread'))
-    expect(baseProps.onCreateThread).toHaveBeenCalledOnce()
-  })
+  it("highlights the active thread", () => {
+    const folders = [makeFolder("f1", "proj", "/proj")];
+    const threads = [
+      makeThread("a", "Alpha", "/proj"),
+      makeThread("b", "Beta", "/proj"),
+    ];
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={threads}
+        folders={folders}
+        activeThreadId="a"
+      />,
+    );
+    const alphaEl = screen
+      .getByText("Alpha")
+      .closest('div[class*="rounded-lg"]')!;
+    expect(alphaEl.className).toContain("bg-[#2a2a2a]");
+    const betaEl = screen
+      .getByText("Beta")
+      .closest('div[class*="rounded-lg"]')!;
+    expect(betaEl.className).not.toContain("bg-[#2a2a2a]");
+  });
 
-  it('shows the Threads header', () => {
-    render(<ThreadList {...baseProps} threads={[]} activeThreadId={null} />)
-    expect(screen.getByText('Threads')).toBeInTheDocument()
-  })
-})
+  it("calls onThreadClick with correct id", async () => {
+    const user = userEvent.setup();
+    const folders = [makeFolder("f1", "proj", "/proj")];
+    const threads = [makeThread("a", "Alpha", "/proj")];
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={threads}
+        folders={folders}
+        activeThreadId={null}
+      />,
+    );
+    await user.click(screen.getByText("Alpha"));
+    expect(baseProps.onThreadClick).toHaveBeenCalledWith("a");
+  });
+
+  it("calls onAddFolder when add folder button is clicked", async () => {
+    const user = userEvent.setup();
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={[]}
+        folders={[]}
+        activeThreadId={null}
+      />,
+    );
+    await user.click(screen.getByTitle("Add folder"));
+    expect(baseProps.onAddFolder).toHaveBeenCalledOnce();
+  });
+
+  it("shows the Threads header", () => {
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={[]}
+        folders={[]}
+        activeThreadId={null}
+      />,
+    );
+    expect(screen.getByText("Threads")).toBeInTheDocument();
+  });
+});

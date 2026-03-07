@@ -5,3 +5,4 @@ release
 .turbo
 *.tsbuildinfo
 .DS_Store
+docs/plans/

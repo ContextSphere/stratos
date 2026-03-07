@@ -2,18 +2,31 @@
   "name": "agentpanel",
   "private": true,
   "scripts": {
-    "dev": "turbo dev --filter=@agentpanel/desktop",
+    "dev": "turbo dev --filter=@agentpanel/core --filter=@agentpanel/ui --filter=@agentpanel/desktop",
     "build": "turbo build",
     "test": "turbo test",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
-    "build:mac": "turbo build:mac --filter=@agentpanel/desktop"
+    "build:mac": "turbo build:mac --filter=@agentpanel/desktop",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "eslint": "^9.39.2",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.3.2",
+    "prettier": "^3.8.1",
     "turbo": "^2.5.4",
     "typescript": "^5.9.3",
-    "prettier": "^3.8.1",
-    "eslint": "^9.39.2"
+    "typescript-eslint": "^8.56.1"
   },
-  "packageManager": "pnpm@9.15.4"
+  "packageManager": "pnpm@9.15.4",
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  }
 }

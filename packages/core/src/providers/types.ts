@@ -1,18 +1,17 @@
-import type { AgentMode } from '../types/thread'
+import type { AgentMode } from "../types/thread";
+import type { AgentDefinition as SDKAgentDefinition } from "@anthropic-ai/claude-agent-sdk";
 
 /** Read-only tools allowed in plan mode (provider-agnostic) */
-export const READ_ONLY_TOOLS = ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'] as const
+export const READ_ONLY_TOOLS = [
+  "Read",
+  "Glob",
+  "Grep",
+  "WebSearch",
+  "WebFetch",
+] as const;
 
-/**
- * Agent definition for sub-agents.
- * Compatible with @anthropic-ai/claude-agent-sdk's AgentDefinition.
- */
-export interface AgentDefinition {
-  model?: string
-  systemPrompt?: string
-  tools?: string[]
-  [key: string]: unknown
-}
+/** Re-export SDK's AgentDefinition for type consistency */
+export type AgentDefinition = SDKAgentDefinition;
 
 /**
  * Provider abstraction for AI coding agents.
@@ -20,101 +19,124 @@ export interface AgentDefinition {
  * (e.g., Codex SDK, Cursor CLI).
  */
 export interface AgentProvider {
-  readonly name: string
+  readonly name: string;
 
   /** Initialize the provider (validate credentials, etc.) */
-  initialize(config: ProviderConfig): Promise<void>
+  initialize(config: ProviderConfig): Promise<void>;
 
   /** Send a message and stream normalized responses back */
-  sendMessage(params: SendMessageParams): AsyncGenerator<AgentMessage>
+  sendMessage(params: SendMessageParams): AsyncGenerator<AgentMessage>;
 
   /** Interrupt the current operation */
-  interrupt(): Promise<void>
+  interrupt(): Promise<void>;
 
   /** Check if a previous session can be resumed */
-  canResume(sessionId: string): boolean
+  canResume(sessionId: string): boolean;
 
   /** Get list of available models from the provider */
-  getAvailableModels(): Promise<ModelInfo[]>
+  getAvailableModels(): Promise<ModelInfo[]>;
 
   /** Discover available slash commands without starting a full session */
-  discoverSlashCommands(): Promise<{ name: string; description?: string }[]>
+  discoverSlashCommands(): Promise<{ name: string; description?: string }[]>;
 
   /** Clean up resources */
-  dispose(): Promise<void>
+  dispose(): Promise<void>;
 }
 
 /** Provider-agnostic message types emitted during streaming */
 export type AgentMessage =
-  | { type: 'text'; content: string; isStreaming: boolean }
-  | { type: 'thinking'; content: string; isStreaming: boolean }
-  | { type: 'tool_use'; toolName: string; input: Record<string, unknown>; toolCallId: string }
-  | { type: 'tool_result'; toolCallId: string; output: string }
-  | { type: 'todo_update'; todos: TodoItem[] }
+  | { type: "text"; content: string; isStreaming: boolean }
+  | { type: "thinking"; content: string; isStreaming: boolean }
   | {
-      type: 'permission_request'
-      toolName: string
-      input: Record<string, unknown>
-      requestId: string
+      type: "tool_use";
+      toolName: string;
+      input: Record<string, unknown>;
+      toolCallId: string;
     }
-  | { type: 'session_init'; sessionId: string; tools: string[]; slashCommands?: { name: string; description?: string }[] }
-  | { type: 'result'; content: string; cost?: number; usage?: TokenUsage; contextWindow?: number; stop_reason?: 'end_turn' | 'max_tokens' | 'stop_sequence' | null }
-  | { type: 'error'; message: string; code?: string }
+  | { type: "tool_result"; toolCallId: string; output: string }
+  | { type: "todo_update"; todos: TodoItem[] }
+  | {
+      type: "permission_request";
+      toolName: string;
+      input: Record<string, unknown>;
+      requestId: string;
+    }
+  | {
+      type: "session_init";
+      sessionId: string;
+      tools: string[];
+      slashCommands?: { name: string; description?: string }[];
+    }
+  | {
+      type: "result";
+      content: string;
+      cost?: number;
+      usage?: TokenUsage;
+      contextWindow?: number;
+      stop_reason?: "end_turn" | "max_tokens" | "stop_sequence" | null;
+    }
+  | { type: "error"; message: string; code?: string };
 
 export interface TodoItem {
-  content: string
-  status: 'pending' | 'in_progress' | 'completed'
-  activeForm: string
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  activeForm: string;
 }
 
 export interface SendMessageParams {
-  prompt: string
-  sessionId?: string
-  model?: string
-  cwd?: string
-  additionalDirectories?: string[]
-  thinkingEffort?: 'low' | 'medium' | 'high' | 'max'
-  mode?: AgentMode
-  images?: { dataUrl: string; mimeType: string }[]
-  permissionHandler: PermissionHandler
+  prompt: string;
+  sessionId?: string;
+  model?: string;
+  cwd?: string;
+  additionalDirectories?: string[];
+  thinkingEffort?: "low" | "medium" | "high" | "max";
+  mode?: AgentMode;
+  images?: { dataUrl: string; mimeType: string }[];
+  permissionHandler: PermissionHandler;
   /** Optional callback to capture raw SDK trace messages for debugging */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  traceCallback?: (entry: any) => void
+  traceCallback?: (entry: any) => void;
 }
 
 export type PermissionHandler = (
   toolName: string,
-  input: Record<string, unknown>
-) => Promise<{ approved: boolean; modifiedInput?: Record<string, unknown>; denyMessage?: string }>
+  input: Record<string, unknown>,
+) => Promise<{
+  approved: boolean;
+  modifiedInput?: Record<string, unknown>;
+  denyMessage?: string;
+}>;
 
 export interface ProviderConfig {
-  model?: string
-  allowedTools?: string[]
-  cwd?: string
-  maxBudgetUsd?: number
-  systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string }
+  model?: string;
+  allowedTools?: string[];
+  cwd?: string;
+  maxBudgetUsd?: number;
+  systemPrompt?:
+    | string
+    | { type: "preset"; preset: "claude_code"; append?: string };
   /** MCP servers to expose as custom tools to the AI agent. Keys are server names. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  mcpServers?: Record<string, any>
-  /** Setting sources to load (e.g., CLAUDE.md files). 'project' loads from working directory, 'user' loads from ~/.claude/ */
-  settingSources?: ('project' | 'user')[]
+  mcpServers?: Record<string, any>;
+  /** Setting sources to load (e.g., CLAUDE.md files). */
+  settingSources?: ("project" | "user" | "local")[];
   /** Local plugins to load into every agent session */
-  plugins?: { type: 'local'; path: string }[]
+  plugins?: { type: "local"; path: string }[];
   /** Custom sub-agents that can be invoked via the Task tool */
-  agents?: Record<string, AgentDefinition>
+  agents?: Record<string, AgentDefinition>;
   /** Path to the Claude Code CLI executable (for packaged Electron builds) */
-  cliPath?: string
+  cliPath?: string;
   /** Codex sandbox policy (default: 'workspace-write') */
-  sandboxPolicy?: 'read-only' | 'workspace-write' | 'danger-full-access'
+  sandboxPolicy?: "read-only" | "workspace-write" | "danger-full-access";
 }
 
 export interface TokenUsage {
-  inputTokens: number
-  outputTokens: number
+  inputTokens: number;
+  outputTokens: number;
 }
 
 export interface ModelInfo {
-  value: string
-  displayName: string
-  description: string
+  value: string;
+  displayName: string;
+  description: string;
 }
