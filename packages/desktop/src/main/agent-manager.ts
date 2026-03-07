@@ -585,7 +585,7 @@ export class AgentManager {
               }
             : {}),
         },
-        threadId,
+        threadId ?? undefined,
       );
     });
   }
@@ -603,7 +603,7 @@ export class AgentManager {
           requestId,
           input,
         },
-        threadId,
+        threadId ?? undefined,
       );
     });
   }
