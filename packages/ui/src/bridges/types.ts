@@ -68,11 +68,14 @@ export interface PreviewBridge {
   readArtifactFile?(path: string): Promise<string>;
 }
 
+export interface DirEntry {
+  name: string;
+  type: "file" | "directory";
+  size: number;
+}
+
 export interface FilesBridge {
-  listDirectory(
-    dirPath: string,
-    rootPath: string,
-  ): Promise<{ name: string; type: "file" | "directory"; size: number }[]>;
+  listDirectory(dirPath: string, rootPath: string): Promise<DirEntry[]>;
   readFile(
     filePath: string,
     rootPath: string,

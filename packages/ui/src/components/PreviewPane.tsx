@@ -1,4 +1,5 @@
 import type { PreviewState } from "../types/preview";
+import type { FilesBridge } from "../bridges/types";
 import { MarkdownPreview } from "./preview/MarkdownPreview";
 import { ArtifactEditorPreview } from "./preview/ArtifactEditorPreview";
 import { FileExplorer } from "./FileExplorer";
@@ -6,16 +7,7 @@ import { FileExplorer } from "./FileExplorer";
 interface Props {
   preview: PreviewState;
   onClose: () => void;
-  filesBridge?: {
-    listDirectory: (
-      dirPath: string,
-      rootPath: string,
-    ) => Promise<{ name: string; type: "file" | "directory"; size: number }[]>;
-    readFile: (
-      filePath: string,
-      rootPath: string,
-    ) => Promise<{ content: string; isBinary: boolean }>;
-  };
+  filesBridge?: FilesBridge;
 }
 
 const TYPE_LABELS: Record<string, string> = {

@@ -2,12 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import { Editor } from "@monaco-editor/react";
 import { getLanguageFromPath } from "../utils/monaco-language";
 import "../utils/monaco-theme";
+import type { DirEntry } from "../bridges/types";
 
-interface DirEntry {
-  name: string;
-  type: "file" | "directory";
-  size: number;
-}
+const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 
 interface TreeNode {
   entry: DirEntry;
@@ -105,10 +102,12 @@ export function FileExplorer({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let ignored = false;
     setLoading(true);
     setError(null);
     listDirectory(cwd, cwd)
       .then((entries) => {
+        if (ignored) return;
         setTree(
           entries.map((e) => ({
             entry: e,
@@ -120,9 +119,13 @@ export function FileExplorer({
         setLoading(false);
       })
       .catch((err) => {
+        if (ignored) return;
         setError(String(err));
         setLoading(false);
       });
+    return () => {
+      ignored = true;
+    };
   }, [cwd, listDirectory]);
 
   const toggleFolder = useCallback(
@@ -162,7 +165,7 @@ export function FileExplorer({
 
   const handleFileClick = useCallback(
     async (filePath: string, size: number) => {
-      if (size > 1024 * 1024) {
+      if (size > MAX_FILE_SIZE) {
         setOpenFile({
           path: filePath,
           content: "",
@@ -235,7 +238,7 @@ export function FileExplorer({
             <Editor
               value={openFile.content}
               language={getLanguageFromPath(openFile.path)}
-              theme="agentpanel-dark"
+              theme="cursor-dark"
               options={{
                 readOnly: true,
                 minimap: { enabled: false },

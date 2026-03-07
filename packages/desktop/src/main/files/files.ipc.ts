@@ -34,20 +34,25 @@ export function registerFilesIpc(): void {
         throw new Error("Path outside allowed directory");
       }
       const entries = await readdir(dirPath, { withFileTypes: true });
-      const results: DirEntry[] = [];
-      for (const entry of entries) {
-        const fullPath = join(dirPath, entry.name);
-        try {
+      const settled = await Promise.allSettled(
+        entries.map(async (entry) => {
+          const fullPath = join(dirPath, entry.name);
           const s = await stat(fullPath);
-          results.push({
+          return {
             name: entry.name,
-            type: entry.isDirectory() ? "directory" : "file",
+            type: (entry.isDirectory() ? "directory" : "file") as
+              | "file"
+              | "directory",
             size: s.size,
-          });
-        } catch {
-          // Skip entries we can't stat (permission errors, etc.)
-        }
-      }
+          };
+        }),
+      );
+      const results: DirEntry[] = settled
+        .filter(
+          (r): r is PromiseFulfilledResult<DirEntry> =>
+            r.status === "fulfilled",
+        )
+        .map((r) => r.value);
       results.sort((a, b) => {
         if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
         return a.name.localeCompare(b.name);
