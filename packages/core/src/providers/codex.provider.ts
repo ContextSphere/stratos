@@ -46,21 +46,6 @@ const CODEX_MODELS: ModelInfo[] = [
 // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func, @typescript-eslint/no-explicit-any
 const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>
 
-/** Small async delay helper */
-const delay = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms))
-
-/**
- * Average characters per token (rough estimate).
- * Used to approximate word-boundary chunking for simulated streaming.
- */
-const CHARS_PER_CHUNK = 12
-
-/**
- * Minimum delay between streamed chunks (ms).
- * Tuned to feel natural — fast enough to not feel laggy, slow enough to read.
- */
-const STREAM_DELAY_MS = 15
-
 /**
  * OpenAI Codex provider implementation.
  *
@@ -69,10 +54,11 @@ const STREAM_DELAY_MS = 15
  * auto-execute within sandbox) since the SDK doesn't expose approval
  * callbacks. Safety is ensured by the Codex sandbox (default: workspace-write).
  *
- * The Codex CLI does NOT emit incremental item.updated events for agent
- * messages — text arrives as a single item.completed with the full content.
- * To provide a streaming UX, we chunk the completed text and yield pieces
- * with small async delays (simulated streaming).
+ * NOTE: The Codex CLI does not support incremental text streaming. The SDK's
+ * `codex exec --experimental-json` protocol only emits `item.completed` events
+ * with the full text — no intermediate `item.updated` events for agent_message.
+ * Text responses therefore appear all at once. This is a limitation of the
+ * Codex SDK, not something we can work around at the provider level.
  */
 export class CodexProvider implements AgentProvider {
   readonly name = 'codex'
@@ -83,7 +69,6 @@ export class CodexProvider implements AgentProvider {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private activeThread?: any
   private sessionInitSent = false
-  private interrupted = false
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config
@@ -162,16 +147,14 @@ export class CodexProvider implements AgentProvider {
       }
     }
 
-    this.interrupted = false
-
-    // Run with streaming
+    // Run and yield events as they arrive.
+    // The Codex CLI only emits item.completed (no incremental updates),
+    // so text appears all at once — this is a Codex SDK limitation.
     try {
       const streamed = await this.activeThread.runStreamed(input)
       const events = streamed.events ?? streamed
 
       for await (const event of events) {
-        if (this.interrupted) break
-
         if (params.traceCallback) {
           params.traceCallback({
             timestamp: Date.now(),
@@ -186,10 +169,8 @@ export class CodexProvider implements AgentProvider {
           this.threadId = event.thread_id
         }
 
-        // The Codex CLI does not emit item.started/item.updated for agent_message —
-        // text arrives as a single item.completed. We simulate streaming by chunking.
         if (event.type === 'item.completed' && event.item) {
-          yield* this.streamItem(event.item)
+          yield* this.transformItem(event.item)
         } else if (event.type === 'turn.completed') {
           const usage = event.usage
           yield {
@@ -216,26 +197,28 @@ export class CodexProvider implements AgentProvider {
   }
 
   /**
-   * Stream a completed item's content. For text items (agent_message, reasoning),
-   * chunks the text and yields pieces with async delays. For tool items, yields
-   * immediately.
+   * Transform a completed Codex item into AgentMessage(s).
    *
-   * Note: this is an async generator so we can `await delay()` between chunks.
+   * Item types (snake_case per SDK d.ts):
+   *   agent_message, reasoning, command_execution, file_change,
+   *   mcp_tool_call, web_search, todo_list, error
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async *streamItem(item: any): AsyncGenerator<AgentMessage> {
+  private *transformItem(item: any): Generator<AgentMessage> {
     switch (item.type) {
       case 'agent_message': {
         const text = item.text ?? ''
-        if (!text) break
-        yield* this.simulateTextStream(text, 'text')
+        if (text) {
+          yield { type: 'text', content: text, isStreaming: false }
+        }
         break
       }
 
       case 'reasoning': {
         const text = item.text ?? ''
-        if (!text) break
-        yield* this.simulateTextStream(text, 'thinking')
+        if (text) {
+          yield { type: 'thinking', content: text, isStreaming: false }
+        }
         break
       }
 
@@ -340,37 +323,7 @@ export class CodexProvider implements AgentProvider {
     }
   }
 
-  /**
-   * Simulate token-level streaming for a block of text.
-   *
-   * Splits on word boundaries (~CHARS_PER_CHUNK chars) and yields
-   * each chunk with a small delay so the UI renders progressively.
-   */
-  private async *simulateTextStream(
-    text: string,
-    msgType: 'text' | 'thinking'
-  ): AsyncGenerator<AgentMessage> {
-    const chunks = chunkText(text, CHARS_PER_CHUNK)
-    const lastIdx = chunks.length - 1
-
-    for (let i = 0; i <= lastIdx; i++) {
-      if (this.interrupted) break
-
-      const isLast = i === lastIdx
-      if (msgType === 'text') {
-        yield { type: 'text', content: chunks[i], isStreaming: !isLast }
-      } else {
-        yield { type: 'thinking', content: chunks[i], isStreaming: !isLast }
-      }
-
-      if (!isLast) {
-        await delay(STREAM_DELAY_MS)
-      }
-    }
-  }
-
   async interrupt(): Promise<void> {
-    this.interrupted = true
     this.activeThread = undefined
     this.codexInstance = undefined
   }
@@ -388,37 +341,9 @@ export class CodexProvider implements AgentProvider {
   }
 
   async dispose(): Promise<void> {
-    this.interrupted = true
     this.activeThread = undefined
     this.codexInstance = undefined
     this.threadId = undefined
     this.sessionInitSent = false
   }
-}
-
-/**
- * Split text into chunks at word boundaries, each ~targetLen characters.
- * Never breaks mid-word. Returns at least one chunk.
- */
-function chunkText(text: string, targetLen: number): string[] {
-  if (text.length <= targetLen) return [text]
-
-  const chunks: string[] = []
-  let pos = 0
-  while (pos < text.length) {
-    if (pos + targetLen >= text.length) {
-      // Remainder fits in one chunk
-      chunks.push(text.slice(pos))
-      break
-    }
-    // Find the last space within the target window
-    let end = pos + targetLen
-    const spaceIdx = text.lastIndexOf(' ', end)
-    if (spaceIdx > pos) {
-      end = spaceIdx + 1 // include the space in this chunk
-    }
-    chunks.push(text.slice(pos, end))
-    pos = end
-  }
-  return chunks
 }
