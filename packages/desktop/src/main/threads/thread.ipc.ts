@@ -238,6 +238,31 @@ export function registerThreadIpc(): void {
   ipcMain.handle(
     IPC_CHANNELS.FOLDERS_REMOVE,
     async (_event, folderId: string) => {
+      // Clean up worktrees and sessions for threads in this folder
+      const folder = storage.listFolders().find((f) => f.id === folderId);
+      if (folder) {
+        const threads = storage
+          .listThreads()
+          .filter((t) => t.cwd === folder.path);
+        for (const thread of threads) {
+          if (thread.worktree) {
+            try {
+              execSync(
+                `git worktree remove "${thread.worktree.path}" --force`,
+                {
+                  cwd: thread.worktree.sourceRepoPath,
+                  encoding: "utf-8",
+                  timeout: 10000,
+                  stdio: ["pipe", "pipe", "pipe"],
+                },
+              );
+            } catch {
+              // Worktree may already be removed
+            }
+          }
+          clearSessionFn?.(thread.id);
+        }
+      }
       return storage.removeFolder(folderId);
     },
   );

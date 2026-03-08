@@ -109,6 +109,16 @@ export default function App(): React.ReactElement {
 
   const { folders, addFolder, removeFolder, updateFolder } = useFolders();
 
+  // Reset activeThreadId if it points to a thread not visible in any folder
+  useEffect(() => {
+    if (activeThreadId && activeThread) {
+      const folderPaths = new Set(folders.map((f) => f.path));
+      if (!activeThread.cwd || !folderPaths.has(activeThread.cwd)) {
+        setActiveThreadId(null);
+      }
+    }
+  }, [activeThreadId, activeThread, folders, setActiveThreadId]);
+
   const {
     messages,
     isStreaming,
@@ -409,7 +419,10 @@ export default function App(): React.ReactElement {
           onThreadClick={handleThreadClick}
           onCreateThreadInFolder={handleCreateThreadInFolder}
           onAddFolder={handleAddFolder}
-          onRemoveFolder={removeFolder}
+          onRemoveFolder={async (folderId: string) => {
+            await removeFolder(folderId);
+            await refreshThreads();
+          }}
           onToggleFolderCollapsed={handleToggleFolderCollapsed}
           onDeleteThread={handleDeleteThread}
           onToggleSidebar={toggleSidebar}

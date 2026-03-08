@@ -73,7 +73,12 @@ export class FileStorageAdapter implements StorageAdapter {
     return threads.find((t) => t.id === threadId) ?? null;
   }
 
-  createThread(title = "New chat", model?: string, cwd?: string, provider?: string): Thread {
+  createThread(
+    title = "New chat",
+    model?: string,
+    cwd?: string,
+    provider?: string,
+  ): Thread {
     const id = `thread_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     const now = Date.now();
     const thread: Thread = {
@@ -196,8 +201,31 @@ export class FileStorageAdapter implements StorageAdapter {
   removeFolder(folderId: string): void {
     const data = this.loadThreadsFile();
     if (!data.folders) return;
+    const folder = data.folders.find((f) => f.id === folderId);
+    if (!folder) return;
+
+    // Remove all threads belonging to this folder
+    const removedThreadIds = new Set(
+      data.threads.filter((t) => t.cwd === folder.path).map((t) => t.id),
+    );
+    data.threads = data.threads.filter((t) => !removedThreadIds.has(t.id));
+
+    // Update activeThreadId if it was in the removed folder
+    if (data.activeThreadId && removedThreadIds.has(data.activeThreadId)) {
+      data.activeThreadId = data.threads.length > 0 ? data.threads[0].id : null;
+    }
+
     data.folders = data.folders.filter((f) => f.id !== folderId);
     this.saveThreadsFile(data);
+
+    // Clean up message and trace files for removed threads
+    for (const threadId of removedThreadIds) {
+      const msgPath = this.getMessagesPath(threadId);
+      if (existsSync(msgPath)) {
+        unlinkSync(msgPath);
+      }
+      clearTraceFile(threadId, this.baseDir);
+    }
   }
 
   updateFolder(folderId: string, updates: Partial<Folder>): Folder | null {
