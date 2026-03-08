@@ -310,7 +310,8 @@ export class AgentManager {
         IPC_CHANNELS.STREAM_MESSAGE,
         {
           type: "worktree_progress",
-          steps: [{ step: "Creating git worktree...", status: "running" }],
+          step: "Creating git worktree...",
+          status: "running",
         },
         threadId,
       );
@@ -349,7 +350,8 @@ export class AgentManager {
           IPC_CHANNELS.STREAM_MESSAGE,
           {
             type: "worktree_progress",
-            steps: [{ step: "Creating git worktree...", status: "completed" }],
+            step: "Creating git worktree...",
+            status: "completed",
           },
           threadId,
         );
@@ -358,12 +360,8 @@ export class AgentManager {
           IPC_CHANNELS.STREAM_MESSAGE,
           {
             type: "worktree_progress",
-            steps: [
-              {
-                step: `Failed to create worktree: ${err?.message ?? "Unknown error"}`,
-                status: "error",
-              },
-            ],
+            step: `Failed to create worktree: ${err?.message ?? "Unknown error"}`,
+            status: "error",
           },
           threadId,
         );
