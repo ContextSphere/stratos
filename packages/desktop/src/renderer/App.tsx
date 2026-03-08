@@ -612,7 +612,7 @@ export default function App(): React.ReactElement {
                       pendingProvider
                     }
                     onProviderChange={handleProviderChange}
-                    disabled={isStreaming}
+                    disabled={isStreaming || messages.length > 0}
                   />
                   <span className="text-xs text-gray-700">|</span>
                   <ModelSelector

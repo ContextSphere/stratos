@@ -148,9 +148,7 @@ function buildMarkdownComponents(onLinkClick?: (url: string) => void) {
     },
     h3({ children }: { children?: React.ReactNode }) {
       return (
-        <h3 className="text-base font-bold mb-2 mt-2 first:mt-0">
-          {children}
-        </h3>
+        <h3 className="text-base font-bold mb-2 mt-2 first:mt-0">{children}</h3>
       );
     },
     blockquote({ children }: { children?: React.ReactNode }) {
@@ -376,7 +374,6 @@ export function MessageBubble({
                     <span className="truncate max-w-[200px]">{att.title}</span>
                   </a>
                 ))}
-<<<<<<< HEAD
               </div>
             )}
 
@@ -437,7 +434,6 @@ export function MessageBubble({
             {message.worktreeProgress && (
               <WorktreeProgress progressData={message.worktreeProgress} />
             )}
-
           </div>
         </div>
       )}
@@ -466,7 +462,6 @@ export function MessageBubble({
           ))}
         </div>
       )}
-
     </div>
   );
 }
