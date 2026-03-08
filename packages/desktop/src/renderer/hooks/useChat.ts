@@ -9,6 +9,7 @@ import type {
   ImageAttachment,
   TodoData,
   WorktreeProgressData,
+  McpServerInfo,
 } from "@agentpanel/ui";
 import type { StoredMessage, AgentMode } from "@agentpanel/core";
 
@@ -54,6 +55,8 @@ interface UseChatReturn {
   updateTaskExpanded: (messageId: string, expanded: boolean) => void;
   slashCommands: { name: string; description?: string }[];
   sessionTools: string[] | null;
+  mcpServers: McpServerInfo[] | null;
+  fetchMcpStatus: (threadId: string) => Promise<void>;
   runningThreadIds: string[];
   threadNotifications: Map<string, string>;
   pendingPermissionThreadIds: Set<string>;
@@ -147,6 +150,7 @@ export function useChat(
     { name: string; description?: string }[]
   >([]);
   const [sessionTools, setSessionTools] = useState<string[] | null>(null);
+  const [mcpServers, setMcpServers] = useState<McpServerInfo[] | null>(null);
 
   // Derived isStreaming — true only when the active thread is running
   const isStreaming = activeThreadId
@@ -268,6 +272,7 @@ export function useChat(
         contextWindow: null,
       });
       setSessionTools(null);
+      setMcpServers(null);
     }
   }, [activeThreadId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -721,6 +726,18 @@ export function useChat(
           if (msg.tools && Array.isArray(msg.tools)) {
             setSessionTools(msg.tools);
           }
+          if (msg.mcpServers) {
+            setMcpServers(msg.mcpServers);
+          }
+          // Auto-fetch full MCP status (with scope info) after init
+          if (threadId) {
+            window.api
+              .mcpServerStatus(threadId)
+              .then((statuses: McpServerInfo[]) => {
+                if (statuses.length > 0) setMcpServers(statuses);
+              })
+              .catch(() => {});
+          }
           break;
       }
     });
@@ -1118,6 +1135,13 @@ export function useChat(
     [interactiveMode, respondPlanReview, respondQuestion],
   );
 
+  const fetchMcpStatus = useCallback(async (threadId: string) => {
+    try {
+      const statuses = await window.api.mcpServerStatus(threadId);
+      if (statuses.length > 0) setMcpServers(statuses);
+    } catch {}
+  }, []);
+
   const updateTaskExpanded = useCallback(
     (messageId: string, expanded: boolean) => {
       const activeId = activeThreadIdRef.current;
@@ -1166,6 +1190,8 @@ export function useChat(
     updateTaskExpanded,
     slashCommands,
     sessionTools,
+    mcpServers,
+    fetchMcpStatus,
     runningThreadIds,
     threadNotifications,
     pendingPermissionThreadIds,

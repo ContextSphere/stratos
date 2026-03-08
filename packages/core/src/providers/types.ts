@@ -39,6 +39,15 @@ export interface AgentProvider {
   /** Discover available slash commands without starting a full session */
   discoverSlashCommands(): Promise<{ name: string; description?: string }[]>;
 
+  /** Get MCP server status */
+  getMcpServerStatus?(): Promise<McpServerInfo[]>;
+
+  /** Toggle an MCP server on/off */
+  toggleMcpServer?(serverName: string, enabled: boolean): Promise<void>;
+
+  /** Reconnect a failed MCP server */
+  reconnectMcpServer?(serverName: string): Promise<void>;
+
   /** Clean up resources */
   dispose(): Promise<void>;
 }
@@ -66,6 +75,7 @@ export type AgentMessage =
       sessionId: string;
       tools: string[];
       slashCommands?: { name: string; description?: string }[];
+      mcpServers?: McpServerInfo[];
     }
   | {
       type: "result";
@@ -83,6 +93,15 @@ export interface TodoItem {
   activeForm: string;
 }
 
+export interface McpElicitationRequest {
+  serverName: string;
+  message: string;
+  mode?: "form" | "url";
+  url?: string;
+  elicitationId?: string;
+  requestedSchema?: Record<string, unknown>;
+}
+
 export interface SendMessageParams {
   prompt: string;
   sessionId?: string;
@@ -96,6 +115,13 @@ export interface SendMessageParams {
   /** Optional callback to capture raw SDK trace messages for debugging */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   traceCallback?: (entry: any) => void;
+  /** Callback for MCP elicitation (auth/input) requests */
+  onElicitation?: (
+    request: McpElicitationRequest,
+  ) => Promise<{
+    action: "accept" | "decline" | "cancel";
+    content?: Record<string, unknown>;
+  }>;
 }
 
 /** Opaque permission update passed through from the SDK */
@@ -148,4 +174,13 @@ export interface ModelInfo {
   value: string;
   displayName: string;
   description: string;
+}
+
+export interface McpServerInfo {
+  name: string;
+  status: "connected" | "failed" | "needs-auth" | "pending" | "disabled";
+  scope?: string; // 'project' | 'user' | 'local' | 'claudeai' | 'managed'
+  configPath?: string;
+  tools: string[];
+  error?: string;
 }

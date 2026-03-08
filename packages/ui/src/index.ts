@@ -56,6 +56,7 @@ export type {
   DirEntry,
   StreamEvent,
   ImageAttachment as BridgeImageAttachment,
+  McpServerInfo,
 } from "./bridges/types";
 
 // Hooks

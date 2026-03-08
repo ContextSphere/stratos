@@ -6,6 +6,7 @@ import type {
   ProviderConfig,
   TokenUsage,
   ModelInfo,
+  McpServerInfo,
 } from "./types";
 import { MODE_CONFIGS } from "../types/mode";
 
@@ -82,6 +83,23 @@ export class ClaudeCodeProvider implements AgentProvider {
         | "acceptEdits"
         | "bypassPermissions",
       ...(isBypass ? { allowDangerouslySkipPermissions: true } : {}),
+      ...(params.onElicitation
+        ? {
+            onElicitation: async (
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              request: any,
+            ) => {
+              return params.onElicitation!({
+                serverName: request.serverName,
+                message: request.message,
+                mode: request.mode,
+                url: request.url,
+                elicitationId: request.elicitationId,
+                requestedSchema: request.requestedSchema,
+              });
+            },
+          }
+        : {}),
       canUseTool: async (
         toolName: string,
         input: Record<string, unknown>,
@@ -247,6 +265,46 @@ export class ClaudeCodeProvider implements AgentProvider {
     return commands;
   }
 
+  async getMcpServerStatus(): Promise<McpServerInfo[]> {
+    if (
+      !this.currentQuery ||
+      typeof this.currentQuery.mcpServerStatus !== "function"
+    ) {
+      return [];
+    }
+    const statuses = await this.currentQuery.mcpServerStatus();
+    return statuses.map(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (s: any) => ({
+        name: s.name,
+        status: s.status as McpServerInfo["status"],
+        scope: s.scope,
+        tools: s.tools?.map((t: { name: string }) => t.name ?? t) ?? [],
+        error: s.error,
+      }),
+    );
+  }
+
+  async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {
+    if (
+      !this.currentQuery ||
+      typeof this.currentQuery.toggleMcpServer !== "function"
+    ) {
+      return;
+    }
+    await this.currentQuery.toggleMcpServer(serverName, enabled);
+  }
+
+  async reconnectMcpServer(serverName: string): Promise<void> {
+    if (
+      !this.currentQuery ||
+      typeof this.currentQuery.reconnectMcpServer !== "function"
+    ) {
+      return;
+    }
+    await this.currentQuery.reconnectMcpServer(serverName);
+  }
+
   async dispose(): Promise<void> {
     await this.interrupt();
     this.sessionId = undefined;
@@ -259,6 +317,13 @@ export class ClaudeCodeProvider implements AgentProvider {
       case "system":
         if (msg.subtype === "init") {
           this.sessionId = msg.session_id;
+          // Map init mcp_servers to McpServerInfo (basic info without scope)
+          const initMcpServers: McpServerInfo[] | undefined =
+            msg.mcp_servers?.map((s: { name: string; status: string }) => ({
+              name: s.name,
+              status: s.status as McpServerInfo["status"],
+              tools: [],
+            }));
           yield {
             type: "session_init",
             sessionId: msg.session_id,
@@ -267,6 +332,7 @@ export class ClaudeCodeProvider implements AgentProvider {
               name: cmd.startsWith("/") ? cmd : `/${cmd}`,
               description: undefined,
             })),
+            mcpServers: initMcpServers,
           };
         }
         break;

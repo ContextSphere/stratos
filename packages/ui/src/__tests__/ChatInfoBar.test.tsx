@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { ChatInfoBar } from "../components/ChatInfoBar";
 
@@ -7,12 +7,9 @@ describe("ChatInfoBar", () => {
     cleanup();
   });
 
-  it("renders the info bar with add directory button", () => {
+  it("renders the info bar", () => {
     render(
       <ChatInfoBar
-        additionalCwds={[]}
-        onAddDirectory={vi.fn()}
-        onRemoveDirectory={vi.fn()}
         sessionStats={{
           totalCost: 2.34,
           totalInputTokens: 1000,
@@ -24,15 +21,11 @@ describe("ChatInfoBar", () => {
     );
 
     expect(screen.queryByLabelText("Session stats")).not.toBeInTheDocument();
-    expect(screen.getByTitle("Add working directory")).toBeInTheDocument();
   });
 
   it("does not render stats icon when session stats are empty", () => {
     render(
       <ChatInfoBar
-        additionalCwds={[]}
-        onAddDirectory={vi.fn()}
-        onRemoveDirectory={vi.fn()}
         sessionStats={{
           totalCost: 0,
           totalInputTokens: 0,

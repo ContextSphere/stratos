@@ -88,6 +88,14 @@ export const IPC_CHANNELS = {
   // App info
   APP_INFO: "app:info",
 
+  // MCP servers
+  MCP_SERVER_STATUS: "mcp:server-status",
+  MCP_TOGGLE_SERVER: "mcp:toggle-server",
+  MCP_OPEN_CONFIG: "mcp:open-config",
+  MCP_ELICITATION: "mcp:elicitation",
+  MCP_ELICITATION_RESPONSE: "mcp:elicitation-response",
+  MCP_RECONNECT_SERVER: "mcp:reconnect-server",
+
   // UI shortcuts
   OPEN_MODEL_PICKER: "ui:open-model-picker",
 } as const;

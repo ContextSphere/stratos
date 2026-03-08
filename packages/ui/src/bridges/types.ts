@@ -7,6 +7,15 @@ export interface ImageAttachment {
   mimeType: string;
 }
 
+export interface McpServerInfo {
+  name: string;
+  status: "connected" | "failed" | "needs-auth" | "pending" | "disabled";
+  scope?: string;
+  configPath?: string;
+  tools: string[];
+  error?: string;
+}
+
 export interface ChatBridge {
   sendMessage(
     threadId: string,
@@ -28,6 +37,13 @@ export interface ChatBridge {
   onStreamEvent(callback: (event: StreamEvent) => void): () => void;
   getSlashCommands(): Promise<{ name: string; description?: string }[]>;
   getSessionTools(threadId: string): Promise<string[] | null>;
+  getMcpServerStatus?(threadId: string): Promise<McpServerInfo[]>;
+  toggleMcpServer?(
+    threadId: string,
+    serverName: string,
+    enabled: boolean,
+  ): Promise<void>;
+  openMcpConfig?(configPath: string): Promise<void>;
 }
 
 export interface StreamEvent {

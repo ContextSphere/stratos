@@ -27,6 +27,8 @@ export type {
   TokenUsage,
   ModelInfo,
   TodoItem,
+  McpServerInfo,
+  McpElicitationRequest,
 } from "./providers/types";
 export { READ_ONLY_TOOLS } from "./providers/types";
 export { ClaudeCodeProvider } from "./providers/claude-code.provider";

@@ -304,6 +304,39 @@ const api = {
   ): Promise<{ content: string; isBinary: boolean }> =>
     ipcRenderer.invoke(IPC_CHANNELS.FILES_READ_FILE, filePath, rootPath),
 
+  // MCP servers
+  mcpServerStatus: (threadId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MCP_SERVER_STATUS, threadId),
+  mcpToggleServer: (threadId: string, serverName: string, enabled: boolean) =>
+    ipcRenderer.invoke(
+      IPC_CHANNELS.MCP_TOGGLE_SERVER,
+      threadId,
+      serverName,
+      enabled,
+    ),
+  mcpOpenConfig: (configPath: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MCP_OPEN_CONFIG, configPath),
+  mcpReconnectServer: (threadId: string, serverName: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MCP_RECONNECT_SERVER, threadId, serverName),
+  onMcpElicitation: (
+    callback: (data: unknown, threadId: string | null) => void,
+  ): void => {
+    ipcRenderer.on(IPC_CHANNELS.MCP_ELICITATION, (_event, data, threadId) =>
+      callback(data, threadId ?? null),
+    );
+  },
+  respondMcpElicitation: (
+    requestId: string,
+    action: "accept" | "decline" | "cancel",
+    content?: Record<string, unknown>,
+  ): void => {
+    ipcRenderer.send(IPC_CHANNELS.MCP_ELICITATION_RESPONSE, {
+      requestId,
+      action,
+      content,
+    });
+  },
+
   // Skills
   skills: {
     list: (): Promise<

@@ -1,5 +1,6 @@
 import React from "react";
 import type { TodoData } from "../types";
+import type { McpServerInfo } from "../bridges/types";
 import { basename } from "../utils/path";
 import { ToolsBadge } from "./ToolsBadge";
 import WorktreeToggle from "./WorktreeToggle";
@@ -13,9 +14,6 @@ export interface SessionStats {
 
 interface ChatInfoBarProps {
   primaryCwd?: string;
-  additionalCwds: string[];
-  onAddDirectory: () => void;
-  onRemoveDirectory: (path: string) => void;
   sessionStats: SessionStats;
   homeDir?: string;
   sessionTools?: string[];
@@ -26,13 +24,14 @@ interface ChatInfoBarProps {
   hasMessages?: boolean;
   onWorktreeModeChange?: (mode: "local" | "worktree") => void;
   onToggleFileExplorer?: () => void;
+  mcpServers?: McpServerInfo[];
+  onToggleMcpServer?: (serverName: string, enabled: boolean) => void;
+  onOpenMcpConfig?: (configPath: string) => void;
+  onReconnectMcpServer?: (serverName: string) => void;
 }
 
 export function ChatInfoBar({
   primaryCwd,
-  additionalCwds,
-  onAddDirectory,
-  onRemoveDirectory,
   homeDir,
   sessionTools,
   todoData,
@@ -42,6 +41,10 @@ export function ChatInfoBar({
   hasMessages,
   onWorktreeModeChange,
   onToggleFileExplorer,
+  mcpServers,
+  onToggleMcpServer,
+  onOpenMcpConfig,
+  onReconnectMcpServer,
 }: ChatInfoBarProps): React.ReactElement {
   return (
     <div className="flex-shrink-0 bg-[#0f0f0f] border-b border-white/[0.06] px-3 py-1">
@@ -72,61 +75,6 @@ export function ChatInfoBar({
               onWorktreeModeChange={onWorktreeModeChange}
             />
           )}
-          {additionalCwds.map((cwd) => (
-            <span
-              key={cwd}
-              className="no-drag group flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.04] text-gray-400 whitespace-nowrap flex-shrink-0"
-              title={cwd}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="w-3 h-3 flex-shrink-0 text-gray-500"
-              >
-                <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-              </svg>
-              {basename(cwd)}
-              <button
-                onClick={() => onRemoveDirectory(cwd)}
-                className="text-gray-600 hover:text-gray-300 transition-colors opacity-0 group-hover:opacity-100"
-                title="Remove directory"
-              >
-                <svg
-                  className="w-3 h-3"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </span>
-          ))}
-          <button
-            onClick={onAddDirectory}
-            className="no-drag p-1 rounded-md text-gray-600 hover:text-gray-400 hover:bg-white/[0.04] transition-colors flex-shrink-0"
-            title="Add working directory"
-          >
-            <svg
-              className="w-3.5 h-3.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-          </button>
         </div>
 
         {/* Right: tools, tasks, file explorer */}
@@ -135,6 +83,10 @@ export function ChatInfoBar({
             <ToolsBadge
               toolCount={sessionTools.length}
               sessionTools={sessionTools}
+              mcpServers={mcpServers}
+              onToggleServer={onToggleMcpServer}
+              onOpenConfig={onOpenMcpConfig}
+              onReconnectServer={onReconnectMcpServer}
             />
           )}
 

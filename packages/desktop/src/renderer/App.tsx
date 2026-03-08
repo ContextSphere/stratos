@@ -141,6 +141,8 @@ export default function App(): React.ReactElement {
     threadNotifications,
     pendingPermissionThreadIds,
     sessionTools,
+    mcpServers,
+    fetchMcpStatus,
   } = useChat(activeThreadId, { onThreadUpdated: refreshThreads });
 
   const github = useGitHub();
@@ -165,9 +167,6 @@ export default function App(): React.ReactElement {
   const [pendingProvider, setPendingProvider] = useState<
     "claude-code" | "codex"
   >("claude-code");
-  const [pendingAdditionalCwds, setPendingAdditionalCwds] = useState<string[]>(
-    [],
-  );
   const [homeDir, setHomeDir] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
@@ -327,40 +326,6 @@ export default function App(): React.ReactElement {
       await refreshThreads();
     },
     [activeThreadId, refreshThreads],
-  );
-
-  const handleAddDirectory = useCallback(async () => {
-    const result = await window.api.selectDirectory();
-    if (result.canceled || !result.path) return;
-    const newPath = result.path;
-    if (activeThreadId) {
-      const currentCwds = activeThread?.additionalCwds ?? [];
-      if (currentCwds.includes(newPath) || activeThread?.cwd === newPath)
-        return;
-      await window.api.threadsUpdate(activeThreadId, {
-        additionalCwds: [...currentCwds, newPath],
-      });
-      await refreshThreads();
-    } else {
-      setPendingAdditionalCwds((prev) =>
-        prev.includes(newPath) ? prev : [...prev, newPath],
-      );
-    }
-  }, [activeThreadId, activeThread, refreshThreads]);
-
-  const handleRemoveDirectory = useCallback(
-    async (path: string) => {
-      if (activeThreadId) {
-        const currentCwds = activeThread?.additionalCwds ?? [];
-        await window.api.threadsUpdate(activeThreadId, {
-          additionalCwds: currentCwds.filter((d) => d !== path),
-        });
-        await refreshThreads();
-      } else {
-        setPendingAdditionalCwds((prev) => prev.filter((d) => d !== path));
-      }
-    },
-    [activeThreadId, activeThread, refreshThreads],
   );
 
   const handleModeChange = useCallback(
@@ -644,11 +609,6 @@ export default function App(): React.ReactElement {
             {/* Chat info bar */}
             <ChatInfoBar
               primaryCwd={activeThread?.cwd}
-              additionalCwds={
-                activeThread?.additionalCwds ?? pendingAdditionalCwds
-              }
-              onAddDirectory={handleAddDirectory}
-              onRemoveDirectory={handleRemoveDirectory}
               sessionStats={sessionStats}
               homeDir={homeDir}
               sessionTools={sessionTools ?? undefined}
@@ -659,6 +619,33 @@ export default function App(): React.ReactElement {
               hasMessages={messages.length > 0}
               onWorktreeModeChange={handleWorktreeModeChange}
               onToggleFileExplorer={handleToggleFileExplorer}
+              mcpServers={mcpServers ?? undefined}
+              onToggleMcpServer={
+                activeThreadId
+                  ? async (serverName: string, enabled: boolean) => {
+                      await window.api.mcpToggleServer(
+                        activeThreadId,
+                        serverName,
+                        enabled,
+                      );
+                      await fetchMcpStatus(activeThreadId);
+                    }
+                  : undefined
+              }
+              onOpenMcpConfig={(configPath: string) =>
+                window.api.mcpOpenConfig(configPath)
+              }
+              onReconnectMcpServer={
+                activeThreadId
+                  ? async (serverName: string) => {
+                      await window.api.mcpReconnectServer(
+                        activeThreadId,
+                        serverName,
+                      );
+                      await fetchMcpStatus(activeThreadId);
+                    }
+                  : undefined
+              }
             />
 
             {/* Chat messages */}
