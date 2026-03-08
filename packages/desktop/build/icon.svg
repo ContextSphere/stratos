@@ -22,21 +22,21 @@
   <g filter="url(#glow)">
     <!-- Layer 3 (bottom/back) -->
     <polygon points="312,570 512,462 712,570 512,652"
-      fill="url(#bg)" stroke="#fff" stroke-width="22" stroke-linejoin="miter"/>
+      fill="url(#bg)" stroke="#fff" stroke-width="22"/>
 
     <!-- Layer 2 (middle) -->
     <polygon points="312,448 512,340 712,448 512,530"
-      fill="url(#bg)" stroke="#fff" stroke-width="22" stroke-linejoin="miter"/>
+      fill="url(#bg)" stroke="#fff" stroke-width="22"/>
 
     <!-- Layer 1 (top/front) -->
     <polygon points="312,326 512,218 712,326 512,408"
-      fill="url(#bg)" stroke="#fff" stroke-width="22" stroke-linejoin="miter"/>
+      fill="url(#bg)" stroke="#fff" stroke-width="22"/>
   </g>
 
   <!-- Terminal prompt: > _ -->
   <g filter="url(#glow)">
     <polyline points="310,720 358,762 310,804"
-      fill="none" stroke="#fff" stroke-width="22" stroke-linecap="square" stroke-linejoin="miter"/>
+      fill="none" stroke="#fff" stroke-width="22" stroke-linecap="square"/>
     <line x1="376" y1="804" x2="476" y2="804"
       stroke="#fff" stroke-width="18" stroke-linecap="square"/>
   </g>

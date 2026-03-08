@@ -5,9 +5,6 @@ import { join } from "path";
 /** Icon bitmap size — 256 for Retina sharpness at dock size */
 const ICON_SIZE = 256;
 
-/** Superellipse exponent — Apple's squircle uses ~5 */
-const SQUIRCLE_N = 5;
-
 /** How much of the canvas the squircle fills (Apple spec is 80.5% for .icns,
  *  but app.dock.setIcon() bypasses the OS pipeline so we scale up to match) */
 const SQUIRCLE_FILL = 0.9;
