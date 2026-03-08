@@ -23,6 +23,7 @@ export type {
   SendMessageParams,
   AgentDefinition,
   PermissionHandler,
+  PermissionUpdate,
   TokenUsage,
   ModelInfo,
   TodoItem,

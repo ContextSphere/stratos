@@ -97,6 +97,8 @@ export class AgentManager {
         approved: boolean;
         modifiedInput?: Record<string, unknown>;
         denyMessage?: string;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        updatedPermissions?: any[];
       }) => void;
     }
   >();
@@ -188,10 +190,20 @@ export class AgentManager {
     // Handle tool permission responses from the renderer
     ipcMain.on(
       IPC_CHANNELS.TOOL_RESPONSE,
-      (_event, data: { requestId: string; approved: boolean }) => {
+      (
+        _event,
+        data: {
+          requestId: string;
+          approved: boolean;
+          updatedPermissions?: unknown[];
+        },
+      ) => {
         const pending = this.pendingPermissions.get(data.requestId);
         if (pending) {
-          pending.resolve({ approved: data.approved });
+          pending.resolve({
+            approved: data.approved,
+            updatedPermissions: data.updatedPermissions,
+          });
           this.pendingPermissions.delete(data.requestId);
         }
       },
@@ -416,7 +428,11 @@ export class AgentManager {
       isRunning: true,
     });
 
-    const permissionHandler: PermissionHandler = async (toolName, input) => {
+    const permissionHandler: PermissionHandler = async (
+      toolName,
+      input,
+      options,
+    ) => {
       const currentThread = await this.storage.getThread(threadId);
       const currentMode = normalizeMode(currentThread?.mode);
 
@@ -440,7 +456,13 @@ export class AgentManager {
       const requestId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       this.sendToRenderer(
         IPC_CHANNELS.TOOL_PERMISSION,
-        { requestId, toolName, input },
+        {
+          requestId,
+          toolName,
+          input,
+          suggestions: options?.suggestions,
+          decisionReason: options?.decisionReason,
+        },
         threadId,
       );
       this.notifyIfBackground(threadId, "permission");

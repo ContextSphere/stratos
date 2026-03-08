@@ -40,7 +40,11 @@ interface UseChatReturn {
     images?: ImageAttachment[],
   ) => Promise<void>;
   interrupt: (threadId?: string) => Promise<void>;
-  respondPermission: (requestId: string, approved: boolean) => void;
+  respondPermission: (
+    requestId: string,
+    approved: boolean,
+    updatedPermissions?: unknown[],
+  ) => void;
   respondQuestion: (requestId: string, answers: Record<string, string>) => void;
   respondPlanReview: (
     requestId: string,
@@ -998,8 +1002,8 @@ export function useChat(
   );
 
   const respondPermission = useCallback(
-    (requestId: string, approved: boolean) => {
-      window.api.respondToolPermission(requestId, approved);
+    (requestId: string, approved: boolean, updatedPermissions?: unknown[]) => {
+      window.api.respondToolPermission(requestId, approved, updatedPermissions);
       setPermissionRequests((prev) =>
         prev.filter((r) => r.requestId !== requestId),
       );

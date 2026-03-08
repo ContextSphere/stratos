@@ -324,7 +324,11 @@ describe("useChat — respondPermission", () => {
       result.current.respondPermission("req-1", true);
     });
 
-    expect(mockApi.respondToolPermission).toHaveBeenCalledWith("req-1", true);
+    expect(mockApi.respondToolPermission).toHaveBeenCalledWith(
+      "req-1",
+      true,
+      undefined,
+    );
   });
 
   it("calls respondToolPermission with approved=false", () => {
@@ -334,7 +338,11 @@ describe("useChat — respondPermission", () => {
       result.current.respondPermission("req-1", false);
     });
 
-    expect(mockApi.respondToolPermission).toHaveBeenCalledWith("req-1", false);
+    expect(mockApi.respondToolPermission).toHaveBeenCalledWith(
+      "req-1",
+      false,
+      undefined,
+    );
   });
 });
 
