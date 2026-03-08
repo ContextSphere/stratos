@@ -4,7 +4,8 @@
 
 > Claude Code. No terminal required.
 
-[screenshot placeholder]
+<img width="1467" height="943" alt="Screenshot 2026-03-07 at 11 13 25 PM" src="https://github.com/user-attachments/assets/259160ca-513a-4cbc-85e5-af393aa55b36" />
+
 
 A desktop GUI for the most powerful AI coding agents.
 
