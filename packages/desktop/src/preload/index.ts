@@ -192,6 +192,16 @@ const api = {
   claudeGetConnection: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_GET_CONNECTION),
 
+  // Codex — connection management (codex app-server)
+  codexCheckCli: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CODEX_CHECK_CLI),
+  codexConnect: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CODEX_CONNECT),
+  codexDisconnect: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CODEX_DISCONNECT),
+  codexGetConnection: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CODEX_GET_CONNECTION),
+
   // Folders
   foldersList: (): Promise<Folder[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.FOLDERS_LIST),
@@ -210,8 +220,19 @@ const api = {
   threadsGetActive: () => ipcRenderer.invoke(IPC_CHANNELS.THREADS_GET_ACTIVE),
   threadsSetActive: (threadId: string | null) =>
     ipcRenderer.invoke(IPC_CHANNELS.THREADS_SET_ACTIVE, threadId),
-  threadsCreate: (title?: string, model?: string, cwd?: string, provider?: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.THREADS_CREATE, title, model, cwd, provider),
+  threadsCreate: (
+    title?: string,
+    model?: string,
+    cwd?: string,
+    provider?: string,
+  ) =>
+    ipcRenderer.invoke(
+      IPC_CHANNELS.THREADS_CREATE,
+      title,
+      model,
+      cwd,
+      provider,
+    ),
   threadsGet: (threadId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.THREADS_GET, threadId),
   threadsUpdate: (
