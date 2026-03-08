@@ -8,6 +8,7 @@ import type {
   ModelInfo,
 } from "./types";
 import { MODE_CONFIGS } from "../types/mode";
+import { READ_ONLY_TOOLS } from "./types";
 
 /**
  * Use all default Claude Code tools (including deferred ones like
@@ -38,12 +39,25 @@ export class ClaudeCodeProvider implements AgentProvider {
       this.config.mcpServers && Object.keys(this.config.mcpServers).length > 0;
     const mode = params.mode ?? "default";
     const modeConfig = MODE_CONFIGS[mode];
-    // `tools` controls built-in tools only. MCP tools from auto-discovered
-    // servers (via settingSources) and explicit mcpServers are handled
-    // separately by the SDK/CLI.
-    const tools: ToolsOption = this.config.allowedTools
-      ? [...this.config.allowedTools]
-      : DEFAULT_TOOLS;
+    const isPlanMode = mode === "plan";
+
+    // In plan mode, restrict to read-only tools + plan workflow tools.
+    // The SDK's permissionMode:'plan' adds the system prompt, but we also
+    // need to restrict which tools are available to enforce compliance.
+    const tools: ToolsOption = isPlanMode
+      ? [
+          ...READ_ONLY_TOOLS,
+          "Write",
+          "Edit",
+          "Agent",
+          "ToolSearch",
+          "EnterPlanMode",
+          "ExitPlanMode",
+          "AskUserQuestion",
+        ]
+      : this.config.allowedTools
+        ? [...this.config.allowedTools]
+        : DEFAULT_TOOLS;
 
     const isBypass = mode === "bypassPermissions";
     const cliPath = this.config.cliPath;
