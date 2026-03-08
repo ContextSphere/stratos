@@ -1,19 +1,27 @@
-import React, { useState } from 'react'
-import type { PlanReviewRequest } from '../types'
+import React, { useState } from "react";
+import type { PlanReviewRequest } from "../types";
 
 interface PlanReviewBlockProps {
-  data: PlanReviewRequest
-  onDecision: (requestId: string, decision: { type: string; feedback?: string }) => void
-  onViewPlan?: (content: string, title: string) => void
+  data: PlanReviewRequest;
+  onDecision: (
+    requestId: string,
+    decision: { type: string; feedback?: string },
+  ) => void;
+  onViewPlan?: (content: string, title: string) => void;
 }
 
-export function PlanReviewBlock({ data, onDecision, onViewPlan }: PlanReviewBlockProps): React.ReactElement {
-  const [submitted, setSubmitted] = useState(false)
+export function PlanReviewBlock({
+  data,
+  onDecision,
+  onViewPlan,
+}: PlanReviewBlockProps): React.ReactElement {
+  const [submitted, setSubmitted] = useState(false);
+  const disabled = submitted || (data.responded ?? false);
 
   function handleChoice(type: string): void {
-    if (submitted) return
-    setSubmitted(true)
-    onDecision(data.requestId, { type })
+    if (disabled) return;
+    setSubmitted(true);
+    onDecision(data.requestId, { type });
   }
 
   return (
@@ -24,7 +32,9 @@ export function PlanReviewBlock({ data, onDecision, onViewPlan }: PlanReviewBloc
         </p>
         {data.planContent && onViewPlan && (
           <button
-            onClick={() => onViewPlan(data.planContent!, data.planTitle ?? 'Plan')}
+            onClick={() =>
+              onViewPlan(data.planContent!, data.planTitle ?? "Plan")
+            }
             className="text-xs text-blue-400 hover:text-blue-300 hover:underline cursor-pointer flex-shrink-0 ml-3"
           >
             View plan
@@ -34,12 +44,12 @@ export function PlanReviewBlock({ data, onDecision, onViewPlan }: PlanReviewBloc
 
       <div className="space-y-1.5">
         <button
-          onClick={() => handleChoice('bypass')}
-          disabled={submitted}
+          onClick={() => handleChoice("bypass")}
+          disabled={disabled}
           className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${
-            submitted
-              ? 'border-[#2a2a2a] bg-[#1a1a1a] text-gray-600 opacity-60 cursor-not-allowed'
-              : 'border-[#2a2a2a] bg-[#1a1a1a] text-gray-400 hover:border-[#3a3a3a] hover:text-gray-300 cursor-pointer'
+            disabled
+              ? "border-[#2a2a2a] bg-[#1a1a1a] text-gray-600 opacity-60 cursor-not-allowed"
+              : "border-[#2a2a2a] bg-[#1a1a1a] text-gray-400 hover:border-[#3a3a3a] hover:text-gray-300 cursor-pointer"
           }`}
         >
           <span className="text-sm">Yes, bypass permissions</span>
@@ -49,12 +59,12 @@ export function PlanReviewBlock({ data, onDecision, onViewPlan }: PlanReviewBloc
         </button>
 
         <button
-          onClick={() => handleChoice('manual')}
-          disabled={submitted}
+          onClick={() => handleChoice("manual")}
+          disabled={disabled}
           className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${
-            submitted
-              ? 'border-[#2a2a2a] bg-[#1a1a1a] text-gray-600 opacity-60 cursor-not-allowed'
-              : 'border-[#2a2a2a] bg-[#1a1a1a] text-gray-400 hover:border-[#3a3a3a] hover:text-gray-300 cursor-pointer'
+            disabled
+              ? "border-[#2a2a2a] bg-[#1a1a1a] text-gray-600 opacity-60 cursor-not-allowed"
+              : "border-[#2a2a2a] bg-[#1a1a1a] text-gray-400 hover:border-[#3a3a3a] hover:text-gray-300 cursor-pointer"
           }`}
         >
           <span className="text-sm">Yes, manually approve edits</span>
@@ -64,5 +74,5 @@ export function PlanReviewBlock({ data, onDecision, onViewPlan }: PlanReviewBloc
         </button>
       </div>
     </div>
-  )
+  );
 }

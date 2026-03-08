@@ -25,6 +25,7 @@ export interface PlanReviewRequest {
   input: { allowedPrompts?: Array<{ tool: string; prompt: string }> };
   planContent?: string;
   planTitle?: string;
+  responded?: boolean;
 }
 
 export interface ImageAttachment {

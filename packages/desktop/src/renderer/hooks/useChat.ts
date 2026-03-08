@@ -1076,6 +1076,31 @@ export function useChat(
   const handleInteractiveResponse = useCallback(
     (text: string) => {
       if (interactiveMode.type === "plan-review") {
+        // Add user feedback as a visible message bubble
+        const threadId = activeThreadIdRef.current;
+        if (threadId) {
+          const state = streamingThreadsRef.current.get(threadId);
+          if (state) {
+            // Mark the plan review message as responded so buttons get disabled
+            state.messages = state.messages.map((m) =>
+              m.planReviewData?.requestId === interactiveMode.requestId
+                ? {
+                    ...m,
+                    planReviewData: { ...m.planReviewData, responded: true },
+                  }
+                : m,
+            );
+            // Add user feedback message
+            const userMsg: ChatMessage = {
+              id: nextMessageId(),
+              role: "user" as const,
+              content: text,
+              timestamp: Date.now(),
+            };
+            state.messages = [...state.messages, userMsg];
+            setMessages([...state.messages]);
+          }
+        }
         // Send feedback through plan review callback
         respondPlanReview(interactiveMode.requestId, {
           type: "deny",
