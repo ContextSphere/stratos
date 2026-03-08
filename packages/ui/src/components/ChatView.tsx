@@ -92,7 +92,7 @@ export function ChatView({
       onScroll={handleScroll}
       className="flex-1 overflow-y-auto px-4 py-2 relative"
     >
-      <div className="max-w-3xl mx-auto space-y-4">
+      <div className="space-y-4">
         {messages.map((msg, idx) => (
           <MessageBubble
             key={msg.id}
