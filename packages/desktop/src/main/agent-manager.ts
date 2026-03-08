@@ -167,18 +167,23 @@ export class AgentManager {
       },
     );
 
-    ipcMain.handle(IPC_CHANNELS.GET_AVAILABLE_MODELS, async (_event, providerName?: string) => {
-      const provider = createProvider((providerName ?? "claude-code") as ProviderType);
-      const settings = loadSettings();
-      await provider.initialize({
-        cliPath: settings.cliPath as string | undefined,
-      });
-      try {
-        return await provider.getAvailableModels();
-      } finally {
-        await provider.dispose();
-      }
-    });
+    ipcMain.handle(
+      IPC_CHANNELS.GET_AVAILABLE_MODELS,
+      async (_event, providerName?: string) => {
+        const provider = createProvider(
+          (providerName ?? "claude-code") as ProviderType,
+        );
+        const settings = loadSettings();
+        await provider.initialize({
+          cliPath: settings.cliPath as string | undefined,
+        });
+        try {
+          return await provider.getAvailableModels();
+        } finally {
+          await provider.dispose();
+        }
+      },
+    );
 
     // Handle tool permission responses from the renderer
     ipcMain.on(
@@ -378,7 +383,22 @@ export class AgentManager {
         ...(providerName === "claude-code"
           ? {
               cliPath: settings.cliPath as string | undefined,
-              settingSources: ["project", "user", "local"] as ("project" | "user" | "local")[],
+              settingSources: ["project", "user", "local"] as (
+                | "project"
+                | "user"
+                | "local"
+              )[],
+              systemPrompt: {
+                type: "preset" as const,
+                preset: "claude_code" as const,
+                append: [
+                  `\n# Host Environment`,
+                  `You are running inside AgentPanel, an Electron desktop application (PID: ${process.pid}).`,
+                  `DO NOT kill, terminate, or signal this process or its parent Electron process.`,
+                  `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes — this would kill your own host application.`,
+                  `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
+                ].join("\n"),
+              },
             }
           : {}),
         model: thread.model,
