@@ -181,13 +181,13 @@ export function ThreadList({
             className="w-4 h-4"
             fill="none"
             stroke="currentColor"
-            strokeWidth={2}
+            strokeWidth={1.5}
             viewBox="0 0 24 24"
           >
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              d="M12 4v16m8-8H4"
+              d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
             />
           </svg>
         </button>
@@ -297,7 +297,7 @@ export function ThreadList({
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
-                          d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"
+                          d="M12 4v16m8-8H4"
                         />
                       </svg>
                     </button>
