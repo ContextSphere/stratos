@@ -135,6 +135,7 @@ export default function App(): React.ReactElement {
     slashCommands,
     runningThreadIds,
     threadNotifications,
+    pendingPermissionThreadIds,
     sessionTools,
   } = useChat(activeThreadId, { onThreadUpdated: refreshThreads });
 
@@ -472,6 +473,7 @@ export default function App(): React.ReactElement {
           onSettingsClick={() => setShowSettingsDialog(true)}
           runningThreadIds={runningThreadIds}
           threadNotifications={threadNotifications}
+          pendingPermissionThreadIds={pendingPermissionThreadIds}
         />
       </div>
 

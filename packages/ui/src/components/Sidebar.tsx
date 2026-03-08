@@ -15,6 +15,7 @@ interface Props {
   onSettingsClick: () => void;
   runningThreadIds: string[];
   threadNotifications: Map<string, string>;
+  pendingPermissionThreadIds?: Set<string>;
 }
 
 export function Sidebar({
@@ -31,6 +32,7 @@ export function Sidebar({
   onSettingsClick,
   runningThreadIds,
   threadNotifications,
+  pendingPermissionThreadIds,
 }: Props): React.ReactElement {
   return (
     <div className="flex-shrink-0 flex flex-col bg-[#0a0a0a] overflow-hidden w-[232px] min-w-[232px] h-full">
@@ -77,6 +79,7 @@ export function Sidebar({
             onDeleteThread={onDeleteThread}
             runningThreadIds={runningThreadIds}
             threadNotifications={threadNotifications}
+            pendingPermissionThreadIds={pendingPermissionThreadIds}
           />
         </div>
 

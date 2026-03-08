@@ -1,5 +1,6 @@
 import React from "react";
 import type { TodoData } from "../types";
+import { basename } from "../utils/path";
 import { ToolsBadge } from "./ToolsBadge";
 import WorktreeToggle from "./WorktreeToggle";
 
@@ -16,7 +17,7 @@ interface ChatInfoBarProps {
   onAddDirectory: () => void;
   onRemoveDirectory: (path: string) => void;
   sessionStats: SessionStats;
-  homeDir: string;
+  homeDir?: string;
   sessionTools?: string[];
   todoData?: TodoData | null;
   onToggleTaskPanel?: () => void;
@@ -25,12 +26,6 @@ interface ChatInfoBarProps {
   hasMessages?: boolean;
   onWorktreeModeChange?: (mode: "local" | "worktree") => void;
   onToggleFileExplorer?: () => void;
-}
-
-function shortenPath(path: string, homeDir: string): string {
-  return homeDir && path.startsWith(homeDir)
-    ? "~" + path.slice(homeDir.length)
-    : path;
 }
 
 export function ChatInfoBar({
@@ -49,28 +44,24 @@ export function ChatInfoBar({
   onToggleFileExplorer,
 }: ChatInfoBarProps): React.ReactElement {
   return (
-    <div className="flex-shrink-0 bg-[#0f0f0f] border-b border-[#1a1a1a] px-4 py-1.5">
-      <div className="flex items-center justify-between text-xs text-gray-500 gap-3 min-h-[28px]">
+    <div className="flex-shrink-0 bg-[#0f0f0f] border-b border-white/[0.06] px-3 py-1">
+      <div className="flex items-center justify-between text-xs gap-2 min-h-[28px]">
+        {/* Left: directory pills */}
         <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
-          <span className="text-gray-600 whitespace-nowrap flex-shrink-0">
-            Working directory
-          </span>
           {primaryCwd && (
             <span
-              className="no-drag flex items-center gap-1 px-2 py-0.5 rounded bg-[#1a1a1a] text-gray-400 whitespace-nowrap flex-shrink-0"
-              title={`Working directory: ${primaryCwd}`}
+              className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.04] text-gray-400 whitespace-nowrap flex-shrink-0"
+              title={primaryCwd}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 20 20"
                 fill="currentColor"
-                className="w-3 h-3 flex-shrink-0"
+                className="w-3 h-3 flex-shrink-0 text-gray-500"
               >
                 <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
               </svg>
-              <span className="truncate max-w-[180px]">
-                {shortenPath(primaryCwd, homeDir)}
-              </span>
+              {basename(primaryCwd)}
             </span>
           )}
           {isGitRepo && onWorktreeModeChange && (
@@ -84,23 +75,21 @@ export function ChatInfoBar({
           {additionalCwds.map((cwd) => (
             <span
               key={cwd}
-              className="no-drag flex items-center gap-1 px-2 py-0.5 rounded bg-[#1a1a1a] text-gray-400 whitespace-nowrap flex-shrink-0"
-              title={`Additional directory: ${cwd}`}
+              className="no-drag group flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.04] text-gray-400 whitespace-nowrap flex-shrink-0"
+              title={cwd}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 20 20"
                 fill="currentColor"
-                className="w-3 h-3 flex-shrink-0"
+                className="w-3 h-3 flex-shrink-0 text-gray-500"
               >
                 <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
               </svg>
-              <span className="truncate max-w-[180px]">
-                {shortenPath(cwd, homeDir)}
-              </span>
+              {basename(cwd)}
               <button
                 onClick={() => onRemoveDirectory(cwd)}
-                className="ml-0.5 text-gray-600 hover:text-gray-300 transition-colors"
+                className="text-gray-600 hover:text-gray-300 transition-colors opacity-0 group-hover:opacity-100"
                 title="Remove directory"
               >
                 <svg
@@ -121,52 +110,8 @@ export function ChatInfoBar({
           ))}
           <button
             onClick={onAddDirectory}
-            className="no-drag flex items-center gap-1 px-2 py-0.5 rounded text-gray-600 hover:text-gray-400 hover:bg-[#1a1a1a] transition-colors whitespace-nowrap flex-shrink-0"
+            className="no-drag p-1 rounded-md text-gray-600 hover:text-gray-400 hover:bg-white/[0.04] transition-colors flex-shrink-0"
             title="Add working directory"
-          >
-            <svg
-              className="w-3 h-3"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            <span>Add</span>
-          </button>
-
-          {sessionTools && sessionTools.length > 0 && (
-            <ToolsBadge
-              toolCount={sessionTools.length}
-              sessionTools={sessionTools}
-            />
-          )}
-
-          {todoData && todoData.todos.length > 0 && (
-            <button
-              onClick={() => onToggleTaskPanel?.()}
-              title="Toggle task panel"
-              className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#1a1a1a] text-gray-400 hover:bg-[#2a2a2a] transition-colors whitespace-nowrap"
-            >
-              <span className="text-gray-500 text-xs">○</span>
-              <span className="text-xs">
-                {todoData.todos.filter((t) => t.status === "completed").length}/
-                {todoData.todos.length} tasks
-              </span>
-            </button>
-          )}
-        </div>
-
-        {primaryCwd && onToggleFileExplorer && (
-          <button
-            onClick={onToggleFileExplorer}
-            className="no-drag p-1 rounded text-gray-600 hover:text-gray-400 hover:bg-[#1a1a1a] transition-colors"
-            title="Toggle file explorer"
           >
             <svg
               className="w-3.5 h-3.5"
@@ -178,11 +123,56 @@ export function ChatInfoBar({
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776"
+                d="M12 4v16m8-8H4"
               />
             </svg>
           </button>
-        )}
+        </div>
+
+        {/* Right: tools, tasks, file explorer */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {sessionTools && sessionTools.length > 0 && (
+            <ToolsBadge
+              toolCount={sessionTools.length}
+              sessionTools={sessionTools}
+            />
+          )}
+
+          {todoData && todoData.todos.length > 0 && (
+            <button
+              onClick={() => onToggleTaskPanel?.()}
+              title="Toggle task panel"
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.04] text-gray-400 hover:bg-white/[0.07] transition-colors whitespace-nowrap"
+            >
+              <span className="text-xs">
+                {todoData.todos.filter((t) => t.status === "completed").length}/
+                {todoData.todos.length}
+              </span>
+            </button>
+          )}
+
+          {primaryCwd && onToggleFileExplorer && (
+            <button
+              onClick={onToggleFileExplorer}
+              className="no-drag p-1 rounded-md text-gray-600 hover:text-gray-400 hover:bg-white/[0.04] transition-colors"
+              title="Toggle file explorer"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { Editor } from "@monaco-editor/react";
-import { getLanguageFromPath } from "../utils/monaco-language";
+import { useMonacoFontReady } from "../hooks/useMonacoFontReady";
+import {
+  getLanguageFromPath,
+  MONO_FONT_FAMILY,
+} from "../utils/monaco-language";
 import "../utils/monaco-theme";
 import type { DirEntry } from "../bridges/types";
 
@@ -91,6 +95,7 @@ export function FileExplorer({
   listDirectory,
   readFile,
 }: Props): React.ReactElement {
+  useMonacoFontReady();
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [openFile, setOpenFile] = useState<{
     path: string;
@@ -244,6 +249,7 @@ export function FileExplorer({
                 minimap: { enabled: false },
                 scrollBeyondLastLine: false,
                 fontSize: 12,
+                fontFamily: MONO_FONT_FAMILY,
                 lineNumbers: "on",
                 renderLineHighlight: "none",
                 folding: true,

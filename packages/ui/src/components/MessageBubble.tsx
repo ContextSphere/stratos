@@ -70,16 +70,16 @@ function ThinkingBlock({
   };
 
   return (
-    <div className="mb-2 rounded-lg border border-[#2a2a2a] bg-[#111] text-xs text-gray-500">
+    <div className="mb-1">
       <button
         onClick={handleToggle}
-        className="flex w-full items-center gap-1.5 px-3 py-2 text-left hover:text-gray-400"
+        className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-400 transition-colors"
       >
-        <span className="text-gray-600">{expanded ? "▾" : "▸"}</span>
-        {expanded ? "Hide reasoning" : "View reasoning"}
+        <span className="text-[10px]">{expanded ? "▾" : "▸"}</span>
+        {expanded ? "Hide reasoning" : "Reasoning"}
       </button>
       {expanded && (
-        <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words border-t border-[#2a2a2a] px-3 py-2 font-sans leading-relaxed text-gray-500">
+        <pre className="mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap break-words pl-3 border-l-2 border-white/[0.06] font-sans text-xs leading-relaxed text-gray-500">
           {content}
         </pre>
       )}
@@ -148,7 +148,9 @@ function buildMarkdownComponents(onLinkClick?: (url: string) => void) {
     },
     h3({ children }: { children?: React.ReactNode }) {
       return (
-        <h3 className="text-base font-bold mb-2 mt-2 first:mt-0">{children}</h3>
+        <h3 className="text-base font-bold mb-2 mt-2 first:mt-0">
+          {children}
+        </h3>
       );
     },
     blockquote({ children }: { children?: React.ReactNode }) {
@@ -307,158 +309,186 @@ export function MessageBubble({
     );
   }
 
+  const hasTextContent = !!(
+    cleanContent ||
+    message.thinking ||
+    message.questionData ||
+    message.planReviewData ||
+    message.todoData ||
+    message.worktreeProgress
+  );
+  const regularToolCalls = !message.taskInfo
+    ? (message.toolCalls ?? []).filter((tc) => tc.toolName !== "Task")
+    : [];
+  const hasToolCalls = regularToolCalls.length > 0 || !!message.taskInfo;
+
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div
-        className={`max-w-[85%] rounded-2xl px-4 py-3 break-words ${
-          isUser
-            ? "bg-blue-600 text-white"
-            : "bg-[#1a1a1a] text-gray-200 border border-[#2a2a2a]"
-        }`}
-      >
-        {/* Thinking block */}
-        {message.thinking && (
-          <ThinkingBlock
-            content={message.thinking}
-            isStreaming={isStreaming && !message.content}
-          />
-        )}
-
-        {/* Document attachment chips (user messages only) */}
-        {isUser && attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {attachments.map((att, i) => (
-              <a
-                key={i}
-                href={att.url}
-                onClick={
-                  att.url
-                    ? (e) => {
-                        e.preventDefault();
-                        onLinkClick?.(att.url!);
-                      }
-                    : undefined
-                }
-                className="flex items-center gap-1.5 bg-blue-500/20 border border-blue-400/30 rounded-lg px-2 py-1 text-xs text-blue-100 hover:bg-blue-500/30 transition-colors no-underline cursor-pointer"
-                title={att.url}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="w-3 h-3 flex-shrink-0"
-                >
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
-                <span className="truncate max-w-[200px]">{att.title}</span>
-              </a>
-            ))}
-          </div>
-        )}
-
-        {/* Image attachments (user messages only) */}
-        {isUser && message.images && message.images.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-2">
-            {message.images.map((img) => (
-              <img
-                key={img.id}
-                src={img.dataUrl}
-                alt={img.name}
-                title={img.name}
-                className="max-w-[200px] max-h-[200px] rounded-lg object-cover border border-blue-500/30"
+    <div className="space-y-2">
+      {/* Message content — user gets a bubble, assistant flows full-width */}
+      {(isUser || hasTextContent) && (
+        <div className={isUser ? "flex justify-end" : ""}>
+          <div
+            className={
+              isUser
+                ? "max-w-[85%] rounded-2xl px-4 py-3 break-words bg-blue-600 text-white"
+                : "w-full break-words text-gray-200 py-1"
+            }
+          >
+            {/* Thinking block */}
+            {message.thinking && (
+              <ThinkingBlock
+                content={message.thinking}
+                isStreaming={isStreaming && !message.content}
               />
-            ))}
-          </div>
-        )}
+            )}
 
-        {/* Message text */}
-        {cleanContent && (
-          <div className="text-sm leading-relaxed prose prose-invert prose-sm max-w-none">
-            <MarkdownContent content={cleanContent} onLinkClick={onLinkClick} />
-          </div>
-        )}
-
-        {/* Inline question from AskUserQuestion SDK tool */}
-        {message.questionData && (
-          <QuestionSequence
-            questionData={message.questionData}
-            onComplete={(requestId, answers) => {
-              if (onQuestionAnswer) {
-                onQuestionAnswer(requestId, answers);
-              }
-            }}
-            disabled={!onQuestionAnswer || !!message.questionAnswered}
-            initiallyAnswered={message.questionAnswered}
-          />
-        )}
-
-        {/* Inline plan review from ExitPlanMode SDK tool */}
-        {message.planReviewData && onPlanReviewDecision && (
-          <div className="mt-3">
-            <PlanReviewBlock
-              data={message.planReviewData}
-              onDecision={onPlanReviewDecision}
-              onViewPlan={onViewPlan}
-            />
-          </div>
-        )}
-
-        {/* Inline TODO list */}
-        {message.todoData && <TodoList todoData={message.todoData} />}
-
-        {/* Worktree progress */}
-        {message.worktreeProgress && (
-          <WorktreeProgress progressData={message.worktreeProgress} />
-        )}
-
-        {/* Task card (for Task tool calls with nested child tools) */}
-        {message.taskInfo && (
-          <div className={`${message.content ? "mt-3" : ""}`}>
-            <TaskCard
-              taskInfo={message.taskInfo}
-              childToolCalls={
-                message.toolCalls?.filter((tc) =>
-                  message.taskInfo!.childToolCalls.includes(tc.toolCallId),
-                ) ?? []
-              }
-              onToggleToolCalls={(expanded) => {
-                onUpdateTaskExpanded?.(message.id, expanded);
-              }}
-            />
-          </div>
-        )}
-
-        {/* Regular tool calls (not part of a task) */}
-        {message.toolCalls &&
-          message.toolCalls.length > 0 &&
-          !message.taskInfo && (
-            <div className={`space-y-2 ${message.content ? "mt-3" : ""}`}>
-              {message.toolCalls
-                .filter((tc) => tc.toolName !== "Task")
-                .map((tc) => (
-                  <ToolCallCard key={tc.toolCallId} toolCall={tc} />
+            {/* Document attachment chips (user messages only) */}
+            {isUser && attachments.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {attachments.map((att, i) => (
+                  <a
+                    key={i}
+                    href={att.url}
+                    onClick={
+                      att.url
+                        ? (e) => {
+                            e.preventDefault();
+                            onLinkClick?.(att.url!);
+                          }
+                        : undefined
+                    }
+                    className="flex items-center gap-1.5 bg-blue-500/20 border border-blue-400/30 rounded-lg px-2 py-1 text-xs text-blue-100 hover:bg-blue-500/30 transition-colors no-underline cursor-pointer"
+                    title={att.url}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="w-3 h-3 flex-shrink-0"
+                    >
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    <span className="truncate max-w-[200px]">{att.title}</span>
+                  </a>
                 ))}
-            </div>
-          )}
+              </div>
+            )}
 
-        {/* Cost info */}
-        {message.cost !== undefined && (
-          <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-700">
-            Cost: ${message.cost.toFixed(4)}
-            {message.usage && (
-              <span className="ml-2">
-                ({message.usage.inputTokens + message.usage.outputTokens}{" "}
-                tokens)
-              </span>
+            {/* Image attachments (user messages only) */}
+            {isUser && message.images && message.images.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {message.images.map((img) => (
+                  <img
+                    key={img.id}
+                    src={img.dataUrl}
+                    alt={img.name}
+                    title={img.name}
+                    className="max-w-[200px] max-h-[200px] rounded-lg object-cover border border-blue-500/30"
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Message text */}
+            {cleanContent && (
+              <div className="text-sm leading-relaxed prose prose-invert prose-sm max-w-none">
+                <MarkdownContent
+                  content={cleanContent}
+                  onLinkClick={onLinkClick}
+                />
+              </div>
+            )}
+
+            {/* Inline question from AskUserQuestion SDK tool */}
+            {message.questionData && (
+              <QuestionSequence
+                questionData={message.questionData}
+                onComplete={(requestId, answers) => {
+                  if (onQuestionAnswer) {
+                    onQuestionAnswer(requestId, answers);
+                  }
+                }}
+                disabled={!onQuestionAnswer || !!message.questionAnswered}
+                initiallyAnswered={message.questionAnswered}
+              />
+            )}
+
+            {/* Inline plan review from ExitPlanMode SDK tool */}
+            {message.planReviewData && onPlanReviewDecision && (
+              <div className="mt-3">
+                <PlanReviewBlock
+                  data={message.planReviewData}
+                  onDecision={onPlanReviewDecision}
+                  onViewPlan={onViewPlan}
+                />
+              </div>
+            )}
+
+            {/* Inline TODO list */}
+            {message.todoData && <TodoList todoData={message.todoData} />}
+
+            {/* Worktree progress */}
+            {message.worktreeProgress && (
+              <WorktreeProgress progressData={message.worktreeProgress} />
+            )}
+
+            {/* Cost info (shown in bubble when there are no tool calls) */}
+            {!hasToolCalls && message.cost !== undefined && (
+              <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-700">
+                Cost: ${message.cost.toFixed(4)}
+                {message.usage && (
+                  <span className="ml-2">
+                    ({message.usage.inputTokens + message.usage.outputTokens}{" "}
+                    tokens)
+                  </span>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Tool calls — full-width block outside the bubble */}
+      {message.taskInfo && (
+        <div className="w-full">
+          <TaskCard
+            taskInfo={message.taskInfo}
+            childToolCalls={
+              message.toolCalls?.filter((tc) =>
+                message.taskInfo!.childToolCalls.includes(tc.toolCallId),
+              ) ?? []
+            }
+            onToggleToolCalls={(expanded) => {
+              onUpdateTaskExpanded?.(message.id, expanded);
+            }}
+          />
+        </div>
+      )}
+
+      {regularToolCalls.length > 0 && (
+        <div className="w-full space-y-2">
+          {regularToolCalls.map((tc) => (
+            <ToolCallCard key={tc.toolCallId} toolCall={tc} />
+          ))}
+        </div>
+      )}
+
+      {/* Cost info (shown below tool calls when they exist) */}
+      {hasToolCalls && message.cost !== undefined && (
+        <div className="text-xs text-gray-500 px-1">
+          Cost: ${message.cost.toFixed(4)}
+          {message.usage && (
+            <span className="ml-2">
+              ({message.usage.inputTokens + message.usage.outputTokens} tokens)
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

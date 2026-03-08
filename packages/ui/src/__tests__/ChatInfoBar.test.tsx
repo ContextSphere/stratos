@@ -7,7 +7,7 @@ describe("ChatInfoBar", () => {
     cleanup();
   });
 
-  it("renders the working directory bar without a stats icon (stats moved to bottom toolbar)", () => {
+  it("renders the info bar with add directory button", () => {
     render(
       <ChatInfoBar
         additionalCwds={[]}
@@ -24,7 +24,7 @@ describe("ChatInfoBar", () => {
     );
 
     expect(screen.queryByLabelText("Session stats")).not.toBeInTheDocument();
-    expect(screen.getByText("Working directory")).toBeInTheDocument();
+    expect(screen.getByTitle("Add working directory")).toBeInTheDocument();
   });
 
   it("does not render stats icon when session stats are empty", () => {
