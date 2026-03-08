@@ -246,11 +246,54 @@ export default function App(): React.ReactElement {
 
   const handleSend = useCallback(
     async (prompt: string, images?: ImageAttachment[]) => {
-      const threadId = activeThreadId;
-      if (!threadId) return; // Must create a thread in a folder first
+      let threadId = activeThreadId;
+
+      if (!threadId) {
+        // Open folder picker
+        const result = await window.api.selectDirectory();
+        if (result.canceled || !result.path) return;
+
+        // Add folder if not already registered
+        let folder = folders.find((f) => f.path === result.path);
+        if (!folder) {
+          folder = await addFolder(result.path);
+          const isGit = await window.api.checkIsGitRepo(result.path);
+          if (isGit) {
+            await updateFolder(folder.id, { isGitRepo: true });
+          }
+        }
+
+        // Create thread in that folder
+        const thread = await createThread(
+          "New chat",
+          undefined,
+          folder.path,
+          pendingProvider,
+        );
+        if (folder.isGitRepo) {
+          await window.api.threadsUpdate(thread.id, {
+            isGitRepo: true,
+            worktreeMode: "local",
+          });
+          await refreshThreads();
+        }
+        await setActiveThreadId(thread.id);
+        threadId = thread.id;
+      }
+
       await sendMessage(prompt, threadId, images);
     },
-    [activeThreadId, sendMessage],
+    [
+      activeThreadId,
+      sendMessage,
+      folders,
+      addFolder,
+      updateFolder,
+      createThread,
+      setActiveThreadId,
+      refreshThreads,
+      pendingProvider,
+    ],
   );
 
   const handleModelChange = useCallback(
