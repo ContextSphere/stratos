@@ -204,9 +204,11 @@ export function ThreadList({
     const map = new Map<string, Thread[]>();
     for (const thread of threads) {
       if (!thread.cwd) continue;
-      const existing = map.get(thread.cwd) ?? [];
+      // Worktree threads should group under their source repo, not the worktree path
+      const groupPath = thread.worktree?.sourceRepoPath ?? thread.cwd;
+      const existing = map.get(groupPath) ?? [];
       existing.push(thread);
-      map.set(thread.cwd, existing);
+      map.set(groupPath, existing);
     }
     return map;
   }, [threads]);

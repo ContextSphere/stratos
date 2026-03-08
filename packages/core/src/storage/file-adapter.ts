@@ -206,7 +206,9 @@ export class FileStorageAdapter implements StorageAdapter {
 
     // Remove all threads belonging to this folder
     const removedThreadIds = new Set(
-      data.threads.filter((t) => t.cwd === folder.path).map((t) => t.id),
+      data.threads
+        .filter((t) => (t.worktree?.sourceRepoPath ?? t.cwd) === folder.path)
+        .map((t) => t.id),
     );
     data.threads = data.threads.filter((t) => !removedThreadIds.has(t.id));
 
