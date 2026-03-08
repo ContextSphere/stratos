@@ -41,9 +41,19 @@ export function usePreview() {
     [],
   );
 
-  const openFileExplorer = useCallback((cwd: string) => {
-    setPreview({ isOpen: true, type: "file-explorer", title: "", cwd });
-  }, []);
+  const openFileExplorer = useCallback(
+    (cwd: string, targetFilePath?: string, targetLine?: number) => {
+      setPreview({
+        isOpen: true,
+        type: "file-explorer",
+        title: targetFilePath ?? "",
+        cwd,
+        ...(targetFilePath ? { targetFilePath } : {}),
+        ...(targetLine ? { targetLine } : {}),
+      });
+    },
+    [],
+  );
 
   const close = useCallback(() => {
     setPreview(INITIAL_STATE);

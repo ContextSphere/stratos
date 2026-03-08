@@ -88,6 +88,8 @@ export function PreviewPane({
       {preview.type === "file-explorer" && preview.cwd && filesBridge ? (
         <FileExplorer
           cwd={preview.cwd}
+          targetFilePath={preview.targetFilePath}
+          targetLine={preview.targetLine}
           listDirectory={filesBridge.listDirectory}
           readFile={filesBridge.readFile}
         />
