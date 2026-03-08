@@ -597,24 +597,6 @@ export default function App(): React.ReactElement {
                   </span>
                 </button>
                 <button
-                  onClick={() => setShowGitHubDialog(true)}
-                  className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[#2a2a2a]"
-                  title={
-                    github.isConnected ? "GitHub connected" : "Connect GitHub"
-                  }
-                >
-                  <div
-                    className={`w-1.5 h-1.5 rounded-full ${github.isConnected ? "bg-green-500" : "bg-gray-600"}`}
-                  />
-                  <span
-                    className={
-                      github.isConnected ? "text-gray-400" : "text-gray-600"
-                    }
-                  >
-                    GitHub
-                  </span>
-                </button>
-                <button
                   onClick={() => setShowCodexDialog(true)}
                   className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[#2a2a2a]"
                   title={
@@ -630,6 +612,24 @@ export default function App(): React.ReactElement {
                     }
                   >
                     Codex
+                  </span>
+                </button>
+                <button
+                  onClick={() => setShowGitHubDialog(true)}
+                  className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[#2a2a2a]"
+                  title={
+                    github.isConnected ? "GitHub connected" : "Connect GitHub"
+                  }
+                >
+                  <div
+                    className={`w-1.5 h-1.5 rounded-full ${github.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                  />
+                  <span
+                    className={
+                      github.isConnected ? "text-gray-400" : "text-gray-600"
+                    }
+                  >
+                    GitHub
                   </span>
                 </button>
               </div>
