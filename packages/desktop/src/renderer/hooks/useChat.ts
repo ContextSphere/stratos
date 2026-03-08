@@ -1037,18 +1037,30 @@ export function useChat(
 
   const handleInteractiveResponse = useCallback(
     (text: string) => {
+      // Add user message bubble so the feedback is visible in chat
+      const userMsg: ChatMessage = {
+        id: nextMessageId(),
+        role: "user",
+        content: text,
+        timestamp: Date.now(),
+      };
+      const activeId = activeThreadIdRef.current;
+      if (activeId) {
+        const state = streamingThreadsRef.current.get(activeId);
+        if (state) {
+          state.messages = [...state.messages, userMsg];
+        }
+      }
+      setMessages((prev) => [...prev, userMsg]);
+
       if (interactiveMode.type === "plan-review") {
-        // Send feedback through plan review callback
         respondPlanReview(interactiveMode.requestId, {
           type: "deny",
           feedback: text,
         });
-        // Clear interactive mode
         setInteractiveMode({ type: "none" });
       } else if (interactiveMode.type === "question") {
-        // Send answer through question callback
         respondQuestion(interactiveMode.requestId, { answer: text });
-        // Clear interactive mode
         setInteractiveMode({ type: "none" });
       }
     },
