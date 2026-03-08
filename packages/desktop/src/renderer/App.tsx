@@ -113,7 +113,9 @@ export default function App(): React.ReactElement {
   useEffect(() => {
     if (activeThreadId && activeThread) {
       const folderPaths = new Set(folders.map((f) => f.path));
-      if (!activeThread.cwd || !folderPaths.has(activeThread.cwd)) {
+      const threadFolder =
+        activeThread.worktree?.sourceRepoPath ?? activeThread.cwd;
+      if (!threadFolder || !folderPaths.has(threadFolder)) {
         setActiveThreadId(null);
       }
     }
