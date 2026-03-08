@@ -1,6 +1,31 @@
 import type { AgentMode } from "@agentpanel/core";
 
 /**
+ * Interactive tool names that require special handling (not rendered as tool cards).
+ */
+const INTERACTIVE_TOOL_NAMES = new Set([
+  "AskUserQuestion",
+  "EnterPlanMode",
+  "ExitPlanMode",
+]);
+
+/**
+ * Returns the effective tool name, unwrapping Skill-wrapped interactive tools.
+ * When the model lacks ToolSearch it may call `Skill({ skill: "ExitPlanMode" })`
+ * instead of calling ExitPlanMode directly. This function detects that pattern.
+ */
+export function effectiveToolName(
+  toolName: string,
+  input: Record<string, unknown>,
+): string {
+  if (toolName === "Skill") {
+    const wrapped = (input?.skill ?? input?.name) as string | undefined;
+    if (wrapped && INTERACTIVE_TOOL_NAMES.has(wrapped)) return wrapped;
+  }
+  return toolName;
+}
+
+/**
  * Tool names that are always auto-approved in acceptEdits mode.
  * Exported for testing.
  */

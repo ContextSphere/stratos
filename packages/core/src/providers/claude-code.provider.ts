@@ -9,17 +9,15 @@ import type {
 } from "./types";
 import { MODE_CONFIGS } from "../types/mode";
 
-const DEFAULT_TOOLS = [
-  "Read",
-  "Edit",
-  "Write",
-  "Bash",
-  "Glob",
-  "Grep",
-  "WebSearch",
-  "WebFetch",
-  "Skill",
-];
+/**
+ * Use all default Claude Code tools (including deferred ones like
+ * EnterPlanMode, ExitPlanMode, AskUserQuestion, NotebookEdit, etc.).
+ * The SDK's deferred-tools system handles which tools are presented
+ * to the model upfront vs discovered via ToolSearch at runtime.
+ */
+const DEFAULT_TOOLS: ToolsOption = { type: "preset", preset: "claude_code" };
+
+type ToolsOption = string[] | { type: "preset"; preset: "claude_code" };
 
 export class ClaudeCodeProvider implements AgentProvider {
   readonly name = "claude-code";
@@ -43,7 +41,9 @@ export class ClaudeCodeProvider implements AgentProvider {
     // `tools` controls built-in tools only. MCP tools from auto-discovered
     // servers (via settingSources) and explicit mcpServers are handled
     // separately by the SDK/CLI.
-    const tools = [...(this.config.allowedTools ?? DEFAULT_TOOLS)];
+    const tools: ToolsOption = this.config.allowedTools
+      ? [...this.config.allowedTools]
+      : DEFAULT_TOOLS;
 
     const isBypass = mode === "bypassPermissions";
     const cliPath = this.config.cliPath;

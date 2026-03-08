@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveToolBehavior,
+  effectiveToolName,
   isReadOnlyTool,
   isFileEditTool,
   ACCEPT_EDITS_AUTO_APPROVE,
@@ -98,6 +99,37 @@ describe("resolveToolBehavior", () => {
       expect(resolveToolBehavior("plan", "Read")).toBe(false);
       expect(resolveToolBehavior("plan", "Bash")).toBe(false);
     });
+  });
+});
+
+describe("effectiveToolName", () => {
+  it("unwraps Skill-wrapped interactive tools", () => {
+    expect(effectiveToolName("Skill", { skill: "ExitPlanMode" })).toBe(
+      "ExitPlanMode",
+    );
+    expect(effectiveToolName("Skill", { skill: "EnterPlanMode" })).toBe(
+      "EnterPlanMode",
+    );
+    expect(effectiveToolName("Skill", { skill: "AskUserQuestion" })).toBe(
+      "AskUserQuestion",
+    );
+  });
+
+  it("does not unwrap non-interactive Skill calls", () => {
+    expect(effectiveToolName("Skill", { skill: "SomeOtherSkill" })).toBe(
+      "Skill",
+    );
+  });
+
+  it("passes through non-Skill tool names", () => {
+    expect(effectiveToolName("ExitPlanMode", {})).toBe("ExitPlanMode");
+    expect(effectiveToolName("Bash", {})).toBe("Bash");
+  });
+
+  it("handles name field as fallback", () => {
+    expect(effectiveToolName("Skill", { name: "ExitPlanMode" })).toBe(
+      "ExitPlanMode",
+    );
   });
 });
 

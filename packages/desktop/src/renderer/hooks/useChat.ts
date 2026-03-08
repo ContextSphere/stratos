@@ -366,6 +366,10 @@ export function useChat(
             "ExitPlanMode",
           ]);
           if (INTERACTIVE_TOOLS.has(msg.toolName)) break;
+          if (msg.toolName === "Skill") {
+            const wrapped = (msg.input?.skill ?? msg.input?.name) as string;
+            if (wrapped && INTERACTIVE_TOOLS.has(wrapped)) break;
+          }
 
           // Remove any worktree progress messages when agent starts working
           apply((prev) => prev.filter((m) => !m.worktreeProgress));

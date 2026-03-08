@@ -23,7 +23,7 @@ import type {
   ProviderType,
 } from "@agentpanel/core";
 import { loadSettings } from "./settings/settings.store";
-import { resolveToolBehavior } from "./agent-session-logic";
+import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 
 /**
  * Build explicit MCP servers for an agent session.
@@ -422,7 +422,10 @@ export class AgentManager {
       const currentThread = await this.storage.getThread(threadId);
       const currentMode = normalizeMode(currentThread?.mode);
 
-      const behavior = resolveToolBehavior(currentMode, toolName);
+      const behavior = resolveToolBehavior(
+        currentMode,
+        effectiveToolName(toolName, input),
+      );
 
       if (behavior === "always_approve") {
         return { approved: true };

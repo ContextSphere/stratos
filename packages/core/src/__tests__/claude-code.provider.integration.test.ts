@@ -321,19 +321,13 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
     }
 
     const callArgs = mockQuery.mock.calls[0][0];
-    // Plan mode no longer restricts tools — the SDK's permissionMode: 'plan'
-    // handles tool restrictions internally (including allowing Write for the plan file)
-    expect(callArgs.options.tools).toEqual([
-      "Read",
-      "Edit",
-      "Write",
-      "Bash",
-      "Glob",
-      "Grep",
-      "WebSearch",
-      "WebFetch",
-      "Skill",
-    ]);
+    // Uses the preset to include all Claude Code tools (including deferred ones
+    // like EnterPlanMode, ExitPlanMode, AskUserQuestion). The SDK handles which
+    // tools are presented upfront vs discovered via ToolSearch.
+    expect(callArgs.options.tools).toEqual({
+      type: "preset",
+      preset: "claude_code",
+    });
   });
 
   it("interrupt stops the current query", async () => {
