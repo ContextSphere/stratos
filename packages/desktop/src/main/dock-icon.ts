@@ -1,94 +1,117 @@
-import { nativeImage } from 'electron'
-import { existsSync } from 'fs'
-import { join } from 'path'
+import { nativeImage } from "electron";
+import { existsSync } from "fs";
+import { join } from "path";
+
+/** Icon bitmap size — 256 for Retina sharpness at dock size */
+const ICON_SIZE = 256;
+
+/** Superellipse exponent — Apple's squircle uses ~5 */
+const SQUIRCLE_N = 5;
+
+/** How much of the canvas the squircle fills (Apple spec is 80.5% for .icns,
+ *  but app.dock.setIcon() bypasses the OS pipeline so we scale up to match) */
+const SQUIRCLE_FILL = 0.9;
+
+/** Anti-alias zone width at the squircle edge (fraction of superellipse d-value) */
+const AA_START = 0.92;
+const AA_WIDTH = 1 - AA_START;
+
+/** Brightness threshold — pixels above this are considered "white" for recoloring */
+const BRIGHT_THRESHOLD = 128;
 
 /**
- * Load the real app icon. For linked worktrees, shift its hue by a
- * deterministic amount so each worktree gets a distinctly colored variant.
- * The main worktree keeps the original icon.
+ * Load the app icon with macOS squircle mask baked in.
+ * app.dock.setIcon() does NOT get the OS squircle treatment,
+ * so we apply it ourselves in bitmap space.
+ *
+ * For linked worktrees, white pixels are recolored to a
+ * deterministic hue so each worktree is visually distinct.
  */
-export function generateDockIcon(hash: string, isLinkedWorktree = false): Electron.NativeImage {
-  const iconPath = join(__dirname, '../../build/icon.png')
+export function generateDockIcon(
+  hash: string,
+  isLinkedWorktree = false,
+): Electron.NativeImage {
+  const iconPath = join(__dirname, "../../build/icon.png");
   if (!existsSync(iconPath)) {
-    return nativeImage.createEmpty()
+    return nativeImage.createEmpty();
   }
 
-  const size = 128
-  const baseIcon = nativeImage.createFromPath(iconPath).resize({ width: size, height: size })
+  const baseIcon = nativeImage.createFromPath(iconPath).resize({
+    width: ICON_SIZE,
+    height: ICON_SIZE,
+  });
+  const bitmap = baseIcon.toBitmap(); // BGRA format
 
-  if (!isLinkedWorktree) {
-    return baseIcon
+  // Pre-compute worktree accent color (if needed)
+  let tr = 0,
+    tg = 0,
+    tb = 0;
+  if (isLinkedWorktree) {
+    const hue = 20 + (parseInt(hash.slice(0, 4), 16) % 320);
+    [tr, tg, tb] = hslToRgb(hue, 85, 65);
   }
 
-  const bitmap = baseIcon.toBitmap() // BGRA format
+  // Squircle geometry
+  const half = (ICON_SIZE * SQUIRCLE_FILL) / 2;
+  const center = ICON_SIZE / 2;
 
-  // Deterministic hue shift from hash (30–330° to always look different from original)
-  const hueShift = 30 + (parseInt(hash.slice(0, 4), 16) % 300)
+  // Single pass: recolor + squircle mask
+  for (let py = 0; py < ICON_SIZE; py++) {
+    const dy = Math.abs(py - center) / half;
+    const dyN = dy * dy * dy * dy * dy; // dy^5
 
-  // Shift hue of every pixel
-  const totalPixels = size * size
-  for (let i = 0; i < totalPixels; i++) {
-    const offset = i * 4
-    const alpha = bitmap[offset + 3]
-    if (alpha === 0) continue // skip transparent pixels
+    for (let px = 0; px < ICON_SIZE; px++) {
+      const offset = (py * ICON_SIZE + px) * 4;
+      const dx = Math.abs(px - center) / half;
+      const d = dx * dx * dx * dx * dx + dyN; // superellipse: |dx|^5 + |dy|^5
 
-    // BGRA → RGB
-    const b = bitmap[offset]
-    const g = bitmap[offset + 1]
-    const r = bitmap[offset + 2]
+      if (d > 1) {
+        bitmap[offset + 3] = 0;
+        continue;
+      }
+      if (d > AA_START) {
+        bitmap[offset + 3] = Math.round(
+          bitmap[offset + 3] * (1 - (d - AA_START) / AA_WIDTH),
+        );
+      }
 
-    // RGB → HSL
-    const [h, s, l] = rgbToHsl(r, g, b)
-
-    // Shift hue, keep saturation and lightness
-    const newH = (h + hueShift) % 360
-
-    // HSL → RGB → BGRA
-    const [nr, ng, nb] = hslToRgb(newH, s, l)
-    bitmap[offset] = nb
-    bitmap[offset + 1] = ng
-    bitmap[offset + 2] = nr
-    // alpha stays unchanged
+      // Worktree recoloring: map bright pixels to the accent color
+      if (isLinkedWorktree && bitmap[offset + 3] > 0) {
+        const brightness =
+          (bitmap[offset + 2] + bitmap[offset + 1] + bitmap[offset]) / 3;
+        if (brightness > BRIGHT_THRESHOLD) {
+          const scale = brightness / 255;
+          bitmap[offset] = Math.round(tb * scale);
+          bitmap[offset + 1] = Math.round(tg * scale);
+          bitmap[offset + 2] = Math.round(tr * scale);
+        }
+      }
+    }
   }
 
-  return nativeImage.createFromBitmap(bitmap, { width: size, height: size })
-}
-
-/** RGB (0–255) to HSL (h: 0–360, s: 0–100, l: 0–100) */
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-  const r1 = r / 255
-  const g1 = g / 255
-  const b1 = b / 255
-  const max = Math.max(r1, g1, b1)
-  const min = Math.min(r1, g1, b1)
-  const l = (max + min) / 2
-  if (max === min) return [0, 0, l * 100]
-  const d = max - min
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-  let h: number
-  if (max === r1) h = ((g1 - b1) / d + (g1 < b1 ? 6 : 0)) * 60
-  else if (max === g1) h = ((b1 - r1) / d + 2) * 60
-  else h = ((r1 - g1) / d + 4) * 60
-  return [h, s * 100, l * 100]
+  return nativeImage.createFromBitmap(bitmap, {
+    width: ICON_SIZE,
+    height: ICON_SIZE,
+  });
 }
 
 /** HSL (h: 0–360, s: 0–100, l: 0–100) to RGB (0–255) */
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-  const s1 = s / 100
-  const l1 = l / 100
-  const c = (1 - Math.abs(2 * l1 - 1)) * s1
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
-  const m = l1 - c / 2
-  let r1: number, g1: number, b1: number
-  if (h < 60) [r1, g1, b1] = [c, x, 0]
-  else if (h < 120) [r1, g1, b1] = [x, c, 0]
-  else if (h < 180) [r1, g1, b1] = [0, c, x]
-  else if (h < 240) [r1, g1, b1] = [0, x, c]
-  else if (h < 300) [r1, g1, b1] = [x, 0, c]
-  else [r1, g1, b1] = [c, 0, x]
+  const s1 = s / 100;
+  const l1 = l / 100;
+  const c = (1 - Math.abs(2 * l1 - 1)) * s1;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l1 - c / 2;
+  let r1: number, g1: number, b1: number;
+  if (h < 60) [r1, g1, b1] = [c, x, 0];
+  else if (h < 120) [r1, g1, b1] = [x, c, 0];
+  else if (h < 180) [r1, g1, b1] = [0, c, x];
+  else if (h < 240) [r1, g1, b1] = [0, x, c];
+  else if (h < 300) [r1, g1, b1] = [x, 0, c];
+  else [r1, g1, b1] = [c, 0, x];
   return [
     Math.round((r1 + m) * 255),
     Math.round((g1 + m) * 255),
-    Math.round((b1 + m) * 255)
-  ]
+    Math.round((b1 + m) * 255),
+  ];
 }
