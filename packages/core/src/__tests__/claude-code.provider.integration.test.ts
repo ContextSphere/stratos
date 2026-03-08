@@ -281,11 +281,19 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
           canUseTool?: (
             name: string,
             input: Record<string, unknown>,
+            sdkOptions: unknown,
           ) => Promise<unknown>;
         };
       }) => {
         if (options?.canUseTool) {
-          options.canUseTool("Bash", { command: "ls" });
+          options.canUseTool(
+            "Bash",
+            { command: "ls" },
+            {
+              signal: new AbortController().signal,
+              toolUseID: "test-tool-use-id",
+            },
+          );
         }
         return makeStream([]);
       },
@@ -302,7 +310,14 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
       msgs.push(msg);
     }
 
-    expect(permissionHandler).toHaveBeenCalledWith("Bash", { command: "ls" });
+    expect(permissionHandler).toHaveBeenCalledWith(
+      "Bash",
+      { command: "ls" },
+      {
+        suggestions: undefined,
+        decisionReason: undefined,
+      },
+    );
   });
 
   it("uses default tools in plan mode (SDK handles restrictions)", async () => {

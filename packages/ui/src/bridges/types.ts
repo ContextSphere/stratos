@@ -15,7 +15,11 @@ export interface ChatBridge {
     sessionId?: string,
   ): void;
   interrupt(threadId?: string): void;
-  respondPermission(requestId: string, approved: boolean): void;
+  respondPermission(
+    requestId: string,
+    approved: boolean,
+    updatedPermissions?: unknown[],
+  ): void;
   respondQuestion(requestId: string, answers: Record<string, string>): void;
   respondPlanReview(
     requestId: string,

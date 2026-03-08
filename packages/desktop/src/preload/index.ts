@@ -43,8 +43,16 @@ const api = {
     );
   },
 
-  respondToolPermission: (requestId: string, approved: boolean): void => {
-    ipcRenderer.send(IPC_CHANNELS.TOOL_RESPONSE, { requestId, approved });
+  respondToolPermission: (
+    requestId: string,
+    approved: boolean,
+    updatedPermissions?: unknown[],
+  ): void => {
+    ipcRenderer.send(IPC_CHANNELS.TOOL_RESPONSE, {
+      requestId,
+      approved,
+      updatedPermissions,
+    });
   },
 
   onSessionReady: (

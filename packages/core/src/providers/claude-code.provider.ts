@@ -82,12 +82,28 @@ export class ClaudeCodeProvider implements AgentProvider {
         | "acceptEdits"
         | "bypassPermissions",
       ...(isBypass ? { allowDangerouslySkipPermissions: true } : {}),
-      canUseTool: async (toolName: string, input: Record<string, unknown>) => {
-        const result = await params.permissionHandler(toolName, input);
+      canUseTool: async (
+        toolName: string,
+        input: Record<string, unknown>,
+        sdkOptions: {
+          signal: AbortSignal;
+          suggestions?: unknown[];
+          decisionReason?: string;
+          toolUseID: string;
+          agentID?: string;
+        },
+      ) => {
+        const result = await params.permissionHandler(toolName, input, {
+          suggestions: sdkOptions.suggestions,
+          decisionReason: sdkOptions.decisionReason,
+        });
         if (result.approved) {
           return {
             behavior: "allow" as const,
             updatedInput: result.modifiedInput ?? input,
+            ...(result.updatedPermissions
+              ? { updatedPermissions: result.updatedPermissions }
+              : {}),
           };
         }
         return {

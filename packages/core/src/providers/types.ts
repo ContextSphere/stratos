@@ -98,13 +98,22 @@ export interface SendMessageParams {
   traceCallback?: (entry: any) => void;
 }
 
+/** Opaque permission update passed through from the SDK */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type PermissionUpdate = any;
+
 export type PermissionHandler = (
   toolName: string,
   input: Record<string, unknown>,
+  options?: {
+    suggestions?: PermissionUpdate[];
+    decisionReason?: string;
+  },
 ) => Promise<{
   approved: boolean;
   modifiedInput?: Record<string, unknown>;
   denyMessage?: string;
+  updatedPermissions?: PermissionUpdate[];
 }>;
 
 export interface ProviderConfig {
