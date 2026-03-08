@@ -305,7 +305,7 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
     expect(permissionHandler).toHaveBeenCalledWith("Bash", { command: "ls" });
   });
 
-  it("uses read-only tools in plan mode", async () => {
+  it("uses default tools in plan mode (SDK handles restrictions)", async () => {
     mockQuery.mockReturnValue(makeStream([]));
 
     const provider = new ClaudeCodeProvider();
@@ -321,12 +321,18 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
     }
 
     const callArgs = mockQuery.mock.calls[0][0];
+    // Plan mode no longer restricts tools — the SDK's permissionMode: 'plan'
+    // handles tool restrictions internally (including allowing Write for the plan file)
     expect(callArgs.options.tools).toEqual([
       "Read",
+      "Edit",
+      "Write",
+      "Bash",
       "Glob",
       "Grep",
       "WebSearch",
       "WebFetch",
+      "Skill",
     ]);
   });
 
