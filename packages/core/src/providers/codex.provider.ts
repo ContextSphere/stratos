@@ -755,6 +755,7 @@ export class CodexProvider implements AgentProvider {
           turnComplete = true;
           const turn = p.turn ?? p;
           const status = turn?.status ?? "completed";
+          this.turnId = undefined;
 
           // Extract token usage
           const usage = p.tokenUsage ?? turn?.tokenUsage;
@@ -1204,10 +1205,30 @@ export class CodexProvider implements AgentProvider {
 
   async interrupt(): Promise<void> {
     if (this.threadId && this.appServer) {
+      const interruptParams: { threadId: string; turnId?: string } = {
+        threadId: this.threadId,
+      };
+      if (this.turnId) {
+        interruptParams.turnId = this.turnId;
+      }
+
       try {
-        await this.sendRpc("turn/interrupt", { threadId: this.threadId });
-      } catch {
-        // Ignore errors during interrupt
+        await this.sendRpc("turn/interrupt", interruptParams);
+      } catch (err) {
+        // Compatibility fallback for servers that may reject turnId.
+        if (interruptParams.turnId) {
+          try {
+            await this.sendRpc("turn/interrupt", { threadId: this.threadId });
+            return;
+          } catch {
+            // Fall through to warning below
+          }
+        }
+        // Surface interrupt failures for diagnostics instead of swallowing.
+        console.warn(
+          "[codex.provider] interrupt failed:",
+          err instanceof Error ? err.message : String(err),
+        );
       }
     }
   }
