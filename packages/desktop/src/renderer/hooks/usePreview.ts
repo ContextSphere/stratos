@@ -42,7 +42,7 @@ export function usePreview() {
   );
 
   const openFileExplorer = useCallback((cwd: string) => {
-    setPreview({ isOpen: true, type: "file-explorer", title: "Files", cwd });
+    setPreview({ isOpen: true, type: "file-explorer", title: "", cwd });
   }, []);
 
   const close = useCallback(() => {
