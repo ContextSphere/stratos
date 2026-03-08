@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type {
   ChatMessage,
   ToolCall,
@@ -52,6 +52,7 @@ interface UseChatReturn {
   sessionTools: string[] | null;
   runningThreadIds: string[];
   threadNotifications: Map<string, string>;
+  pendingPermissionThreadIds: Set<string>;
 }
 
 let messageIdCounter = 0;
@@ -153,6 +154,16 @@ export function useChat(
     permissionRequests.find(
       (r) => !r.threadId || r.threadId === activeThreadId,
     ) ?? null;
+
+  const pendingPermissionThreadIds = useMemo(
+    () =>
+      new Set(
+        permissionRequests
+          .map((r) => r.threadId)
+          .filter((id): id is string => !!id),
+      ),
+    [permissionRequests],
+  );
 
   const prevThreadIdRef = useRef<string | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -652,6 +663,12 @@ export function useChat(
           // Clear running state immediately — result means the turn is complete.
           // The main process also sends THREAD_STREAM_STATE, but the SDK generator
           // may not close promptly, so we clear here as defense-in-depth.
+          if (threadId !== activeThreadIdRef.current) {
+            setThreadNotifications((n) => {
+              if (n.has(threadId)) return n;
+              return new Map(n).set(threadId, "done");
+            });
+          }
           setRunningThreadIds((prev) => prev.filter((id) => id !== threadId));
           break;
         }
@@ -803,6 +820,19 @@ export function useChat(
     // Listen for thread stream state changes from main process
     api.onThreadStreamState(({ threadId, isRunning }) => {
       setRunningThreadIds((prev) => {
+        // When a thread stops running and it's not the active thread,
+        // set a "done" notification so the sidebar shows a Done pill.
+        if (
+          !isRunning &&
+          prev.includes(threadId) &&
+          threadId !== activeThreadIdRef.current
+        ) {
+          setThreadNotifications((n) => {
+            // Don't overwrite a more important notification (permission/question)
+            if (n.has(threadId)) return n;
+            return new Map(n).set(threadId, "done");
+          });
+        }
         if (isRunning)
           return prev.includes(threadId) ? prev : [...prev, threadId];
         return prev.filter((id) => id !== threadId);
@@ -1109,5 +1139,6 @@ export function useChat(
     sessionTools,
     runningThreadIds,
     threadNotifications,
+    pendingPermissionThreadIds,
   };
 }

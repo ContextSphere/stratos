@@ -1,5 +1,47 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import type { Thread, Folder } from "@agentpanel/core";
+import { basename } from "../utils/path";
+
+interface StatusPill {
+  label: string;
+  colorClass: string;
+  dotClass: string;
+  pulse: boolean;
+}
+
+function getThreadStatus(
+  threadId: string,
+  isActive: boolean,
+  runningThreadIds: string[],
+  pendingPermissionThreadIds?: Set<string>,
+  threadNotifications?: Map<string, string>,
+): StatusPill | null {
+  if (pendingPermissionThreadIds?.has(threadId)) {
+    return {
+      label: "Awaiting",
+      colorClass: "text-amber-400",
+      dotClass: "bg-amber-400",
+      pulse: false,
+    };
+  }
+  if (runningThreadIds.includes(threadId)) {
+    return {
+      label: "Working",
+      colorClass: "text-violet-400",
+      dotClass: "bg-violet-400",
+      pulse: true,
+    };
+  }
+  if (!isActive && threadNotifications?.has(threadId)) {
+    return {
+      label: "Done",
+      colorClass: "text-emerald-400",
+      dotClass: "bg-emerald-400",
+      pulse: false,
+    };
+  }
+  return null;
+}
 
 interface Props {
   threads: Thread[];
@@ -13,6 +55,7 @@ interface Props {
   onDeleteThread: (threadId: string) => void;
   runningThreadIds: string[];
   threadNotifications: Map<string, string>;
+  pendingPermissionThreadIds?: Set<string>;
 }
 
 function FolderMenu({
@@ -54,8 +97,7 @@ function FolderMenu({
 function ThreadRow({
   thread,
   isActive,
-  isRunning,
-  notification,
+  status,
   confirmDelete,
   onThreadClick,
   onDeleteThread,
@@ -63,8 +105,7 @@ function ThreadRow({
 }: {
   thread: Thread;
   isActive: boolean;
-  isRunning: boolean;
-  notification: string | undefined;
+  status: StatusPill | null;
   confirmDelete: string | null;
   onThreadClick: (id: string) => void;
   onDeleteThread: (id: string) => void;
@@ -81,13 +122,17 @@ function ThreadRow({
       }`}
       onClick={() => onThreadClick(thread.id)}
     >
-      {isRunning && (
-        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse flex-shrink-0" />
+      {status && (
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div
+            className={`w-1.5 h-1.5 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`}
+          />
+          <span className={`text-[10px] font-medium ${status.colorClass}`}>
+            {status.label}
+          </span>
+        </div>
       )}
       <span className="flex-1 truncate">{thread.title}</span>
-      {notification && !isActive && (
-        <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
-      )}
       {isDeleting ? (
         <div
           className="flex items-center gap-1"
@@ -149,6 +194,7 @@ export function ThreadList({
   onDeleteThread,
   runningThreadIds,
   threadNotifications,
+  pendingPermissionThreadIds,
 }: Props): React.ReactElement {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [menuOpenFolderId, setMenuOpenFolderId] = useState<string | null>(null);
@@ -217,6 +263,7 @@ export function ThreadList({
                 {/* Folder row */}
                 <div
                   className="group no-drag flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors text-sm text-gray-300 hover:bg-[#1a1a1a] relative"
+                  title={folder.name}
                   onClick={() =>
                     onToggleFolderCollapsed(folder.id, !isCollapsed)
                   }
@@ -253,7 +300,7 @@ export function ThreadList({
 
                   {/* Folder name */}
                   <span className="flex-1 truncate font-medium">
-                    {folder.name}
+                    {basename(folder.name)}
                   </span>
 
                   {/* Actions (visible on hover) */}
@@ -320,19 +367,28 @@ export function ThreadList({
                         No threads
                       </p>
                     ) : (
-                      folderThreads.map((thread) => (
-                        <ThreadRow
-                          key={thread.id}
-                          thread={thread}
-                          isActive={thread.id === activeThreadId}
-                          isRunning={runningThreadIds.includes(thread.id)}
-                          notification={threadNotifications.get(thread.id)}
-                          confirmDelete={confirmDelete}
-                          onThreadClick={onThreadClick}
-                          onDeleteThread={onDeleteThread}
-                          setConfirmDelete={setConfirmDelete}
-                        />
-                      ))
+                      folderThreads.map((thread) => {
+                        const isActive = thread.id === activeThreadId;
+                        const status = getThreadStatus(
+                          thread.id,
+                          isActive,
+                          runningThreadIds,
+                          pendingPermissionThreadIds,
+                          threadNotifications,
+                        );
+                        return (
+                          <ThreadRow
+                            key={thread.id}
+                            thread={thread}
+                            isActive={isActive}
+                            status={status}
+                            confirmDelete={confirmDelete}
+                            onThreadClick={onThreadClick}
+                            onDeleteThread={onDeleteThread}
+                            setConfirmDelete={setConfirmDelete}
+                          />
+                        );
+                      })
                     )}
                   </div>
                 )}
