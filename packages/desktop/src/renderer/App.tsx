@@ -286,6 +286,11 @@ export default function App(): React.ReactElement {
         }
         await setActiveThreadId(thread.id);
         threadId = thread.id;
+
+        if (pendingMode) {
+          await window.api.threadsUpdate(threadId, { mode: pendingMode });
+          await refreshThreads();
+        }
       }
 
       await sendMessage(prompt, threadId, images);
@@ -300,6 +305,7 @@ export default function App(): React.ReactElement {
       setActiveThreadId,
       refreshThreads,
       pendingProvider,
+      pendingMode,
     ],
   );
 
