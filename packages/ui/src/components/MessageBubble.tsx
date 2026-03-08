@@ -376,6 +376,7 @@ export function MessageBubble({
                     <span className="truncate max-w-[200px]">{att.title}</span>
                   </a>
                 ))}
+<<<<<<< HEAD
               </div>
             )}
 
@@ -437,18 +438,6 @@ export function MessageBubble({
               <WorktreeProgress progressData={message.worktreeProgress} />
             )}
 
-            {/* Cost info (shown in bubble when there are no tool calls) */}
-            {!hasToolCalls && message.cost !== undefined && (
-              <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-700">
-                Cost: ${message.cost.toFixed(4)}
-                {message.usage && (
-                  <span className="ml-2">
-                    ({message.usage.inputTokens + message.usage.outputTokens}{" "}
-                    tokens)
-                  </span>
-                )}
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -478,17 +467,6 @@ export function MessageBubble({
         </div>
       )}
 
-      {/* Cost info (shown below tool calls when they exist) */}
-      {hasToolCalls && message.cost !== undefined && (
-        <div className="text-xs text-gray-500 px-1">
-          Cost: ${message.cost.toFixed(4)}
-          {message.usage && (
-            <span className="ml-2">
-              ({message.usage.inputTokens + message.usage.outputTokens} tokens)
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }
