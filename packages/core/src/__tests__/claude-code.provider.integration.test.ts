@@ -321,24 +321,13 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
     }
 
     const callArgs = mockQuery.mock.calls[0][0];
-    // In plan mode, tools are restricted to read-only + plan workflow tools
-    // to enforce compliance (the SDK's permissionMode:'plan' alone is insufficient).
-    expect(callArgs.options.tools).toEqual(
-      expect.arrayContaining([
-        "Read",
-        "Glob",
-        "Grep",
-        "Write",
-        "Edit",
-        "Agent",
-        "ToolSearch",
-        "EnterPlanMode",
-        "ExitPlanMode",
-        "AskUserQuestion",
-      ]),
-    );
-    expect(callArgs.options.tools).not.toContain("Bash");
-    expect(callArgs.options.tools).not.toContain("NotebookEdit");
+    // Plan mode uses the full tool preset — the SDK's permissionMode:'plan'
+    // handles execution restriction, and tools must remain available for
+    // post-plan execution after ExitPlanMode switches the mode.
+    expect(callArgs.options.tools).toEqual({
+      type: "preset",
+      preset: "claude_code",
+    });
   });
 
   it("interrupt stops the current query", async () => {
