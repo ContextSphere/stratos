@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Editor } from "@monaco-editor/react";
 import { useMonacoFontReady } from "../hooks/useMonacoFontReady";
 import {
@@ -20,6 +20,8 @@ interface TreeNode {
 
 interface Props {
   cwd: string;
+  targetFilePath?: string;
+  targetLine?: number;
   listDirectory: (dirPath: string, rootPath: string) => Promise<DirEntry[]>;
   readFile: (
     filePath: string,
@@ -92,6 +94,8 @@ function Chevron({ expanded }: { expanded: boolean }) {
 
 export function FileExplorer({
   cwd,
+  targetFilePath,
+  targetLine,
   listDirectory,
   readFile,
 }: Props): React.ReactElement {
@@ -105,6 +109,12 @@ export function FileExplorer({
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cursorTargetLine, setCursorTargetLine] = useState<number | null>(null);
+  const [autoOpenedTarget, setAutoOpenedTarget] = useState<string | null>(null);
+  const editorRef = useRef<{
+    revealLineInCenter: (lineNumber: number) => void;
+    setPosition: (position: { lineNumber: number; column: number }) => void;
+  } | null>(null);
 
   useEffect(() => {
     let ignored = false;
@@ -169,19 +179,21 @@ export function FileExplorer({
   );
 
   const handleFileClick = useCallback(
-    async (filePath: string, size: number) => {
-      if (size > MAX_FILE_SIZE) {
+    async (filePath: string, size?: number, line?: number) => {
+      if (size !== undefined && size > MAX_FILE_SIZE) {
         setOpenFile({
           path: filePath,
           content: "",
           isBinary: false,
           tooLarge: true,
         });
+        setCursorTargetLine(line ?? null);
         return;
       }
       try {
         const result = await readFile(filePath, cwd);
         setOpenFile({ path: filePath, ...result, tooLarge: false });
+        setCursorTargetLine(line ?? null);
       } catch (err) {
         setOpenFile({
           path: filePath,
@@ -189,12 +201,42 @@ export function FileExplorer({
           isBinary: false,
           tooLarge: false,
         });
+        setCursorTargetLine(line ?? null);
       }
     },
     [readFile, cwd],
   );
 
-  const handleBack = useCallback(() => setOpenFile(null), []);
+  const handleBack = useCallback(() => {
+    setOpenFile(null);
+    setCursorTargetLine(null);
+  }, []);
+
+  useEffect(() => {
+    setAutoOpenedTarget(null);
+    setCursorTargetLine(null);
+  }, [cwd]);
+
+  useEffect(() => {
+    if (!targetFilePath || !cwd || loading) return;
+    if (!targetFilePath.startsWith(cwd + "/")) return;
+    if (autoOpenedTarget === targetFilePath) return;
+    setAutoOpenedTarget(targetFilePath);
+    void handleFileClick(targetFilePath, undefined, targetLine);
+  }, [
+    targetFilePath,
+    targetLine,
+    cwd,
+    loading,
+    autoOpenedTarget,
+    handleFileClick,
+  ]);
+
+  useEffect(() => {
+    if (!editorRef.current || !cursorTargetLine || cursorTargetLine < 1) return;
+    editorRef.current.revealLineInCenter(cursorTargetLine);
+    editorRef.current.setPosition({ lineNumber: cursorTargetLine, column: 1 });
+  }, [cursorTargetLine, openFile?.path]);
 
   if (openFile) {
     const relativePath = openFile.path.startsWith(cwd)
@@ -244,6 +286,16 @@ export function FileExplorer({
               value={openFile.content}
               language={getLanguageFromPath(openFile.path)}
               theme="cursor-dark"
+              onMount={(editor) => {
+                editorRef.current = editor;
+                if (cursorTargetLine && cursorTargetLine > 0) {
+                  editor.revealLineInCenter(cursorTargetLine);
+                  editor.setPosition({
+                    lineNumber: cursorTargetLine,
+                    column: 1,
+                  });
+                }
+              }}
               options={{
                 readOnly: true,
                 minimap: { enabled: false },

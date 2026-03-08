@@ -13,4 +13,6 @@ export interface PreviewState {
   artifactContent?: string;
   artifactFilePath?: string;
   cwd?: string;
+  targetFilePath?: string;
+  targetLine?: number;
 }

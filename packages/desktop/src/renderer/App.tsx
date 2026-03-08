@@ -392,6 +392,62 @@ export default function App(): React.ReactElement {
     }
   }, [preview, closePreview, openFileExplorer, activeThread]);
 
+  const handleLinkClick = useCallback(
+    (href: string) => {
+      const value = href.trim();
+      if (!value) return;
+
+      // Keep true web links in web preview.
+      if (/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(value)) {
+        openUrl(value);
+        return;
+      }
+
+      const hashLineMatch = value.match(/#L(\d+)(?:C(\d+))?$/i);
+      const colonLineMatch = value.match(/:(\d+)(?::(\d+))?$/);
+      const line =
+        hashLineMatch && hashLineMatch[1]
+          ? Number(hashLineMatch[1])
+          : colonLineMatch && colonLineMatch[1]
+            ? Number(colonLineMatch[1])
+            : undefined;
+      const lineNumber =
+        line && Number.isFinite(line) && line > 0 ? line : undefined;
+
+      // Remove optional line/column suffixes from file references.
+      const withoutFragment = value.replace(/#L\d+(?:C\d+)?$/i, "");
+      const withoutLine = withoutFragment.replace(/:\d+(?::\d+)?$/, "");
+
+      // Absolute local file path (macOS/Linux) -> open file explorer.
+      if (withoutLine.startsWith("/")) {
+        if (
+          activeThread?.cwd &&
+          withoutLine.startsWith(activeThread.cwd + "/")
+        ) {
+          openFileExplorer(activeThread.cwd, withoutLine, lineNumber);
+          return;
+        }
+        const lastSlash = withoutLine.lastIndexOf("/");
+        const dir =
+          lastSlash > 0 ? withoutLine.slice(0, lastSlash) : withoutLine;
+        openFileExplorer(dir, withoutLine, lineNumber);
+        return;
+      }
+
+      // Relative repo path reference -> open current thread's explorer root at exact file.
+      if (activeThread?.cwd && /^[\w./-]+$/.test(withoutLine)) {
+        const relativePath = withoutLine.replace(/^\.?\//, "");
+        const root = activeThread.cwd.replace(/\/+$/, "");
+        const targetPath = `${root}/${relativePath}`;
+        openFileExplorer(activeThread.cwd, targetPath, lineNumber);
+        return;
+      }
+
+      openUrl(value);
+    },
+    [activeThread?.cwd, openFileExplorer, openUrl],
+  );
+
   // Ctrl+Tab to cycle modes
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -579,7 +635,7 @@ export default function App(): React.ReactElement {
             <ChatView
               messages={messages}
               isStreaming={isStreaming}
-              onLinkClick={openUrl}
+              onLinkClick={handleLinkClick}
               onSendMessage={(prompt) => handleSend(prompt)}
               onQuestionAnswer={respondQuestion}
               onPlanReviewDecision={respondPlanReview}
