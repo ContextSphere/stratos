@@ -50,6 +50,12 @@ export const IPC_CHANNELS = {
   CLAUDE_DISCONNECT: "integration:claude:disconnect",
   CLAUDE_GET_CONNECTION: "integration:claude:get-connection",
 
+  // Codex — connection management (codex app-server)
+  CODEX_CHECK_CLI: "integration:codex:check-cli",
+  CODEX_CONNECT: "integration:codex:connect",
+  CODEX_DISCONNECT: "integration:codex:disconnect",
+  CODEX_GET_CONNECTION: "integration:codex:get-connection",
+
   // Interactive tool events (AskUserQuestion, plan mode)
   ASK_USER_QUESTION: "chat:ask-user-question",
   ASK_USER_RESPONSE: "chat:ask-user-response",

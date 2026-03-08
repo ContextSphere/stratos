@@ -25,9 +25,11 @@ import { useThreads } from "./hooks/useThreads";
 import { useFolders } from "./hooks/useFolders";
 import { useGitHub } from "./hooks/useGitHub";
 import { useClaude } from "./hooks/useClaude";
+import { useCodex } from "./hooks/useCodex";
 import { usePreview } from "./hooks/usePreview";
 import { ConnectGitHubDialog } from "./components/ConnectGitHubDialog";
 import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
+import { ConnectCodexDialog } from "./components/ConnectCodexDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 
 function ContextRing({
@@ -143,6 +145,7 @@ export default function App(): React.ReactElement {
 
   const github = useGitHub();
   const claude = useClaude();
+  const codex = useCodex();
   const {
     preview,
     openUrl,
@@ -156,6 +159,7 @@ export default function App(): React.ReactElement {
 
   const [showClaudeDialog, setShowClaudeDialog] = useState(false);
   const [showGitHubDialog, setShowGitHubDialog] = useState(false);
+  const [showCodexDialog, setShowCodexDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [pendingMode, setPendingMode] = useState<AgentMode>();
   const [pendingProvider, setPendingProvider] = useState<
@@ -610,6 +614,24 @@ export default function App(): React.ReactElement {
                     GitHub
                   </span>
                 </button>
+                <button
+                  onClick={() => setShowCodexDialog(true)}
+                  className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[#2a2a2a]"
+                  title={
+                    codex.isConnected ? "Codex connected" : "Connect Codex"
+                  }
+                >
+                  <div
+                    className={`w-1.5 h-1.5 rounded-full ${codex.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                  />
+                  <span
+                    className={
+                      codex.isConnected ? "text-gray-400" : "text-gray-600"
+                    }
+                  >
+                    Codex
+                  </span>
+                </button>
               </div>
             </div>
 
@@ -743,6 +765,21 @@ export default function App(): React.ReactElement {
         onClose={() => setShowClaudeDialog(false)}
         onConnect={claude.connect}
         onDisconnect={claude.disconnect}
+      />
+
+      {/* Codex connect dialog */}
+      <ConnectCodexDialog
+        isOpen={showCodexDialog}
+        isConnected={codex.isConnected}
+        cliInstalled={codex.cliInstalled}
+        email={codex.email}
+        planType={codex.planType}
+        authMode={codex.authMode}
+        loading={codex.loading}
+        error={codex.error}
+        onClose={() => setShowCodexDialog(false)}
+        onConnect={codex.connect}
+        onDisconnect={codex.disconnect}
       />
 
       {/* GitHub connect dialog */}
