@@ -9,6 +9,10 @@
       "persistent": true,
       "cache": false
     },
+    "dev:fullscreen": {
+      "persistent": true,
+      "cache": false
+    },
     "test": {},
     "typecheck": {
       "dependsOn": ["^build"]

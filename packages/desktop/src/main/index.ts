@@ -107,6 +107,7 @@ if (!gotLock) {
       minWidth: 600,
       minHeight: 400,
       show: false,
+      ...(process.env.FULLSCREEN === "1" && { fullscreen: true }),
       title: worktree ? `AgentPanel — ${worktree.name}` : "AgentPanel",
       titleBarStyle: "hiddenInset",
       transparent: true,
