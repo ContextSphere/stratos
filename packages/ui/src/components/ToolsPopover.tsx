@@ -67,18 +67,20 @@ export function ToolsPopover({
     })[]
   >(() => {
     if (mcpServers && mcpServers.length > 0) {
-      return mcpServers.map((s) => ({
-        name: s.name,
-        displayName: s.name
-          .split("-")
-          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-          .join(" "),
-        tools: s.tools,
-        status: s.status,
-        scope: s.scope,
-        configPath: s.configPath,
-        configType: s.configType,
-      }));
+      return mcpServers
+        .map((s) => ({
+          name: s.name,
+          displayName: s.name
+            .split("-")
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(" "),
+          tools: s.tools,
+          status: s.status,
+          scope: s.scope,
+          configPath: s.configPath,
+          configType: s.configType,
+        }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
 
     // Fallback: parse from sessionTools
