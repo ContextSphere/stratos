@@ -14,6 +14,8 @@ export interface McpServerInfo {
   configPath?: string;
   tools: string[];
   error?: string;
+  configType?: string;
+  configId?: string;
 }
 
 export interface ChatBridge {

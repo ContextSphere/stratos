@@ -59,7 +59,12 @@ export function ToolsPopover({
 
   // Build server list from mcpServers if available, otherwise parse from tool names
   const servers = useMemo<
-    (MCPServer & { status?: string; scope?: string; configPath?: string })[]
+    (MCPServer & {
+      status?: string;
+      scope?: string;
+      configPath?: string;
+      configType?: string;
+    })[]
   >(() => {
     if (mcpServers && mcpServers.length > 0) {
       return mcpServers.map((s) => ({
@@ -72,6 +77,7 @@ export function ToolsPopover({
         status: s.status,
         scope: s.scope,
         configPath: s.configPath,
+        configType: s.configType,
       }));
     }
 
@@ -210,20 +216,31 @@ export function ToolsPopover({
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {onToggleServer && (
-                        <button
+                        <div
+                          role="switch"
+                          aria-checked={!isDisabled}
+                          tabIndex={0}
                           onClick={(e) => {
                             e.stopPropagation();
+                            e.preventDefault();
                             onToggleServer(server.name, isDisabled);
                           }}
-                          className={`relative w-7 h-4 rounded-full transition-colors ${isDisabled ? "bg-gray-700" : "bg-emerald-600/50"}`}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              onToggleServer(server.name, isDisabled);
+                            }
+                          }}
+                          className={`relative w-7 h-4 rounded-full transition-colors cursor-pointer ${isDisabled ? "bg-gray-700" : "bg-emerald-600/50"}`}
                           title={
                             isDisabled ? "Enable server" : "Disable server"
                           }
                         >
                           <span
-                            className={`absolute top-0.5 w-3 h-3 rounded-full bg-white/80 transition-transform ${isDisabled ? "left-0.5" : "left-3.5"}`}
+                            className={`absolute top-0.5 w-3 h-3 rounded-full bg-white/80 transition-transform pointer-events-none ${isDisabled ? "left-0.5" : "left-3.5"}`}
                           />
-                        </button>
+                        </div>
                       )}
                       <span className="text-xs text-gray-600">
                         {server.tools.length}
@@ -255,14 +272,16 @@ export function ToolsPopover({
                           {shortenPath(server.configPath)}
                         </button>
                       )}
-                      {server.status === "needs-auth" && onReconnectServer && (
-                        <button
-                          onClick={() => onReconnectServer(server.name)}
-                          className="text-[10px] px-2 py-1 mb-1.5 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors"
-                        >
-                          Authenticate
-                        </button>
-                      )}
+                      {server.status === "needs-auth" &&
+                        onReconnectServer &&
+                        server.configType !== "claudeai-proxy" && (
+                          <button
+                            onClick={() => onReconnectServer(server.name)}
+                            className="text-[10px] px-2 py-1 mb-1.5 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors"
+                          >
+                            Authenticate
+                          </button>
+                        )}
                       {server.status === "failed" && (
                         <div className="flex items-center gap-2 mb-1.5">
                           <span className="text-[10px] text-red-400/70">

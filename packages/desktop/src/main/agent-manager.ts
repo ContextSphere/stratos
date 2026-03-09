@@ -325,8 +325,21 @@ export class AgentManager {
       IPC_CHANNELS.MCP_RECONNECT_SERVER,
       async (_event, threadId: string, serverName: string) => {
         const session = this.sessions.get(threadId);
-        if (!session?.provider.reconnectMcpServer) return;
-        await session.provider.reconnectMcpServer(serverName);
+        if (!session) {
+          console.warn(`[MCP] reconnect: no session for thread ${threadId}`);
+          return;
+        }
+        if (!session.provider.reconnectMcpServer) {
+          console.warn(
+            `[MCP] reconnect: provider has no reconnectMcpServer method`,
+          );
+          return;
+        }
+        const result = await session.provider.reconnectMcpServer(serverName);
+        if (result?.authUrl) {
+          shell.openExternal(result.authUrl);
+        }
+        await this.pushMcpStatus(threadId);
       },
     );
 
@@ -334,33 +347,7 @@ export class AgentManager {
     ipcMain.handle(
       IPC_CHANNELS.MCP_SERVER_STATUS,
       async (_event, threadId: string) => {
-        const session = this.sessions.get(threadId);
-        if (!session?.provider.getMcpServerStatus) return [];
-        try {
-          const statuses = await session.provider.getMcpServerStatus();
-          // Resolve configPath from scope + thread cwd
-          const thread = await this.storage.getThread(threadId);
-          const cwd = thread?.cwd ?? process.env.HOME!;
-          const home = homedir();
-          for (const s of statuses) {
-            if (s.scope && !s.configPath) {
-              switch (s.scope) {
-                case "project":
-                  s.configPath = join(cwd, ".mcp.json");
-                  break;
-                case "user":
-                  s.configPath = join(home, ".claude", ".mcp.json");
-                  break;
-                case "local":
-                  s.configPath = join(cwd, ".claude", ".mcp.json");
-                  break;
-              }
-            }
-          }
-          return statuses;
-        } catch {
-          return [];
-        }
+        return this.getMcpStatusForThread(threadId);
       },
     );
 
@@ -374,8 +361,16 @@ export class AgentManager {
         enabled: boolean,
       ) => {
         const session = this.sessions.get(threadId);
-        if (!session?.provider.toggleMcpServer) return;
+        if (!session) {
+          console.warn(`[MCP] toggle: no session for thread ${threadId}`);
+          return;
+        }
+        if (!session.provider.toggleMcpServer) {
+          console.warn(`[MCP] toggle: provider has no toggleMcpServer method`);
+          return;
+        }
         await session.provider.toggleMcpServer(serverName, enabled);
+        await this.pushMcpStatus(threadId);
       },
     );
 
@@ -681,6 +676,43 @@ export class AgentManager {
         isRunning: false,
       });
     }
+  }
+
+  private async getMcpStatusForThread(threadId: string): Promise<unknown[]> {
+    const session = this.sessions.get(threadId);
+    if (!session?.provider.getMcpServerStatus) return [];
+    try {
+      const statuses = await session.provider.getMcpServerStatus();
+      const thread = await this.storage.getThread(threadId);
+      const cwd = thread?.cwd ?? process.env.HOME!;
+      const home = homedir();
+      for (const s of statuses) {
+        if (s.scope && !s.configPath) {
+          switch (s.scope) {
+            case "project":
+              s.configPath = join(cwd, ".mcp.json");
+              break;
+            case "user":
+              s.configPath = join(home, ".claude", ".mcp.json");
+              break;
+            case "local":
+              s.configPath = join(cwd, ".claude", ".mcp.json");
+              break;
+          }
+        }
+      }
+      return statuses;
+    } catch {
+      return [];
+    }
+  }
+
+  private async pushMcpStatus(threadId: string): Promise<void> {
+    const servers = await this.getMcpStatusForThread(threadId);
+    this.sendToRenderer(IPC_CHANNELS.MCP_STATUS_CHANGED, {
+      threadId,
+      servers,
+    });
   }
 
   private sendToRenderer(

@@ -95,6 +95,7 @@ export const IPC_CHANNELS = {
   MCP_ELICITATION: "mcp:elicitation",
   MCP_ELICITATION_RESPONSE: "mcp:elicitation-response",
   MCP_RECONNECT_SERVER: "mcp:reconnect-server",
+  MCP_STATUS_CHANGED: "mcp:status-changed",
 
   // UI shortcuts
   OPEN_MODEL_PICKER: "ui:open-model-picker",

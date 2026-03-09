@@ -26,6 +26,7 @@ function makeMockApi() {
     onThreadStreamState: vi.fn(),
     onSlashCommands: vi.fn(),
     onModeChanged: vi.fn(),
+    onMcpStatusChanged: vi.fn(),
     onThreadActivate: vi.fn(),
     removeAllListeners: vi.fn(),
 

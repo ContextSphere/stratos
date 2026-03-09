@@ -623,12 +623,15 @@ export default function App(): React.ReactElement {
               onToggleMcpServer={
                 activeThreadId
                   ? async (serverName: string, enabled: boolean) => {
-                      await window.api.mcpToggleServer(
-                        activeThreadId,
-                        serverName,
-                        enabled,
-                      );
-                      await fetchMcpStatus(activeThreadId);
+                      try {
+                        await window.api.mcpToggleServer(
+                          activeThreadId,
+                          serverName,
+                          enabled,
+                        );
+                      } catch (err) {
+                        console.error("[MCP] toggle failed:", err);
+                      }
                     }
                   : undefined
               }
@@ -637,12 +640,12 @@ export default function App(): React.ReactElement {
               }
               onReconnectMcpServer={
                 activeThreadId
-                  ? async (serverName: string) => {
-                      await window.api.mcpReconnectServer(
-                        activeThreadId,
-                        serverName,
-                      );
-                      await fetchMcpStatus(activeThreadId);
+                  ? (serverName: string) => {
+                      window.api
+                        .mcpReconnectServer(activeThreadId, serverName)
+                        .catch((err: unknown) =>
+                          console.error("[MCP] reconnect failed:", err),
+                        );
                     }
                   : undefined
               }

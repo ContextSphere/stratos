@@ -884,6 +884,12 @@ export function useChat(
       },
     );
 
+    api.onMcpStatusChanged(
+      ({ servers }: { threadId: string; servers: McpServerInfo[] }) => {
+        setMcpServers(servers.length > 0 ? servers : null);
+      },
+    );
+
     api.onModeChanged((data: { mode: string }, threadId: string | null) => {
       if (!threadId) return;
       const state = streamingThreadsRef.current.get(threadId);
@@ -914,6 +920,7 @@ export function useChat(
       api.removeAllListeners("chat:mode-changed");
       api.removeAllListeners("chat:thread-stream-state");
       api.removeAllListeners("chat:thread-activate");
+      api.removeAllListeners("mcp:status-changed");
       api.removeAllListeners("skills:slash-commands");
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

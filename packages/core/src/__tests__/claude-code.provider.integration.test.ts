@@ -347,8 +347,27 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
 
   it("interrupt stops the current query", async () => {
     const mockInterrupt = vi.fn().mockResolvedValue(undefined);
-    const stream = { ...makeStream([]), interrupt: mockInterrupt };
-    mockQuery.mockReturnValue(stream);
+    // Use a stream that parks after the first event so the query stays
+    // active when interrupt() is called (mirrors real behaviour where
+    // interrupt is called during an ongoing turn).
+    let resolveParked: (() => void) | undefined;
+    const parkingStream = {
+      [Symbol.asyncIterator]: async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-int",
+          tools: [],
+          slash_commands: [],
+        };
+        // Park until the test resolves us (or gen.return aborts)
+        await new Promise<void>((r) => {
+          resolveParked = r;
+        });
+      },
+      interrupt: mockInterrupt,
+    };
+    mockQuery.mockReturnValue(parkingStream);
 
     const provider = new ClaudeCodeProvider();
     await provider.initialize({});
@@ -360,6 +379,8 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
     // Kick off the generator body so currentQuery gets set, then interrupt
     await gen.next();
     await provider.interrupt();
+    // Unpark so the generator can finish cleanly
+    resolveParked?.();
     await gen.return(undefined);
 
     expect(mockInterrupt).toHaveBeenCalled();

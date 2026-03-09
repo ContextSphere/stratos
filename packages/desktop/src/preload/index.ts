@@ -325,6 +325,13 @@ const api = {
       callback(data, threadId ?? null),
     );
   },
+  onMcpStatusChanged: (
+    callback: (data: { threadId: string; servers: unknown[] }) => void,
+  ): void => {
+    ipcRenderer.on(IPC_CHANNELS.MCP_STATUS_CHANGED, (_event, data) =>
+      callback(data),
+    );
+  },
   respondMcpElicitation: (
     requestId: string,
     action: "accept" | "decline" | "cancel",

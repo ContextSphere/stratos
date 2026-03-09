@@ -29,12 +29,24 @@ export class ClaudeCodeProvider implements AgentProvider {
   private textWasStreamed = false;
   private thinkingWasStreamed = false;
   private pendingToolIds: Map<number, string> = new Map();
+  // Background control query kept alive for MCP operations between turns
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private controlQuery?: any;
+  private controlCleanup?: () => void;
+  // Stored from the last sendMessage call so the control query can handle
+  // MCP auth elicitations between turns
+  private lastElicitationHandler?: SendMessageParams["onElicitation"];
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
   }
 
   async *sendMessage(params: SendMessageParams): AsyncGenerator<AgentMessage> {
+    // Store elicitation handler for use by the control query between turns
+    if (params.onElicitation) {
+      this.lastElicitationHandler = params.onElicitation;
+    }
+
     const hasMcpServers =
       this.config.mcpServers && Object.keys(this.config.mcpServers).length > 0;
     const mode = params.mode ?? "default";
@@ -152,6 +164,9 @@ export class ClaudeCodeProvider implements AgentProvider {
       messageContent = params.prompt;
     }
 
+    // Close the background control query before starting a new turn
+    this.closeControlQuery();
+
     if (hasMcpServers || hasImages) {
       async function* streamingPrompt() {
         yield {
@@ -181,6 +196,112 @@ export class ClaudeCodeProvider implements AgentProvider {
       }
       yield* this.transformMessage(msg);
     }
+
+    // The turn is done — the query's transport is now closed.
+    // Clear currentQuery so mcpQuery falls through to controlQuery.
+    this.currentQuery = undefined;
+
+    // Spin up a lightweight control query so that MCP operations (toggle,
+    // reconnect, status) remain functional between turns.
+    this.ensureControlQuery();
+  }
+
+  /**
+   * Spin up a background control query that keeps the SDK transport alive
+   * for MCP operations between conversation turns.
+   */
+  private ensureControlQuery(): void {
+    // Close any prior control query
+    this.closeControlQuery();
+
+    if (!this.sessionId) return;
+
+    const cliPath = this.config.cliPath;
+    const hasMcpServers =
+      this.config.mcpServers && Object.keys(this.config.mcpServers).length > 0;
+
+    let resolveParked: (() => void) | undefined;
+    const cleanup = () => {
+      resolveParked?.();
+    };
+
+    const self = this;
+    async function* parkedPrompt() {
+      // Never yield a real message — just park forever
+      await new Promise<void>((resolve) => {
+        resolveParked = resolve;
+      });
+    }
+
+    // Build elicitation handler wrapper if we have one stored
+    const elicitationHandler = self.lastElicitationHandler;
+
+    const controlQ = query({
+      prompt: parkedPrompt(),
+      options: {
+        ...(cliPath ? { pathToClaudeCodeExecutable: cliPath } : {}),
+        ...(self.config.model ? { model: self.config.model } : {}),
+        cwd: self.config.cwd ?? process.env.HOME,
+        resume: self.sessionId,
+        permissionMode: "plan" as const,
+        ...(hasMcpServers ? { mcpServers: self.config.mcpServers } : {}),
+        ...(self.config.settingSources
+          ? { settingSources: self.config.settingSources }
+          : {}),
+        ...(elicitationHandler
+          ? {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              onElicitation: async (request: any) => {
+                return elicitationHandler({
+                  serverName: request.serverName,
+                  message: request.message,
+                  mode: request.mode,
+                  url: request.url,
+                  elicitationId: request.elicitationId,
+                  requestedSchema: request.requestedSchema,
+                });
+              },
+            }
+          : {}),
+      },
+    });
+
+    this.controlQuery = controlQ;
+    this.controlCleanup = cleanup;
+
+    // Drain the control query in the background (it should produce no
+    // meaningful messages; we just need the transport alive).
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        for await (const _msg of controlQ) {
+          // discard
+        }
+      } catch {
+        // control query closed, expected
+      }
+    })();
+  }
+
+  private closeControlQuery(): void {
+    if (this.controlCleanup) {
+      this.controlCleanup();
+      this.controlCleanup = undefined;
+    }
+    if (this.controlQuery && typeof this.controlQuery.close === "function") {
+      this.controlQuery.close();
+    }
+    this.controlQuery = undefined;
+  }
+
+  /**
+   * Returns the best available query for MCP operations:
+   * the active currentQuery during a turn, or the background controlQuery
+   * between turns.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private get mcpQuery(): any {
+    return this.currentQuery ?? this.controlQuery;
   }
 
   async interrupt(): Promise<void> {
@@ -266,13 +387,11 @@ export class ClaudeCodeProvider implements AgentProvider {
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
-    if (
-      !this.currentQuery ||
-      typeof this.currentQuery.mcpServerStatus !== "function"
-    ) {
+    const q = this.mcpQuery;
+    if (!q || typeof q.mcpServerStatus !== "function") {
       return [];
     }
-    const statuses = await this.currentQuery.mcpServerStatus();
+    const statuses = await q.mcpServerStatus();
     return statuses.map(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (s: any) => ({
@@ -281,32 +400,84 @@ export class ClaudeCodeProvider implements AgentProvider {
         scope: s.scope,
         tools: s.tools?.map((t: { name: string }) => t.name ?? t) ?? [],
         error: s.error,
+        configType: s.config?.type,
+        configId: s.config?.id,
       }),
     );
   }
 
   async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {
-    if (
-      !this.currentQuery ||
-      typeof this.currentQuery.toggleMcpServer !== "function"
-    ) {
+    const q = this.mcpQuery;
+    if (!q || typeof q.toggleMcpServer !== "function") {
+      console.warn(
+        `[MCP] toggleMcpServer: no query available for MCP operations`,
+      );
       return;
     }
-    await this.currentQuery.toggleMcpServer(serverName, enabled);
+    await q.toggleMcpServer(serverName, enabled);
   }
 
-  async reconnectMcpServer(serverName: string): Promise<void> {
-    if (
-      !this.currentQuery ||
-      typeof this.currentQuery.reconnectMcpServer !== "function"
-    ) {
+  async reconnectMcpServer(
+    serverName: string,
+  ): Promise<{ authUrl?: string } | void> {
+    const q = this.mcpQuery;
+    if (!q) {
+      console.warn(
+        `[MCP] reconnectMcpServer: no query available for MCP operations`,
+      );
       return;
     }
-    await this.currentQuery.reconnectMcpServer(serverName);
+
+    // For claudeai-proxy servers, construct the auth URL directly.
+    // The SDK's mcpAuthenticate doesn't support claudeai-proxy type.
+    const statuses = await this.getMcpServerStatus();
+    const server = statuses.find((s) => s.name === serverName);
+    if (server?.configType === "claudeai-proxy") {
+      // Try to get org info for direct auth URL
+      if (server.configId && typeof q.accountInfo === "function") {
+        try {
+          const account = await q.accountInfo();
+          if (account?.organizationUuid) {
+            const id = server.configId.startsWith("mcprs")
+              ? "mcpsrv" + server.configId.slice(5)
+              : server.configId;
+            return {
+              authUrl: `https://claude.ai/api/organizations/${account.organizationUuid}/mcp/start-auth/${id}`,
+            };
+          }
+        } catch {
+          // Fall through to settings page
+        }
+      }
+      return { authUrl: "https://claude.ai/settings/connectors" };
+    }
+
+    // For SSE/HTTP servers, use mcpAuthenticate (handles OAuth flows).
+    if (typeof q.mcpAuthenticate === "function") {
+      try {
+        const result = await q.mcpAuthenticate(serverName);
+        if (result?.authUrl) {
+          return { authUrl: result.authUrl };
+        }
+        return;
+      } catch (err) {
+        console.warn(`[MCP] mcpAuthenticate failed, trying reconnect:`, err);
+      }
+    }
+
+    // Fall back to reconnectMcpServer for failed/disconnected servers.
+    if (typeof q.reconnectMcpServer === "function") {
+      try {
+        await q.reconnectMcpServer(serverName);
+      } catch (err) {
+        console.warn(`[MCP] reconnectMcpServer failed:`, err);
+      }
+    }
   }
 
   async dispose(): Promise<void> {
     await this.interrupt();
+    this.closeControlQuery();
     this.sessionId = undefined;
     this.currentQuery = undefined;
   }

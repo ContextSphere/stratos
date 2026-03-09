@@ -45,8 +45,8 @@ export interface AgentProvider {
   /** Toggle an MCP server on/off */
   toggleMcpServer?(serverName: string, enabled: boolean): Promise<void>;
 
-  /** Reconnect a failed MCP server */
-  reconnectMcpServer?(serverName: string): Promise<void>;
+  /** Reconnect a failed MCP server. Returns authUrl if OAuth is needed. */
+  reconnectMcpServer?(serverName: string): Promise<{ authUrl?: string } | void>;
 
   /** Clean up resources */
   dispose(): Promise<void>;
@@ -116,9 +116,7 @@ export interface SendMessageParams {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   traceCallback?: (entry: any) => void;
   /** Callback for MCP elicitation (auth/input) requests */
-  onElicitation?: (
-    request: McpElicitationRequest,
-  ) => Promise<{
+  onElicitation?: (request: McpElicitationRequest) => Promise<{
     action: "accept" | "decline" | "cancel";
     content?: Record<string, unknown>;
   }>;
@@ -183,4 +181,8 @@ export interface McpServerInfo {
   configPath?: string;
   tools: string[];
   error?: string;
+  /** Server config type (stdio, sse, http, claudeai-proxy) */
+  configType?: string;
+  /** For claudeai-proxy servers: the server ID used for auth URL construction */
+  configId?: string;
 }
