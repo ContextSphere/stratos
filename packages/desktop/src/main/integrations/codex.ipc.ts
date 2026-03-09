@@ -270,7 +270,7 @@ async function ensureAppServer(): Promise<void> {
 
   if (!initialized) {
     await sendRpc("initialize", {
-      clientInfo: { name: "agentpanel", title: "AgentPanel", version: "0.1.0" },
+      clientInfo: { name: "stratos", title: "Stratos", version: "0.1.0" },
       capabilities: { experimentalApi: false },
     });
     sendNotification("initialized");

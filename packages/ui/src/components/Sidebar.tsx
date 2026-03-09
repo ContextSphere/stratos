@@ -1,4 +1,4 @@
-import type { Thread, Folder } from "@agentpanel/core";
+import type { Thread, Folder } from "@stratosapp/core";
 import { ThreadList } from "./ThreadList";
 
 interface Props {
@@ -42,7 +42,7 @@ export function Sidebar({
         {/* Header with logo */}
         <div className="flex-shrink-0 flex items-center justify-between px-3 pb-1">
           <span className="font-semibold text-gray-200">
-            Agent<span className="text-blue-500">Panel</span>
+            <span className="text-blue-500">Stratos</span>
           </span>
           <button
             onClick={onToggleSidebar}

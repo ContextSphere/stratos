@@ -15,9 +15,9 @@ vi.mock("electron", () => ({
   })),
 }));
 
-// Mock @agentpanel/core — keep all real exports but replace ClaudeCodeProvider
-vi.mock("@agentpanel/core", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@agentpanel/core")>();
+// Mock @stratosapp/core — keep all real exports but replace ClaudeCodeProvider
+vi.mock("@stratosapp/core", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@stratosapp/core")>();
   return {
     ...original,
     ClaudeCodeProvider: vi.fn(),

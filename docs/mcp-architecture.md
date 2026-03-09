@@ -1,11 +1,11 @@
-# MCP Architecture in AgentPanel
+# MCP Architecture in Stratos
 
-> Design doc for how MCP (Model Context Protocol) servers are managed in AgentPanel.
+> Design doc for how MCP (Model Context Protocol) servers are managed in Stratos.
 > Written as a reference for implementing MCP support in new providers (e.g., Codex).
 
 ## Overview
 
-MCP servers give the AI agent access to external tools (Linear, GitHub, Slack, etc.). AgentPanel manages MCP server lifecycle across three layers:
+MCP servers give the AI agent access to external tools (Linear, GitHub, Slack, etc.). Stratos manages MCP server lifecycle across three layers:
 
 ```
 ┌─────────────────────────────────────────────────────┐

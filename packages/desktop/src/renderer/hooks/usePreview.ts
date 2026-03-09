@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import type { PreviewState } from "@agentpanel/ui";
+import type { PreviewState } from "@stratosapp/ui";
 
 function titleFromUrl(url: string): string {
   try {

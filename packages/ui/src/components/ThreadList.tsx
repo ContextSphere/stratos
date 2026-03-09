@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import type { Thread, Folder } from "@agentpanel/core";
+import type { Thread, Folder } from "@stratosapp/core";
 import { basename } from "../utils/path";
 
 interface StatusPill {

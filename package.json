@@ -1,14 +1,14 @@
 {
-  "name": "agentpanel",
+  "name": "stratos",
   "private": true,
   "scripts": {
-    "dev": "turbo dev --filter=@agentpanel/core --filter=@agentpanel/ui --filter=@agentpanel/desktop",
-    "dev:fullscreen": "turbo dev:fullscreen --filter=@agentpanel/desktop",
+    "dev": "turbo dev --filter=@stratosapp/core --filter=@stratosapp/ui --filter=@stratosapp/desktop",
+    "dev:fullscreen": "turbo dev:fullscreen --filter=@stratosapp/desktop",
     "build": "turbo build",
     "test": "turbo test",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
-    "build:mac": "turbo build:mac --filter=@agentpanel/desktop",
+    "build:mac": "turbo build:mac --filter=@stratosapp/desktop",
     "prepare": "husky"
   },
   "devDependencies": {

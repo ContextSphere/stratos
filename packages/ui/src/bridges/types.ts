@@ -1,4 +1,4 @@
-import type { Thread, StoredMessage, AgentMode } from "@agentpanel/core";
+import type { Thread, StoredMessage, AgentMode } from "@stratosapp/core";
 
 export interface ImageAttachment {
   id: string;

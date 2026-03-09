@@ -14,7 +14,7 @@ describe("trace.store", () => {
   const threadId = "test-thread-1";
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "agentpanel-trace-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "stratos-trace-test-"));
   });
 
   afterEach(() => {

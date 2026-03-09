@@ -5,7 +5,7 @@ import {
   Button,
   StatusIndicator,
   Card,
-} from "@agentpanel/ui";
+} from "@stratosapp/ui";
 
 interface Props {
   isOpen: boolean;

@@ -1,5 +1,5 @@
-appId: com.agentpanel.desktop
-productName: AgentPanel
+appId: com.stratos.desktop
+productName: Stratos
 
 directories:
   buildResources: build

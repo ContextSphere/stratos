@@ -1,4 +1,4 @@
-# AgentPanel Implementation Status
+# Stratos Implementation Status
 
 Last updated: 2026-03-05
 
@@ -7,19 +7,19 @@ Last updated: 2026-03-05
 ### Phase 1-5: Core Implementation
 
 - **Monorepo scaffolding** — pnpm workspaces + turborepo, 3 packages
-- **`@agentpanel/core`** (packages/core)
+- **`@stratosapp/core`** (packages/core)
   - Provider abstraction (`Provider` interface, `ClaudeCodeProvider` using Claude Agent SDK)
   - `FileStorageAdapter` — thread CRUD, message persistence, active thread tracking
   - `TraceStore` — JSON Lines trace recording for SDK messages
   - Worktree utilities — deterministic hash/port derivation, instance isolation
   - 32 tests passing (4 test files)
-- **`@agentpanel/ui`** (packages/ui)
+- **`@stratosapp/ui`** (packages/ui)
   - 30+ React components: ChatView, Sidebar, ThreadList, InputBar, MessageBubble, ModeToggle, ModelSelector, PreviewPane, TodoList, TaskPanel, ToolCallCard, FileChangeViewer, SlashCommandMenu, PermissionDialog, etc.
   - Shared primitives: Button, Card, Dialog, Input, PanelCard, StatusIndicator, Tooltip, TypeaheadInput
-  - Bridge system: `AgentPanelProvider` context for platform-agnostic component tree
+  - Bridge system: `StratosProvider` context for platform-agnostic component tree
   - Monaco editor integration for code previews
   - 31 tests passing (5 test files)
-- **`@agentpanel/desktop`** (packages/desktop)
+- **`@stratosapp/desktop`** (packages/desktop)
   - Electron main process with BrowserWindow, IPC bridge (60+ channels)
   - Preload script with contextBridge exposure
   - Renderer with full React app: App.tsx + 5 hooks (useChat, useThreads, useClaude, useGitHub, usePreview) + 3 dialog components
@@ -46,16 +46,16 @@ Last updated: 2026-03-05
 
 ### Not Yet Implemented
 
-| Area | Detail | Priority |
-|------|--------|----------|
-| `useChat` streaming | Message streaming from Claude Agent SDK is partially wired. The hook structure and UI are complete but the SDK `streamMessage()` call needs real integration testing. | High for v0.1 |
-| Dynamic slash commands | `AgentManager.discoverSlashCommands()` returns a hardcoded list. Could auto-discover from `claude --help` output. | Low |
-| Desktop tests | No test files in `packages/desktop/`. Main/preload code is hard to unit test without Electron mocking. | Medium |
-| Worktree IPC handlers | Worktree create/cleanup IPC handlers may be incomplete — the `skills.ipc.ts` registers handlers but actual worktree git operations need verification. | Medium |
+| Area                   | Detail                                                                                                                                                                | Priority      |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `useChat` streaming    | Message streaming from Claude Agent SDK is partially wired. The hook structure and UI are complete but the SDK `streamMessage()` call needs real integration testing. | High for v0.1 |
+| Dynamic slash commands | `AgentManager.discoverSlashCommands()` returns a hardcoded list. Could auto-discover from `claude --help` output.                                                     | Low           |
+| Desktop tests          | No test files in `packages/desktop/`. Main/preload code is hard to unit test without Electron mocking.                                                                | Medium        |
+| Worktree IPC handlers  | Worktree create/cleanup IPC handlers may be incomplete — the `skills.ipc.ts` registers handlers but actual worktree git operations need verification.                 | Medium        |
 
 ### Architecture Decisions Made
 
-- **Worktree isolation is automatic in dev mode** — Each git root gets a deterministic isolated data dir (`~/.agentpanel/instances/<hash>/`) and unique CDP port (9200-9999). Packaged builds use standard `~/Library/Application Support/AgentPanel/`. Matches ContextSphere's pattern.
+- **Worktree isolation is automatic in dev mode** — Each git root gets a deterministic isolated data dir (`~/.stratos/instances/<hash>/`) and unique CDP port (9200-9999). Packaged builds use standard `~/Library/Application Support/Stratos/`. Matches ContextSphere's pattern.
 - **CDP port derived from git root** — Both the Electron app and `scripts/cdp-mcp.sh` derive the same deterministic port from the git root path via SHA256. Override with `CDP_PORT` env var if needed.
 - **`app.name` set explicitly** — Both worktree and non-worktree paths set `app.name` to prevent singleton lock conflicts with other Electron apps using the generic `Electron` binary.
 
@@ -65,20 +65,20 @@ Last updated: 2026-03-05
 8eca53c fix: CDP support and worktree isolation
 7842d6c fix: wire running threads tracker, add turbo outputs for desktop
 d1f105a feat: implement core, ui, and desktop packages
-d5fec3a docs: add initial design doc for AgentPanel
+d5fec3a docs: add initial design doc for Stratos
 9f0cd1b Initial commit
 ```
 
 ## How to Resume Development
 
 ```bash
-cd workspace/agentpanel
+cd workspace/stratos
 pnpm install
 pnpm build            # Verify all packages compile
 pnpm test             # Verify tests pass (63 tests)
 
 # Launch with CDP for UI work
-pnpm --filter @agentpanel/desktop dev:debug
+pnpm --filter @stratosapp/desktop dev:debug
 # CDP available at http://127.0.0.1:9224/json
 ```
 
@@ -87,5 +87,5 @@ pnpm --filter @agentpanel/desktop dev:debug
 1. **Integration test the chat flow** — Wire `useChat` to actually call Claude Agent SDK and verify message round-trip
 2. **Add README.md** — Public-facing readme for the OSS repo
 3. **CI pipeline** — GitHub Actions for build + test
-4. **npm publish config** — Set up `@agentpanel/core` and `@agentpanel/ui` for npm publishing
+4. **npm publish config** — Set up `@stratosapp/core` and `@stratosapp/ui` for npm publishing
 5. **Tag v0.1.0-alpha** — First tagged release once chat flow works end-to-end

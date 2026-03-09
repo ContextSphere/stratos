@@ -123,9 +123,9 @@ function findCodexBinary(): string {
 }
 
 /**
- * Map AgentPanel thinking effort to Codex reasoning effort.
+ * Map Stratos thinking effort to Codex reasoning effort.
  *
- * AgentPanel: 'low' | 'medium' | 'high' | 'max'
+ * Stratos: 'low' | 'medium' | 'high' | 'max'
  * Codex:      'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
  */
 function mapThinkingEffort(effort?: string): string | undefined {
@@ -144,7 +144,7 @@ function mapThinkingEffort(effort?: string): string | undefined {
 }
 
 /**
- * Map AgentPanel mode to Codex approval policy and sandbox mode.
+ * Map Stratos mode to Codex approval policy and sandbox mode.
  *
  * Claude Code modes → Codex equivalents:
  *
@@ -368,8 +368,8 @@ export class CodexProvider implements AgentProvider {
     if (!this.initialized) {
       await this.sendRpc("initialize", {
         clientInfo: {
-          name: "agentpanel",
-          title: "AgentPanel",
+          name: "stratos",
+          title: "Stratos",
           version: "0.1.0",
         },
         capabilities: { experimentalApi: false },

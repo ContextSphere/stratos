@@ -75,9 +75,7 @@ export function ChatView({
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-semibold text-gray-300 mb-2">
-            AgentPanel
-          </h1>
+          <h1 className="text-2xl font-semibold text-gray-300 mb-2">Stratos</h1>
           <p className="text-xs text-gray-600 mt-4">
             Type a message to get started
           </p>

@@ -1,18 +1,24 @@
-import { useState, useCallback } from 'react'
-import { Dialog, DialogBody, Button, StatusIndicator, Card } from '@agentpanel/ui'
+import { useState, useCallback } from "react";
+import {
+  Dialog,
+  DialogBody,
+  Button,
+  StatusIndicator,
+  Card,
+} from "@stratosapp/ui";
 
 interface Props {
-  isOpen: boolean
-  isConnected: boolean
-  cliInstalled: boolean
-  username: string | null
-  displayName: string | null
-  organizations: string[]
-  loading: boolean
-  error: string | null
-  onClose: () => void
-  onConnect: () => Promise<{ ok: boolean; error?: string }>
-  onDisconnect: () => Promise<void>
+  isOpen: boolean;
+  isConnected: boolean;
+  cliInstalled: boolean;
+  username: string | null;
+  displayName: string | null;
+  organizations: string[];
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+  onConnect: () => Promise<{ ok: boolean; error?: string }>;
+  onDisconnect: () => Promise<void>;
 }
 
 export function ConnectGitHubDialog({
@@ -26,43 +32,43 @@ export function ConnectGitHubDialog({
   error: externalError,
   onClose,
   onConnect,
-  onDisconnect
+  onDisconnect,
 }: Props): React.ReactElement | null {
-  const [localLoading, setLocalLoading] = useState(false)
-  const [localError, setLocalError] = useState<string | null>(null)
+  const [localLoading, setLocalLoading] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  const loading = externalLoading || localLoading
-  const error = localError ?? externalError
+  const loading = externalLoading || localLoading;
+  const error = localError ?? externalError;
 
   const handleConnect = useCallback(async () => {
-    setLocalLoading(true)
-    setLocalError(null)
+    setLocalLoading(true);
+    setLocalError(null);
     try {
-      const result = await onConnect()
+      const result = await onConnect();
       if (!result.ok) {
-        setLocalError(result.error ?? 'Failed to connect')
+        setLocalError(result.error ?? "Failed to connect");
       } else {
-        onClose()
+        onClose();
       }
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Connection failed')
+      setLocalError(err instanceof Error ? err.message : "Connection failed");
     } finally {
-      setLocalLoading(false)
+      setLocalLoading(false);
     }
-  }, [onConnect, onClose])
+  }, [onConnect, onClose]);
 
   const handleDisconnect = useCallback(async () => {
-    setLocalLoading(true)
-    setLocalError(null)
-    await onDisconnect()
-    setLocalLoading(false)
-  }, [onDisconnect])
+    setLocalLoading(true);
+    setLocalError(null);
+    await onDisconnect();
+    setLocalLoading(false);
+  }, [onDisconnect]);
 
   const icon = (
     <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-white">
       <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
     </svg>
-  )
+  );
 
   return (
     <Dialog
@@ -77,7 +83,11 @@ export function ConnectGitHubDialog({
       <DialogBody>
         {isConnected ? (
           <>
-            <StatusIndicator status="connected" label="Connected" className="mb-4" />
+            <StatusIndicator
+              status="connected"
+              label="Connected"
+              className="mb-4"
+            />
 
             <Card variant="nested" className="mb-4">
               {username && (
@@ -86,16 +96,20 @@ export function ConnectGitHubDialog({
                   <div className="text-sm text-gray-300 mb-3">
                     @{username}
                     {displayName && (
-                      <span className="text-gray-500 ml-1">({displayName})</span>
+                      <span className="text-gray-500 ml-1">
+                        ({displayName})
+                      </span>
                     )}
                   </div>
                 </>
               )}
               {organizations.length > 0 && (
                 <>
-                  <div className="text-xs text-gray-500 mb-1">Organizations</div>
+                  <div className="text-xs text-gray-500 mb-1">
+                    Organizations
+                  </div>
                   <div className="text-sm text-gray-300">
-                    {organizations.join(', ')}
+                    {organizations.join(", ")}
                   </div>
                 </>
               )}
@@ -103,8 +117,10 @@ export function ConnectGitHubDialog({
 
             <div className="mb-4 p-3 bg-[#1a1a1a] rounded-lg">
               <p className="text-xs text-gray-400">
-                The AI assistant can use <code className="text-gray-300">gh</code> to manage repos,
-                pull requests, issues, releases, Actions runs, and call the GitHub API directly.
+                The AI assistant can use{" "}
+                <code className="text-gray-300">gh</code> to manage repos, pull
+                requests, issues, releases, Actions runs, and call the GitHub
+                API directly.
               </p>
             </div>
 
@@ -121,19 +137,24 @@ export function ConnectGitHubDialog({
         ) : !cliInstalled ? (
           <>
             <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-500/20 rounded-lg">
-              <p className="text-xs text-yellow-400 font-medium mb-1">GitHub CLI not found</p>
+              <p className="text-xs text-yellow-400 font-medium mb-1">
+                GitHub CLI not found
+              </p>
               <p className="text-xs text-yellow-400/80">
-                Install the <code className="text-yellow-300">gh</code> CLI to connect your GitHub account.
+                Install the <code className="text-yellow-300">gh</code> CLI to
+                connect your GitHub account.
               </p>
             </div>
 
             <div className="mb-4 p-3 bg-[#1a1a1a] rounded-lg">
-              <p className="text-xs text-gray-500 mb-2">Install via Homebrew:</p>
+              <p className="text-xs text-gray-500 mb-2">
+                Install via Homebrew:
+              </p>
               <code className="text-xs text-gray-300 bg-[#0f0f0f] px-2 py-1 rounded block">
                 brew install gh
               </code>
               <p className="text-xs text-gray-500 mt-3">
-                Or download from{' '}
+                Or download from{" "}
                 <a
                   href="https://cli.github.com"
                   target="_blank"
@@ -154,8 +175,9 @@ export function ConnectGitHubDialog({
         ) : (
           <>
             <p className="text-xs text-gray-500 mb-5">
-              Authenticate with GitHub to let the AI assistant manage repositories,
-              pull requests, issues, and more using the <code className="text-gray-400">gh</code> CLI.
+              Authenticate with GitHub to let the AI assistant manage
+              repositories, pull requests, issues, and more using the{" "}
+              <code className="text-gray-400">gh</code> CLI.
             </p>
 
             {error && (
@@ -171,7 +193,10 @@ export function ConnectGitHubDialog({
             >
               {loading ? (
                 <span className="flex items-center gap-2">
-                  <svg className="animate-spin h-4 w-4 text-gray-400" viewBox="0 0 24 24">
+                  <svg
+                    className="animate-spin h-4 w-4 text-gray-400"
+                    viewBox="0 0 24 24"
+                  >
                     <circle
                       className="opacity-25"
                       cx="12"
@@ -191,7 +216,12 @@ export function ConnectGitHubDialog({
                 </span>
               ) : (
                 <>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
                     <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
                   </svg>
                   Sign in with GitHub
@@ -200,12 +230,12 @@ export function ConnectGitHubDialog({
             </button>
 
             <p className="text-[10px] text-gray-600 mt-3 text-center">
-              A one-time code will appear in your terminal. Open the link in your browser
-              to complete authentication.
+              A one-time code will appear in your terminal. Open the link in
+              your browser to complete authentication.
             </p>
           </>
         )}
       </DialogBody>
     </Dialog>
-  )
+  );
 }

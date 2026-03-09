@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import type { Folder } from "@agentpanel/core";
+import type { Folder } from "@stratosapp/core";
 
 interface UseFoldersReturn {
   folders: Folder[];

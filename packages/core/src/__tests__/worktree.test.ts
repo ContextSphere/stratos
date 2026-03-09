@@ -36,7 +36,7 @@ describe("getWorktreeInfo", () => {
     expect(info.root).toBe("/tmp/test-worktree-root");
     expect(info.hash).toMatch(/^[0-9a-f]{8}$/);
     expect(info.name).toBe("test-worktree-root");
-    expect(info.userDataPath).toContain(".agentpanel/instances/");
+    expect(info.userDataPath).toContain(".stratos/instances/");
     expect(info.userDataPath).toContain(info.hash);
     expect(info.cdpPort).toBeGreaterThanOrEqual(9200);
     expect(info.cdpPort).toBeLessThan(9999);

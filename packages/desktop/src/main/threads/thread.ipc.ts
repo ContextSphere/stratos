@@ -8,14 +8,14 @@ import {
   FileStorageAdapter,
   readTraceEntries,
   clearTraceFile,
-} from "@agentpanel/core";
+} from "@stratosapp/core";
 import type {
   StoredMessage,
   AgentMode,
   ThreadWorktree,
   Folder,
   ProviderType,
-} from "@agentpanel/core";
+} from "@stratosapp/core";
 
 const storage = new FileStorageAdapter();
 
@@ -89,8 +89,8 @@ export function registerThreadIpc(): void {
     async (_event, params: { threadId: string; sourceRepoPath: string }) => {
       const { threadId, sourceRepoPath } = params;
       const shortId = threadId.slice(-7);
-      const branchName = `agentpanel/${shortId}`;
-      const worktreeDir = join(homedir(), ".agentpanel", "worktrees", threadId);
+      const branchName = `stratos/${shortId}`;
+      const worktreeDir = join(homedir(), ".stratos", "worktrees", threadId);
 
       mkdirSync(worktreeDir, { recursive: true });
 

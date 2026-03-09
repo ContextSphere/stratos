@@ -1,7 +1,7 @@
 {
-  "name": "@agentpanel/ui",
+  "name": "@stratosapp/ui",
   "version": "0.0.1",
-  "description": "AgentPanel React component library for agentic applications",
+  "description": "Stratos React component library for agentic applications",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,7 +14,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@agentpanel/core": "workspace:*",
+    "@stratosapp/core": "workspace:*",
     "@monaco-editor/react": "^4.7.0",
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^4.6.4",

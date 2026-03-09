@@ -1,7 +1,7 @@
 {
-  "name": "@agentpanel/core",
+  "name": "@stratosapp/core",
   "version": "0.0.1",
-  "description": "AgentPanel core SDK — provider abstraction, session management, storage",
+  "description": "Stratos core SDK — provider abstraction, session management, storage",
   "type": "commonjs",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

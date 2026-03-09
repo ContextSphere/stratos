@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain, Notification, shell } from "electron";
-import type { McpElicitationRequest } from "@agentpanel/core";
+import type { McpElicitationRequest } from "@stratosapp/core";
 import { execSync } from "child_process";
 import { mkdirSync } from "fs";
 import { join } from "path";
@@ -15,14 +15,14 @@ import {
   deriveHash,
   derivePort,
   getWorktreeInfo,
-} from "@agentpanel/core";
+} from "@stratosapp/core";
 import type {
   AgentProvider,
   AgentMessage,
   PermissionHandler,
   SendMessageParams,
   ProviderType,
-} from "@agentpanel/core";
+} from "@stratosapp/core";
 import { loadSettings } from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 
@@ -37,7 +37,7 @@ import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildMcpServers(cwd: string): Record<string, any> | undefined {
   // Add chrome-devtools for cross-worktree debugging (ContextSphere pattern)
-  if (!process.env.AGENTPANEL_WORKTREE) return undefined;
+  if (!process.env.STRATOS_WORKTREE) return undefined;
 
   try {
     let targetRoot: string;
@@ -422,13 +422,8 @@ export class AgentManager {
 
       try {
         const shortId = threadId.slice(-7);
-        const branchName = `agentpanel/${shortId}`;
-        const worktreeDir = join(
-          homedir(),
-          ".agentpanel",
-          "worktrees",
-          threadId,
-        );
+        const branchName = `stratos/${shortId}`;
+        const worktreeDir = join(homedir(), ".stratos", "worktrees", threadId);
         mkdirSync(worktreeDir, { recursive: true });
 
         execSync(`git worktree add -b "${branchName}" "${worktreeDir}"`, {
@@ -495,7 +490,7 @@ export class AgentManager {
                 preset: "claude_code" as const,
                 append: [
                   `\n# Host Environment`,
-                  `You are running inside AgentPanel, an Electron desktop application (PID: ${process.pid}).`,
+                  `You are running inside Stratos, an Electron desktop application (PID: ${process.pid}).`,
                   `DO NOT kill, terminate, or signal this process or its parent Electron process.`,
                   `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes — this would kill your own host application.`,
                   `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,

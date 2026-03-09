@@ -26,7 +26,7 @@ export default defineConfig({
     },
     resolve: {
       alias: {
-        "@agentpanel/ui": resolve("../ui/src/index.ts"),
+        "@stratosapp/ui": resolve("../ui/src/index.ts"),
         "@renderer": resolve("src/renderer"),
         "@common": resolve("src/common"),
       },

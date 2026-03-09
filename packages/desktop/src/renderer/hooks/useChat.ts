@@ -10,8 +10,8 @@ import type {
   TodoData,
   WorktreeProgressData,
   McpServerInfo,
-} from "@agentpanel/ui";
-import type { StoredMessage, AgentMode } from "@agentpanel/core";
+} from "@stratosapp/ui";
+import type { StoredMessage, AgentMode } from "@stratosapp/core";
 
 interface UseChatOptions {
   onThreadUpdated?: () => void;

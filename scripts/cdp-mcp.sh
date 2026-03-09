@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launch chrome-devtools-mcp pointing at the AgentPanel Electron app.
+# Launch chrome-devtools-mcp pointing at the Stratos Electron app.
 # Derives a deterministic CDP port from the git worktree root path.
 # Override with CDP_PORT env var.
 

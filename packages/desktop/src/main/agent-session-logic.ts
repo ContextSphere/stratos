@@ -1,4 +1,4 @@
-import type { AgentMode } from "@agentpanel/core";
+import type { AgentMode } from "@stratosapp/core";
 
 /**
  * Interactive tool names that require special handling (not rendered as tool cards).

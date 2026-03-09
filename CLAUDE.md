@@ -1,4 +1,4 @@
-# CLAUDE.md — AgentPanel
+# CLAUDE.md — Stratos
 
 ## Quick Start
 
@@ -6,17 +6,17 @@
 pnpm install          # Install all dependencies
 pnpm build            # Build all 3 packages (core, ui, desktop)
 pnpm test             # Run tests across all packages
-pnpm --filter @agentpanel/desktop dev         # Dev mode with HMR
-pnpm --filter @agentpanel/desktop dev:debug   # Dev mode + CDP (port auto-derived from git root)
+pnpm --filter @stratosapp/desktop dev         # Dev mode with HMR
+pnpm --filter @stratosapp/desktop dev:debug   # Dev mode + CDP (port auto-derived from git root)
 ```
 
 ## Testing
 
 ```bash
 pnpm test                                          # Run all tests (core + ui + desktop)
-pnpm --filter @agentpanel/core test                # Core unit + integration tests only
-pnpm --filter @agentpanel/ui test                  # UI component tests only
-pnpm --filter @agentpanel/desktop test             # Desktop unit + integration tests only
+pnpm --filter @stratosapp/core test                # Core unit + integration tests only
+pnpm --filter @stratosapp/ui test                  # UI component tests only
+pnpm --filter @stratosapp/desktop test             # Desktop unit + integration tests only
 ```
 
 **CI runs automatically** on every push via GitHub Actions (`.github/workflows/ci.yml`):
@@ -33,7 +33,7 @@ pnpm --filter @agentpanel/desktop test             # Desktop unit + integration 
 
 ```bash
 # 1. Start the app with CDP enabled (if not already running)
-pnpm --filter @agentpanel/desktop dev:debug
+pnpm --filter @stratosapp/desktop dev:debug
 
 # 2. Snapshot the UI to get element UIDs
 #    REQUIRED before any click/fill/press_key — UIDs are session-scoped
@@ -98,9 +98,9 @@ Monorepo with 3 packages managed by pnpm workspaces + turborepo:
 
 | Package               | Path               | Description                                                         |
 | --------------------- | ------------------ | ------------------------------------------------------------------- |
-| `@agentpanel/core`    | `packages/core`    | Provider abstraction, storage adapters, trace store, worktree utils |
-| `@agentpanel/ui`      | `packages/ui`      | React components, bridge system, hooks (zero Electron dependency)   |
-| `@agentpanel/desktop` | `packages/desktop` | Electron shell, IPC bridge (60+ channels), preload, renderer        |
+| `@stratosapp/core`    | `packages/core`    | Provider abstraction, storage adapters, trace store, worktree utils |
+| `@stratosapp/ui`      | `packages/ui`      | React components, bridge system, hooks (zero Electron dependency)   |
+| `@stratosapp/desktop` | `packages/desktop` | Electron shell, IPC bridge (60+ channels), preload, renderer        |
 
 ## Key Files
 
@@ -114,14 +114,14 @@ Monorepo with 3 packages managed by pnpm workspaces + turborepo:
 | Claude provider | `packages/core/src/providers/claude-code.provider.ts` |
 | Storage adapter | `packages/core/src/storage/file-adapter.ts`           |
 | Chat view       | `packages/ui/src/components/ChatView.tsx`             |
-| Bridge provider | `packages/ui/src/bridges/AgentPanelProvider.tsx`      |
+| Bridge provider | `packages/ui/src/bridges/StratosProvider.tsx`         |
 
 ## NEVER Use pkill/killall on Electron
 
 **DO NOT run `pkill -f electron`, `killall Electron`, or any broad process kill.**
 The user may be running inside ContextSphere (also Electron). Broad kills destroy everything.
 
-**To stop the AgentPanel dev instance:**
+**To stop the Stratos dev instance:**
 
 ```bash
 # By CDP port (check console output for your port, or derive it — see CDP Configuration)
@@ -147,17 +147,17 @@ kill $PID
 **Package constraints:**
 
 - **`core` is pure TypeScript** — no React, no DOM, no Electron. Must work in Node, web, CLI.
-- **`ui` has zero Electron dependency** — works in any React app (web, Next.js, etc.). Platform capabilities come through the bridge system (`AgentPanelProvider` context), never direct imports.
+- **`ui` has zero Electron dependency** — works in any React app (web, Next.js, etc.). Platform capabilities come through the bridge system (`StratosProvider` context), never direct imports.
 - **`desktop` is the glue layer** — wires `core` providers to `ui` components via IPC bridge. All Electron-specific code lives here.
-- **External UI libs are wrapped, never exposed** — Monaco, react-markdown, etc. are internal deps of `ui`. Consumers use AgentPanel components, not raw libs. Internals can be swapped without breaking consumers.
+- **External UI libs are wrapped, never exposed** — Monaco, react-markdown, etc. are internal deps of `ui`. Consumers use Stratos components, not raw libs. Internals can be swapped without breaking consumers.
 
 ## Architecture Notes
 
-- **Worktree isolation** is automatic in dev mode. Each git root gets a deterministic isolated data dir at `~/.agentpanel/instances/<hash>/` and a unique CDP port. Packaged builds use `~/Library/Application Support/AgentPanel/`.
+- **Worktree isolation** is automatic in dev mode. Each git root gets a deterministic isolated data dir at `~/.stratos/instances/<hash>/` and a unique CDP port. Packaged builds use `~/Library/Application Support/Stratos/`.
 - **IPC bridge pattern:** Main process registers handlers via `ipcMain.handle()`, preload exposes them via `contextBridge`, renderer accesses via `window.electronAPI`.
-- **Provider abstraction:** `@agentpanel/core` defines a `Provider` interface. `ClaudeCodeProvider` implements it using `@anthropic-ai/claude-agent-sdk`. New providers can be added without touching UI code.
-- **Bridge system:** `@agentpanel/ui` components receive platform capabilities through `AgentPanelProvider` context. Desktop injects Electron IPC; other platforms can inject their own implementations.
+- **Provider abstraction:** `@stratosapp/core` defines a `Provider` interface. `ClaudeCodeProvider` implements it using `@anthropic-ai/claude-agent-sdk`. New providers can be added without touching UI code.
+- **Bridge system:** `@stratosapp/ui` components receive platform capabilities through `StratosProvider` context. Desktop injects Electron IPC; other platforms can inject their own implementations.
 
 ## Self-Development (Dual-Instance Workflow)
 
-AgentPanel can develop itself: run one instance as the "dev tool" (main worktree) and a second as the "dev target" (feature worktree). Each gets a unique CDP port derived from its git root path, a distinct logo color, and a different dock icon. See `.claude/skills/dev-target.md` for the full workflow.
+Stratos can develop itself: run one instance as the "dev tool" (main worktree) and a second as the "dev target" (feature worktree). Each gets a unique CDP port derived from its git root path, a distinct logo color, and a different dock icon. See `.claude/skills/dev-target.md` for the full workflow.

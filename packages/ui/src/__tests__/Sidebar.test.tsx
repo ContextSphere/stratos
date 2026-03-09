@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Sidebar } from "../components/Sidebar";
-import type { Thread, Folder } from "@agentpanel/core";
+import type { Thread, Folder } from "@stratosapp/core";
 
 function makeThread(id: string, title: string, cwd?: string): Thread {
   return { id, title, createdAt: Date.now(), updatedAt: Date.now(), cwd };
@@ -37,10 +37,9 @@ describe("Sidebar", () => {
     vi.clearAllMocks();
   });
 
-  it("renders the AgentPanel branding", () => {
+  it("renders the Stratos branding", () => {
     render(<Sidebar {...defaultProps} />);
-    expect(screen.getByText("Agent")).toBeInTheDocument();
-    expect(screen.getByText("Panel")).toBeInTheDocument();
+    expect(screen.getByText("Stratos")).toBeInTheDocument();
   });
 
   it("renders thread titles under folder", () => {

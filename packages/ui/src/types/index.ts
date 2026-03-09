@@ -1,4 +1,4 @@
-import type { AgentMode } from "@agentpanel/core";
+import type { AgentMode } from "@stratosapp/core";
 
 export type {
   Thread,
@@ -6,7 +6,7 @@ export type {
   StoredToolCall,
   StoredImageAttachment,
   AgentMode,
-} from "@agentpanel/core";
+} from "@stratosapp/core";
 
 export interface AskUserQuestionRequest {
   requestId: string;

@@ -53,18 +53,18 @@ import {
 } from "./skills/skills.ipc";
 import { registerFilesIpc, unregisterFilesIpc } from "./files/files.ipc";
 import { statSync } from "fs";
-import { getWorktreeInfo } from "@agentpanel/core";
+import { getWorktreeInfo } from "@stratosapp/core";
 import { generateDockIcon } from "./dock-icon";
 
 // Worktree instance isolation (automatic in dev mode, like ContextSphere)
 const worktree = isDev ? getWorktreeInfo() : null;
 if (worktree) {
   app.setPath("userData", worktree.userDataPath);
-  app.name = `agentpanel-${worktree.hash}`;
-  app.setName(`${worktree.name} — AgentPanel`);
+  app.name = `stratos-${worktree.hash}`;
+  app.setName(`${worktree.name} — Stratos`);
 } else {
-  app.name = "agentpanel";
-  app.setName("AgentPanel");
+  app.name = "stratos";
+  app.setName("Stratos");
 }
 
 // Single instance per worktree
@@ -108,7 +108,7 @@ if (!gotLock) {
       minHeight: 400,
       show: false,
       ...(process.env.FULLSCREEN === "1" && { fullscreen: true }),
-      title: worktree ? `AgentPanel — ${worktree.name}` : "AgentPanel",
+      title: worktree ? `Stratos — ${worktree.name}` : "Stratos",
       titleBarStyle: "hiddenInset",
       transparent: true,
       backgroundColor: "#00000000",

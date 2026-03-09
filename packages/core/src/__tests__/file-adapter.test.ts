@@ -10,7 +10,7 @@ describe("FileStorageAdapter", () => {
   let adapter: FileStorageAdapter;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "agentpanel-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "stratos-test-"));
     adapter = new FileStorageAdapter(tmpDir);
   });
 

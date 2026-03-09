@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { normalizeMode, AGENT_MODES, type AgentMode } from "./utils/modes";
-import type { ImageAttachment } from "@agentpanel/ui";
+import type { ImageAttachment } from "@stratosapp/ui";
 import {
   Sidebar,
   ChatView,
@@ -17,7 +17,7 @@ import {
   ModeToggle,
   WorktreeToggle,
   ProviderToggle,
-} from "@agentpanel/ui";
+} from "@stratosapp/ui";
 
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { useChat } from "./hooks/useChat";

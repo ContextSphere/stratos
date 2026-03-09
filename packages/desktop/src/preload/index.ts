@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS } from "../common/ipc-channels";
-import type { AgentMode, Folder } from "@agentpanel/core";
+import type { AgentMode, Folder } from "@stratosapp/core";
 
 export type ElectronAPI = typeof api;
 

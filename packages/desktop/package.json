@@ -1,8 +1,8 @@
 {
-  "name": "@agentpanel/desktop",
+  "name": "@stratosapp/desktop",
   "version": "0.0.1",
-  "productName": "AgentPanel",
-  "description": "AgentPanel — Open Source AI Agent Desktop",
+  "productName": "Stratos",
+  "description": "Stratos — Open Source AI Agent Desktop",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -20,8 +20,8 @@
     "postinstall": "bash scripts/patch-electron-name.sh"
   },
   "dependencies": {
-    "@agentpanel/core": "workspace:*",
-    "@agentpanel/ui": "workspace:*",
+    "@stratosapp/core": "workspace:*",
+    "@stratosapp/ui": "workspace:*",
     "@anthropic-ai/claude-agent-sdk": "^0.2.66",
     "@monaco-editor/react": "^4.7.0",
     "@openai/codex-sdk": "0.111.0",

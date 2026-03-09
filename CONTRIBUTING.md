@@ -1,4 +1,4 @@
-# Contributing to AgentPanel
+# Contributing to Stratos
 
 Thanks for contributing.
 
@@ -19,7 +19,7 @@ pnpm test
 Run the desktop app locally:
 
 ```bash
-pnpm --filter @agentpanel/desktop dev
+pnpm --filter @stratosapp/desktop dev
 ```
 
 ## Required Checks

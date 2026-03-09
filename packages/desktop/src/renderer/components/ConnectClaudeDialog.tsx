@@ -1,17 +1,23 @@
-import { useState, useCallback } from 'react'
-import { Dialog, DialogBody, Button, StatusIndicator, Card } from '@agentpanel/ui'
+import { useState, useCallback } from "react";
+import {
+  Dialog,
+  DialogBody,
+  Button,
+  StatusIndicator,
+  Card,
+} from "@stratosapp/ui";
 
 interface Props {
-  isOpen: boolean
-  isConnected: boolean
-  cliInstalled: boolean
-  email: string | null
-  subscriptionType: string | null
-  loading: boolean
-  error: string | null
-  onClose: () => void
-  onConnect: () => Promise<{ ok: boolean; error?: string }>
-  onDisconnect: () => Promise<void>
+  isOpen: boolean;
+  isConnected: boolean;
+  cliInstalled: boolean;
+  email: string | null;
+  subscriptionType: string | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+  onConnect: () => Promise<{ ok: boolean; error?: string }>;
+  onDisconnect: () => Promise<void>;
 }
 
 export function ConnectClaudeDialog({
@@ -24,43 +30,43 @@ export function ConnectClaudeDialog({
   error: externalError,
   onClose,
   onConnect,
-  onDisconnect
+  onDisconnect,
 }: Props): React.ReactElement | null {
-  const [localLoading, setLocalLoading] = useState(false)
-  const [localError, setLocalError] = useState<string | null>(null)
+  const [localLoading, setLocalLoading] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  const loading = externalLoading || localLoading
-  const error = localError ?? externalError
+  const loading = externalLoading || localLoading;
+  const error = localError ?? externalError;
 
   const handleConnect = useCallback(async () => {
-    setLocalLoading(true)
-    setLocalError(null)
+    setLocalLoading(true);
+    setLocalError(null);
     try {
-      const result = await onConnect()
+      const result = await onConnect();
       if (!result.ok) {
-        setLocalError(result.error ?? 'Failed to connect')
+        setLocalError(result.error ?? "Failed to connect");
       } else {
-        onClose()
+        onClose();
       }
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Connection failed')
+      setLocalError(err instanceof Error ? err.message : "Connection failed");
     } finally {
-      setLocalLoading(false)
+      setLocalLoading(false);
     }
-  }, [onConnect, onClose])
+  }, [onConnect, onClose]);
 
   const handleDisconnect = useCallback(async () => {
-    setLocalLoading(true)
-    setLocalError(null)
-    await onDisconnect()
-    setLocalLoading(false)
-  }, [onDisconnect])
+    setLocalLoading(true);
+    setLocalError(null);
+    await onDisconnect();
+    setLocalLoading(false);
+  }, [onDisconnect]);
 
   const icon = (
     <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-white">
       <path d="M4.709 15.955l.027-.03c.79-.876 1.222-1.957 1.222-3.06 0-.373-.05-.743-.147-1.104a4.07 4.07 0 0 0-.148-.463C4.526 8.088 7.9 5.049 12 5.049c4.1 0 7.474 3.04 6.337 6.249a4.07 4.07 0 0 0-.148.463 3.973 3.973 0 0 0-.147 1.103c0 1.104.432 2.185 1.222 3.061l.027.03C20.356 17.078 16.481 19.2 12 19.2s-8.356-2.122-7.291-3.245zM12 2.4C6.035 2.4 1.2 6.876 1.2 12.4c0 2.268.808 4.367 2.18 6.063.472.583 1.466 1.272 2.404 1.764C7.296 21.01 9.536 21.6 12 21.6c2.464 0 4.704-.59 6.216-1.373.938-.492 1.932-1.181 2.404-1.764A9.917 9.917 0 0 0 22.8 12.4c0-5.524-4.835-10-10.8-10zM8.4 12a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4zm7.2 0a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4z" />
     </svg>
-  )
+  );
 
   return (
     <Dialog
@@ -75,7 +81,11 @@ export function ConnectClaudeDialog({
       <DialogBody>
         {isConnected ? (
           <>
-            <StatusIndicator status="connected" label="Connected" className="mb-4" />
+            <StatusIndicator
+              status="connected"
+              label="Connected"
+              className="mb-4"
+            />
 
             <Card variant="nested" className="mb-4">
               {email && (
@@ -87,7 +97,9 @@ export function ConnectClaudeDialog({
               {subscriptionType && (
                 <>
                   <div className="text-xs text-gray-500 mb-1">Plan</div>
-                  <div className="text-sm text-gray-300 capitalize">{subscriptionType}</div>
+                  <div className="text-sm text-gray-300 capitalize">
+                    {subscriptionType}
+                  </div>
                 </>
               )}
             </Card>
@@ -95,7 +107,8 @@ export function ConnectClaudeDialog({
             <div className="mb-4 p-3 bg-[#1a1a1a] rounded-lg">
               <p className="text-xs text-gray-400">
                 The AI assistant uses your Claude account for authentication.
-                Signing out will require re-authentication to continue using the app.
+                Signing out will require re-authentication to continue using the
+                app.
               </p>
             </div>
 
@@ -112,9 +125,12 @@ export function ConnectClaudeDialog({
         ) : !cliInstalled ? (
           <>
             <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-500/20 rounded-lg">
-              <p className="text-xs text-yellow-400 font-medium mb-1">Claude CLI not found</p>
+              <p className="text-xs text-yellow-400 font-medium mb-1">
+                Claude CLI not found
+              </p>
               <p className="text-xs text-yellow-400/80">
-                Install the <code className="text-yellow-300">claude</code> CLI to connect your account.
+                Install the <code className="text-yellow-300">claude</code> CLI
+                to connect your account.
               </p>
             </div>
 
@@ -124,7 +140,7 @@ export function ConnectClaudeDialog({
                 npm install -g @anthropic-ai/claude-code
               </code>
               <p className="text-xs text-gray-500 mt-3">
-                Or visit{' '}
+                Or visit{" "}
                 <a
                   href="https://docs.anthropic.com/en/docs/claude-code"
                   target="_blank"
@@ -145,8 +161,8 @@ export function ConnectClaudeDialog({
         ) : (
           <>
             <p className="text-xs text-gray-500 mb-5">
-              Sign in with your Claude account to authenticate.
-              This opens your browser to complete the OAuth flow.
+              Sign in with your Claude account to authenticate. This opens your
+              browser to complete the OAuth flow.
             </p>
 
             {error && (
@@ -162,7 +178,10 @@ export function ConnectClaudeDialog({
             >
               {loading ? (
                 <span className="flex items-center gap-2">
-                  <svg className="animate-spin h-4 w-4 text-white/60" viewBox="0 0 24 24">
+                  <svg
+                    className="animate-spin h-4 w-4 text-white/60"
+                    viewBox="0 0 24 24"
+                  >
                     <circle
                       className="opacity-25"
                       cx="12"
@@ -182,7 +201,12 @@ export function ConnectClaudeDialog({
                 </span>
               ) : (
                 <>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
                     <path d="M4.709 15.955l.027-.03c.79-.876 1.222-1.957 1.222-3.06 0-.373-.05-.743-.147-1.104a4.07 4.07 0 0 0-.148-.463C4.526 8.088 7.9 5.049 12 5.049c4.1 0 7.474 3.04 6.337 6.249a4.07 4.07 0 0 0-.148.463 3.973 3.973 0 0 0-.147 1.103c0 1.104.432 2.185 1.222 3.061l.027.03C20.356 17.078 16.481 19.2 12 19.2s-8.356-2.122-7.291-3.245zM12 2.4C6.035 2.4 1.2 6.876 1.2 12.4c0 2.268.808 4.367 2.18 6.063.472.583 1.466 1.272 2.404 1.764C7.296 21.01 9.536 21.6 12 21.6c2.464 0 4.704-.59 6.216-1.373.938-.492 1.932-1.181 2.404-1.764A9.917 9.917 0 0 0 22.8 12.4c0-5.524-4.835-10-10.8-10zM8.4 12a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4zm7.2 0a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4z" />
                   </svg>
                   Sign in with Claude
@@ -197,5 +221,5 @@ export function ConnectClaudeDialog({
         )}
       </DialogBody>
     </Dialog>
-  )
+  );
 }

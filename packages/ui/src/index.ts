@@ -38,15 +38,15 @@ export * from "./components/shared";
 
 // Bridges
 export {
-  AgentPanelProvider,
-  useAgentPanel,
+  StratosProvider,
+  useStratos,
   useChatBridge,
   useThreadBridge,
   useSettingsBridge,
   usePreviewBridge,
   useFilesBridge,
-} from "./bridges/AgentPanelProvider";
-export type { AgentPanelContextValue } from "./bridges/AgentPanelProvider";
+} from "./bridges/StratosProvider";
+export type { StratosContextValue } from "./bridges/StratosProvider";
 export type {
   ChatBridge,
   ThreadBridge,

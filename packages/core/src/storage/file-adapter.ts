@@ -11,7 +11,7 @@ import type { Thread, Folder, StoredMessage } from "../types/thread";
 import type { StorageAdapter } from "./types";
 import { clearTraceFile } from "./trace.store";
 
-const DEFAULT_BASE_DIR = join(homedir(), ".agentpanel");
+const DEFAULT_BASE_DIR = join(homedir(), ".stratos");
 
 interface ThreadsFile {
   folders?: Folder[];

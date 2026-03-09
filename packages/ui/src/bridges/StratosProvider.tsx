@@ -7,7 +7,7 @@ import type {
   FilesBridge,
 } from "./types";
 
-export interface AgentPanelContextValue {
+export interface StratosContextValue {
   chat: ChatBridge;
   threads: ThreadBridge;
   settings: SettingsBridge;
@@ -15,46 +15,44 @@ export interface AgentPanelContextValue {
   files?: FilesBridge;
 }
 
-const AgentPanelContext = createContext<AgentPanelContextValue | null>(null);
+const StratosContext = createContext<StratosContextValue | null>(null);
 
-export function AgentPanelProvider({
+export function StratosProvider({
   value,
   children,
 }: {
-  value: AgentPanelContextValue;
+  value: StratosContextValue;
   children: React.ReactNode;
 }): React.ReactElement {
   return (
-    <AgentPanelContext.Provider value={value}>
-      {children}
-    </AgentPanelContext.Provider>
+    <StratosContext.Provider value={value}>{children}</StratosContext.Provider>
   );
 }
 
-export function useAgentPanel(): AgentPanelContextValue {
-  const ctx = useContext(AgentPanelContext);
+export function useStratos(): StratosContextValue {
+  const ctx = useContext(StratosContext);
   if (!ctx) {
-    throw new Error("useAgentPanel must be used within an AgentPanelProvider");
+    throw new Error("useStratos must be used within an StratosProvider");
   }
   return ctx;
 }
 
 export function useChatBridge(): ChatBridge {
-  return useAgentPanel().chat;
+  return useStratos().chat;
 }
 
 export function useThreadBridge(): ThreadBridge {
-  return useAgentPanel().threads;
+  return useStratos().threads;
 }
 
 export function useSettingsBridge(): SettingsBridge {
-  return useAgentPanel().settings;
+  return useStratos().settings;
 }
 
 export function usePreviewBridge(): PreviewBridge | undefined {
-  return useAgentPanel().preview;
+  return useStratos().preview;
 }
 
 export function useFilesBridge(): FilesBridge | undefined {
-  return useAgentPanel().files;
+  return useStratos().files;
 }
