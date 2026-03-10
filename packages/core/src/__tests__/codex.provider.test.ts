@@ -73,4 +73,49 @@ describe("CodexProvider", () => {
       ]),
     );
   });
+
+  it("applies mode policy on turn/start for existing threads", async () => {
+    const provider = new CodexProvider() as any;
+    provider.threadId = "thr_existing";
+    provider.ensureAppServer = vi.fn().mockResolvedValue(undefined);
+    provider.sendRpc = vi
+      .fn()
+      .mockImplementation((method: string, params: any) => {
+        if (method === "turn/start") {
+          return Promise.resolve({ turn: { id: "turn_1" }, ...params });
+        }
+        return Promise.resolve({});
+      });
+    provider.waitForNotification = vi.fn().mockResolvedValueOnce({
+      method: "turn/completed",
+      params: { turn: { status: "completed" } },
+    });
+
+    const out: unknown[] = [];
+    for await (const msg of provider.sendMessage({
+      prompt: "hello",
+      mode: "plan",
+      permissionHandler: async () => ({ approved: true }),
+    })) {
+      out.push(msg);
+    }
+
+    expect(provider.sendRpc).toHaveBeenCalledWith(
+      "turn/start",
+      expect.objectContaining({
+        threadId: "thr_existing",
+        approvalPolicy: "never",
+        sandbox: "read-only",
+      }),
+    );
+    expect(out).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "session_init",
+          sessionId: "thr_existing",
+        }),
+        expect.objectContaining({ type: "result", stop_reason: "end_turn" }),
+      ]),
+    );
+  });
 });

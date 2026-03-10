@@ -251,9 +251,97 @@ export class CodexProvider implements AgentProvider {
     string,
     { summary: string; content: string }
   >();
+  /** Best-effort plan collaboration mode ID discovered from app-server */
+  private planCollaborationModeId?: string;
+  /** Guard to avoid calling collaborationMode/list repeatedly */
+  private collaborationModesLoaded = false;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
+  }
+
+  /**
+   * Extract a collaboration mode ID that looks like "plan".
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private extractPlanCollaborationModeId(result: any): string | undefined {
+    // App-server shapes have evolved; accept several likely containers.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const modes: any[] = Array.isArray(result?.data)
+      ? result.data
+      : Array.isArray(result?.modes)
+        ? result.modes
+        : Array.isArray(result?.collaborationModes)
+          ? result.collaborationModes
+          : [];
+
+    type Candidate = {
+      id: string;
+      score: number;
+    };
+    const candidates: Candidate[] = [];
+
+    for (const m of modes) {
+      const id = String(m?.id ?? "").trim();
+      if (!id) continue;
+      const terms = [
+        String(m?.name ?? ""),
+        String(m?.slug ?? ""),
+        String(m?.title ?? ""),
+        String(m?.displayName ?? ""),
+        id,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      if (!terms) continue;
+      let score = 0;
+      if (terms === "plan") score = 100;
+      else if (terms.includes(" plan ")) score = 90;
+      else if (terms.includes("plan")) score = 80;
+      else if (terms.includes("planner")) score = 70;
+      else continue;
+
+      candidates.push({ id, score });
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0]?.id;
+  }
+
+  /**
+   * Discover collaboration modes (experimental API) and cache plan mode ID.
+   * If unsupported, we silently fall back to read-only plan behavior.
+   */
+  private async ensureCollaborationModesDiscovered(): Promise<void> {
+    if (this.collaborationModesLoaded) return;
+    this.collaborationModesLoaded = true;
+    try {
+      const result = await this.sendRpc("collaborationMode/list", {});
+      this.planCollaborationModeId =
+        this.extractPlanCollaborationModeId(result);
+    } catch {
+      this.planCollaborationModeId = undefined;
+    }
+  }
+
+  /**
+   * Extract text payload from turn/plan/updated notifications.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private extractPlanText(p: any): string {
+    const direct = p?.text;
+    if (typeof direct === "string") return direct;
+
+    const plan = p?.plan;
+    if (typeof plan === "string") return plan;
+    if (typeof plan?.text === "string") return plan.text;
+
+    const turnPlan = p?.turn?.plan;
+    if (typeof turnPlan === "string") return turnPlan;
+    if (typeof turnPlan?.text === "string") return turnPlan.text;
+
+    return "";
   }
 
   /**
@@ -315,6 +403,8 @@ export class CodexProvider implements AgentProvider {
       this.initialized = false;
       this.threadId = undefined;
       this.turnId = undefined;
+      this.planCollaborationModeId = undefined;
+      this.collaborationModesLoaded = false;
     });
 
     // Ignore stderr (logging noise)
@@ -372,11 +462,12 @@ export class CodexProvider implements AgentProvider {
           title: "Stratos",
           version: "0.1.0",
         },
-        capabilities: { experimentalApi: false },
+        capabilities: { experimentalApi: true },
       });
       // Send the `initialized` notification as required by the protocol handshake
       this.sendNotification("initialized");
       this.initialized = true;
+      await this.ensureCollaborationModesDiscovered();
     }
   }
 
@@ -541,10 +632,16 @@ export class CodexProvider implements AgentProvider {
     const turnParams: Record<string, any> = {
       threadId: this.threadId,
       input: this.buildUserInput(params),
+      // Apply mode policy on every turn so mode switches mid-session take effect.
+      approvalPolicy,
+      sandbox,
     };
     if (model) turnParams.model = model;
     if (effort) turnParams.effort = effort;
     if (params.cwd) turnParams.cwd = params.cwd;
+    if (mode === "plan" && this.planCollaborationModeId) {
+      turnParams.collaborationMode = this.planCollaborationModeId;
+    }
 
     // Start a turn
     try {
@@ -573,6 +670,8 @@ export class CodexProvider implements AgentProvider {
     let turnComplete = false;
     let streamingText = "";
     let streamingReasoning = "";
+    let streamingPlan = "";
+    let latestPlanSnapshot = "";
 
     while (!turnComplete) {
       const notif = await this.waitForNotification();
@@ -646,6 +745,8 @@ export class CodexProvider implements AgentProvider {
           if (delta) {
             // Plans render as thinking in the UI
             yield { type: "thinking", content: delta, isStreaming: true };
+            streamingPlan += delta;
+            latestPlanSnapshot += delta;
           }
           break;
         }
@@ -689,6 +790,10 @@ export class CodexProvider implements AgentProvider {
           if (itemType === "reasoning") {
             streamingReasoning = "";
           }
+          if (itemType === "plan") {
+            streamingPlan = "";
+            latestPlanSnapshot = "";
+          }
           if (itemType === "commandExecution") {
             // Emit tool_use at start so user sees the command being run
             const toolCallId = item.id ?? `cmd_${Date.now()}`;
@@ -711,6 +816,7 @@ export class CodexProvider implements AgentProvider {
             item,
             streamingText,
             streamingReasoning,
+            streamingPlan,
           );
 
           // Reset streaming state
@@ -719,6 +825,10 @@ export class CodexProvider implements AgentProvider {
           }
           if (item?.type === "reasoning") {
             streamingReasoning = "";
+          }
+          if (item?.type === "plan") {
+            streamingPlan = "";
+            latestPlanSnapshot = "";
           }
           break;
         }
@@ -849,7 +959,36 @@ export class CodexProvider implements AgentProvider {
         case "item/mcpToolCall/progress":
         case "item/commandExecution/terminalInteraction":
         case "item/reasoning/summaryPartAdded":
-        case "turn/plan/updated":
+          break;
+        case "turn/plan/updated": {
+          const planText = this.extractPlanText(p);
+          if (!planText) break;
+
+          // Prefer delta-style updates when possible to avoid duplicate rendering.
+          if (!latestPlanSnapshot) {
+            latestPlanSnapshot = planText;
+            yield { type: "thinking", content: planText, isStreaming: true };
+            break;
+          }
+
+          if (planText.startsWith(latestPlanSnapshot)) {
+            const delta = planText.slice(latestPlanSnapshot.length);
+            latestPlanSnapshot = planText;
+            if (delta) {
+              yield { type: "thinking", content: delta, isStreaming: true };
+            }
+            break;
+          }
+
+          // Non-monotonic update: emit final snapshot to keep UI in sync.
+          latestPlanSnapshot = planText;
+          yield {
+            type: "thinking",
+            content: `\n${planText}`,
+            isStreaming: false,
+          };
+          break;
+        }
         case "turn/diff/updated":
         case "rawResponseItem/completed":
         case "configWarning":
@@ -873,6 +1012,7 @@ export class CodexProvider implements AgentProvider {
     item: any,
     streamingText: string,
     streamingReasoning: string,
+    streamingPlan: string,
   ): Generator<AgentMessage> {
     const itemType = item?.type;
 
@@ -910,10 +1050,13 @@ export class CodexProvider implements AgentProvider {
       }
 
       case "plan": {
-        // Plan completed — finalize thinking
+        // Final plan item is authoritative; if we streamed deltas, just finalize.
         const text = item.text ?? "";
-        if (text) {
+        if (streamingPlan) {
           yield { type: "thinking", content: "", isStreaming: false };
+        } else if (text) {
+          // Fallback when no plan deltas were emitted.
+          yield { type: "thinking", content: text, isStreaming: false };
         }
         break;
       }
