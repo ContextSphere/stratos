@@ -70,7 +70,7 @@ function calculateChangeStats(
 
 export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
   useMonacoFontReady();
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
   const [shouldRenderMonaco, setShouldRenderMonaco] = useState(false);
 
   const filePath = extractFilePath(toolCall.input);
@@ -94,7 +94,14 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
   let displayContent = "";
   let isTooLarge = false;
 
-  if (toolCall.toolName === "Edit") {
+  // Unified diff string (e.g. from Codex provider)
+  const unifiedDiff = (toolCall.input.diff as string | undefined) ?? "";
+
+  if (unifiedDiff) {
+    // Codex-style: show unified diff with diff syntax highlighting
+    displayContent = unifiedDiff;
+    isTooLarge = countLines(displayContent) > MAX_LINES_INLINE;
+  } else if (toolCall.toolName === "Edit") {
     oldContent = (toolCall.input.old_string as string | undefined) ?? "";
     newContent = (toolCall.input.new_string as string | undefined) ?? "";
     isTooLarge = countLines(newContent) > MAX_LINES_INLINE;
@@ -104,14 +111,16 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
   } else if (toolCall.toolName === "Read") {
     displayContent = toolCall.output ?? "";
     isTooLarge = countLines(displayContent) > MAX_LINES_INLINE;
+  } else if (toolCall.toolName === "Delete") {
+    displayContent = "";
   }
 
   const changeStats =
-    toolCall.toolName === "Edit"
+    toolCall.toolName === "Edit" && !unifiedDiff
       ? calculateChangeStats(oldContent, newContent)
       : null;
   const height = calculateEditorHeight(
-    toolCall.toolName === "Edit" ? newContent : displayContent,
+    toolCall.toolName === "Edit" && !unifiedDiff ? newContent : displayContent,
     MAX_VISIBLE_LINES,
   );
 
@@ -142,7 +151,11 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
 
   // Empty file indicator
   const isEmpty =
-    toolCall.toolName === "Edit" ? !oldContent && !newContent : !displayContent;
+    toolCall.toolName === "Delete"
+      ? false
+      : toolCall.toolName === "Edit" && !unifiedDiff
+        ? !oldContent && !newContent
+        : !displayContent;
 
   if (isEmpty) {
     return (
@@ -219,7 +232,37 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
           ) : shouldRenderMonaco ? (
             // Render Monaco editor or diff
             <div className="relative">
-              {toolCall.toolName === "Edit" ? (
+              {unifiedDiff ? (
+                // Unified diff view (Codex-style)
+                <Editor
+                  height={height}
+                  language="diff"
+                  value={displayContent}
+                  theme="cursor-dark"
+                  options={{
+                    readOnly: true,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontSize: 12,
+                    fontFamily: MONO_FONT_FAMILY,
+                    lineNumbers: "off",
+                    renderLineHighlight: "none",
+                    wordWrap: "on",
+                    scrollbar: {
+                      vertical: "auto",
+                      horizontal: "auto",
+                      useShadows: false,
+                    },
+                    contextmenu: false,
+                    links: false,
+                    folding: false,
+                    glyphMargin: false,
+                    lineDecorationsWidth: 0,
+                    lineNumbersMinChars: 0,
+                    renderWhitespace: "none",
+                  }}
+                />
+              ) : toolCall.toolName === "Edit" ? (
                 // Diff view for Edit tool
                 <DiffEditor
                   height={height}

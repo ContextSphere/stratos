@@ -1413,6 +1413,7 @@ export class CodexProvider implements AgentProvider {
             input: {
               file_path: change.path ?? "",
               kind: change.kind ?? "update",
+              diff: streamedDiff ?? (change as any).diff ?? "",
             },
             toolCallId,
           };
