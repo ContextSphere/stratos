@@ -6,7 +6,7 @@ import type {
   ModelInfo,
 } from "./types";
 
-import { spawn, type ChildProcess } from "child_process";
+import { execSync, spawn, type ChildProcess } from "child_process";
 import * as readline from "readline";
 import * as path from "path";
 import * as fs from "fs";
@@ -120,6 +120,29 @@ function findCodexBinary(): string {
   throw new Error(
     "Unable to locate Codex CLI binary. Ensure @openai/codex-sdk is installed with optional dependencies.",
   );
+}
+
+/**
+ * Resolve the canonical repository root for Codex trust settings.
+ * In git worktrees, Codex expects trust on the shared repo root.
+ */
+function resolveCodexTrustProjectPath(cwd?: string): string | undefined {
+  if (!cwd) return undefined;
+  try {
+    const commonGitDir = execSync(
+      "git rev-parse --path-format=absolute --git-common-dir",
+      {
+        cwd,
+        encoding: "utf-8",
+        timeout: 3000,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    ).trim();
+    if (!commonGitDir) return undefined;
+    return path.dirname(commonGitDir);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -305,8 +328,18 @@ export class CodexProvider implements AgentProvider {
     if (this.appServer && !this.appServer.killed) return;
 
     const codexPath = findCodexBinary();
-    this.appServer = spawn(codexPath, ["app-server"], {
+    const appServerArgs = ["app-server"];
+    const trustProjectPath = resolveCodexTrustProjectPath(this.config.cwd);
+    if (trustProjectPath) {
+      appServerArgs.unshift(
+        `projects.${trustProjectPath}.trust_level="trusted"`,
+      );
+      appServerArgs.unshift("-c");
+    }
+
+    this.appServer = spawn(codexPath, appServerArgs, {
       stdio: ["pipe", "pipe", "pipe"],
+      ...(this.config.cwd ? { cwd: this.config.cwd } : {}),
       env: { ...process.env },
     });
 
