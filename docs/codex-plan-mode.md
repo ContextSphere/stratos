@@ -24,24 +24,27 @@ turn/start (with collaborationMode)
   → turn/started
   → item/started (userMessage)
   → item/completed (userMessage)
-  → item/agentMessage/delta (text streaming)
+  → item/agentMessage/delta (text streaming)    ← commentary / thinking
   → item/agentMessage/delta ...
   → item/completed (agentMessage)
-  → item/started (commandExecution)     ← server may execute read-only commands
+  → item/started (commandExecution)              ← read-only commands for context
   → item/completed (commandExecution)
-  → item/agentMessage/delta ...         ← more text
+  → item/agentMessage/delta ...                  ← more commentary
   → item/completed (agentMessage)
-  → item/tool/requestUserInput          ← server asks user a clarifying question
+  → item/tool/requestUserInput                   ← clarifying question (has id)
   ← (client responds with user's answers)
+  → item/plan/delta (× many)                     ← plan content as markdown
+  → item/completed (plan)                        ← plan finalized
   → turn/completed
 ```
 
 Key observations:
 
-1. **No plan-specific notifications**: `item/plan/delta` and `turn/plan/updated` are never sent. All content comes as `item/agentMessage/delta`.
-2. **Multiple agentMessage items**: The server sends several agentMessage items per turn (one per "thought"). Each `item/started(agentMessage)` resets the streaming context.
-3. **`requestUserInput` is NOT a plan approval gate**: It is a genuine user question (e.g., "which backend do you want?"). These must be forwarded to the user, not auto-approved.
-4. **Commands still execute**: Even in plan mode, the server may run read-only commands to gather context.
+1. **`item/plan/delta` IS sent** — but only AFTER `requestUserInput` is answered. In testing, 559 plan deltas were emitted streaming a full markdown plan (with headings, steps, code snippets).
+2. **Multiple agentMessage items precede the plan**: The server sends commentary as `agentMessage` deltas while gathering context. These are NOT the plan — they are thinking/status updates.
+3. **`requestUserInput` is a genuine clarifying question**: It asks real questions (e.g., "which backend do you want?") with multiple-choice options. Must be forwarded to user, never auto-approved.
+4. **Commands still execute**: Even in plan mode, the server runs read-only commands to gather context before asking questions.
+5. **Plan comes last**: The plan is only generated after the server has gathered context and received user input on any clarifying questions.
 
 ### Without `collaborationMode`
 
@@ -84,11 +87,9 @@ const modelForPlanMode =
 
 This ensures `collaborationMode` is sent whenever possible, so the server correctly enters plan mode.
 
-## Open Questions
+## Status
 
-- **Plan content identification**: The app-server sends plan content as regular `agentMessage` deltas, identical to non-plan text. How should Stratos distinguish plan content from regular agent conversation to trigger the plan review UI? The Codex app presumably has custom logic for this.
-- **`requestUserInput` role in plan mode**: The server uses `requestUserInput` for genuine clarifying questions during planning. Stratos should display these to the user normally (which it already does via `handleRequestUserInput`).
-- **Plan review trigger**: Currently Stratos only triggers plan review when it receives `plan_update` messages. Since the app-server never sends plan-specific notifications, we need a different mechanism to detect when the plan is complete and show the review UI.
+The model fallback chain fix ensures `collaborationMode` is sent, which causes the server to enter plan mode. The server then sends `item/plan/delta` notifications containing the plan as markdown. Stratos already handles these at `codex.provider.ts:1042` by yielding `plan_update` messages, which trigger the plan review UI via `agent-manager.ts`.
 
 ## Files Modified
 
