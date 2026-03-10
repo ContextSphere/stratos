@@ -303,6 +303,28 @@ export class AgentManager {
               );
             }
             resolve({ approved: true });
+            // Auto-trigger implementation turn from main process.
+            // We can't rely on the renderer's sendMessage because of
+            // stale closure issues with runningThreadIds guards.
+            if (threadId) {
+              setTimeout(() => {
+                this.sendToRenderer(
+                  IPC_CHANNELS.STREAM_MESSAGE,
+                  {
+                    type: "user_message",
+                    content: "Implement the plan",
+                  },
+                  threadId,
+                );
+                this.runStream(threadId, "Implement the plan").catch((err) => {
+                  safeLog(
+                    console.error,
+                    `[agent-manager] implement-plan stream error:`,
+                    err,
+                  );
+                });
+              }, 100);
+            }
             break;
           case "feedback":
           case "deny":

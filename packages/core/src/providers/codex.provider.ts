@@ -207,7 +207,13 @@ function mapModeToPolicy(
 } {
   switch (mode) {
     case "plan":
-      return { approvalPolicy: "never", sandbox: "read-only" };
+      // Use workspace-write for the thread sandbox even in plan mode.
+      // Plan-mode read-only behavior is enforced by collaborationMode in turn/start.
+      // This allows switching to an implementation turn on the same thread.
+      return {
+        approvalPolicy: "never",
+        sandbox: configSandbox ?? "workspace-write",
+      };
     case "default":
       return {
         approvalPolicy: "on-request",
@@ -298,6 +304,8 @@ export class CodexProvider implements AgentProvider {
   >();
   /** Best-effort plan collaboration mode discovered from app-server */
   private planCollaborationMode?: CodexCollaborationMode;
+  /** Tracks whether the previous turn used plan mode (to explicitly clear it) */
+  private lastTurnWasPlan = false;
   /** Guard to avoid calling collaborationMode/list repeatedly */
   private collaborationModesLoaded = false;
 
@@ -906,6 +914,7 @@ export class CodexProvider implements AgentProvider {
     if (effort) turnParams.effort = effort;
     if (params.cwd) turnParams.cwd = params.cwd;
     if (mode === "plan") {
+      this.lastTurnWasPlan = true;
       const collaborationMode =
         this.planCollaborationMode ??
         ({
@@ -940,6 +949,20 @@ export class CodexProvider implements AgentProvider {
           },
         };
       }
+    } else if (this.lastTurnWasPlan) {
+      // Explicitly switch to default collaboration mode so the server exits plan mode.
+      // Sending null or omitting collaborationMode may not clear sticky plan state.
+      this.lastTurnWasPlan = false;
+      const defaultModel =
+        model || this.config.model || this.cachedModels?.[0]?.value || "";
+      turnParams.collaborationMode = {
+        mode: "default",
+        settings: {
+          model: defaultModel,
+          reasoning_effort: effort ?? null,
+          developer_instructions: null,
+        },
+      };
     }
 
     // Start a turn

@@ -304,11 +304,23 @@ export function useChat(
 
       let state = streamingThreadsRef.current.get(threadId);
       if (!state) {
-        // No streaming state means the stream was already finalized (by result/error)
-        // or cleaned up (by interrupt timeout). Any event arriving now is a late
-        // arrival — creating a new empty state would clobber accumulated messages
-        // via setMessages(). Ignore all late arrivals, not just terminal events.
-        return;
+        // Auto-initialize streaming state for main-process-triggered turns
+        // (e.g. auto-implement after plan approval). The user_message event
+        // arrives before other stream events and bootstraps the state.
+        if (msg.type === "user_message") {
+          const currentMessages =
+            activeThreadIdRef.current === threadId ? messagesRef.current : [];
+          state = {
+            messages: [...currentMessages],
+            assistantId: null,
+            activeTaskId: null,
+          };
+          streamingThreadsRef.current.set(threadId, state);
+        } else {
+          // No streaming state means the stream was already finalized (by result/error)
+          // or cleaned up (by interrupt timeout). Ignore late arrivals.
+          return;
+        }
       }
 
       const apply = (updater: (msgs: ChatMessage[]) => ChatMessage[]) => {
@@ -320,6 +332,17 @@ export function useChat(
       };
 
       switch (msg.type) {
+        case "user_message": {
+          // Synthetic user message injected by main process (e.g. auto-implement)
+          const userMsg: ChatMessage = {
+            id: nextMessageId(),
+            role: "user",
+            content: msg.content ?? "",
+            timestamp: Date.now(),
+          };
+          apply((prev) => [...prev, userMsg]);
+          break;
+        }
         case "text": {
           // Remove any worktree progress messages before adding new content
           if (!state.assistantId) {
@@ -901,6 +924,10 @@ export function useChat(
 
     api.onModeChanged((data: { mode: string }, threadId: string | null) => {
       if (!threadId) return;
+
+      // Always refresh thread list so the bottom bar reflects the new mode
+      onThreadUpdated?.();
+
       const state = streamingThreadsRef.current.get(threadId);
       if (!state) return;
 
@@ -917,7 +944,6 @@ export function useChat(
       if (activeThreadIdRef.current === threadId) {
         setMessages(next);
       }
-      onThreadUpdated?.();
     });
 
     return (): void => {
@@ -1102,14 +1128,8 @@ export function useChat(
       window.api.respondPlanReview(requestId, decision);
       // Clear interactive mode when plan review is decided (via buttons or InputBar)
       setInteractiveMode({ type: "none" });
-      if (decision.type === "implement") {
-        // Small delay to let mode change propagate, then auto-send
-        setTimeout(() => {
-          sendMessage("Implement plan");
-        }, 100);
-      }
     },
-    [sendMessage],
+    [],
   );
 
   const handleInteractiveResponse = useCallback(
