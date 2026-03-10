@@ -156,13 +156,14 @@ export function registerThreadIpc(): void {
         provider?: ProviderType;
       },
     ) => {
-      // Clear session on cwd, mode, or provider change
-      if (
-        updates.cwd !== undefined ||
-        updates.mode !== undefined ||
-        updates.provider !== undefined
-      ) {
+      // Only clear the backend session when the underlying execution context
+      // changes. Mode changes are applied per turn and should preserve memory.
+      const sessionRequiresReset =
+        updates.cwd !== undefined || updates.provider !== undefined;
+
+      if (sessionRequiresReset) {
         clearSessionFn?.(threadId);
+        storage.clearPersistedSessionId(threadId);
       }
       return storage.updateThread(threadId, updates);
     },
