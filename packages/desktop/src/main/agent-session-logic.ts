@@ -60,8 +60,11 @@ export function resolveToolBehavior(
   // EnterPlanMode is always silently approved
   if (toolName === "EnterPlanMode") return "always_approve";
 
-  // ExitPlanMode triggers plan review regardless of mode
-  if (toolName === "ExitPlanMode") return "plan_review";
+  // ExitPlanMode triggers plan review only when currently in plan mode.
+  // In other modes, approve silently so it does not surface plan UI.
+  if (toolName === "ExitPlanMode") {
+    return mode === "plan" ? "plan_review" : "always_approve";
+  }
 
   // AskUserQuestion always shows the question dialog
   if (toolName === "AskUserQuestion") return "ask_user";

@@ -585,6 +585,8 @@ export class AgentManager {
     };
 
     const mode = normalizeMode(thread.mode);
+    let latestPlanContent = "";
+    let sawPlanUpdate = false;
     const params: SendMessageParams = {
       prompt,
       sessionId: session.sessionId,
@@ -609,6 +611,13 @@ export class AgentManager {
 
         if (msg.type === "error") {
           specificErrorSent = true;
+        }
+
+        if (mode === "plan" && msg.type === "plan_update") {
+          sawPlanUpdate = true;
+          if (msg.content) {
+            latestPlanContent += msg.content;
+          }
         }
 
         // Track plan markdown for artifact viewer
@@ -651,6 +660,29 @@ export class AgentManager {
             threadId,
           );
         }
+      }
+
+      if (
+        mode === "plan" &&
+        sawPlanUpdate &&
+        !specificErrorSent &&
+        latestPlanContent.trim().length > 0 &&
+        !this.hasPendingPlanReviewForThread(threadId)
+      ) {
+        const planContent = latestPlanContent.trim();
+        const planTitle = "Plan";
+        this.lastPlanMarkdown = { content: planContent, title: planTitle };
+        this.sendToRenderer(
+          IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
+          {
+            content: planContent,
+            title: planTitle,
+          },
+          threadId,
+        );
+        // Codex can complete plan turns without ExitPlanMode.
+        // Trigger the same review UX used by explicit plan-exit tools.
+        void this.requestPlanReview(threadId, { allowedPrompts: [] });
       }
     } catch (err: any) {
       if (!specificErrorSent) {
@@ -751,6 +783,13 @@ export class AgentManager {
       this.sendToRenderer(IPC_CHANNELS.THREAD_ACTIVATE, { threadId });
     });
     notification.show();
+  }
+
+  private hasPendingPlanReviewForThread(threadId: string): boolean {
+    for (const pending of this.pendingPlanReviews.values()) {
+      if (pending.threadId === threadId) return true;
+    }
+    return false;
   }
 
   private requestPlanReview(

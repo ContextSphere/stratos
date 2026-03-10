@@ -11,6 +11,23 @@ import * as readline from "readline";
 import * as path from "path";
 import * as fs from "fs";
 
+type CodexReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
+
+type CodexCollaborationMode = {
+  mode: "plan" | "default";
+  settings: {
+    model: string;
+    reasoning_effort: CodexReasoningEffort | null;
+    developer_instructions: string | null;
+  };
+};
+
 /**
  * Find the Codex CLI binary shipped with @openai/codex via @openai/codex-sdk.
  * This mirrors the findCodexPath() logic in the SDK itself.
@@ -279,8 +296,8 @@ export class CodexProvider implements AgentProvider {
     string,
     { summary: string; content: string }
   >();
-  /** Best-effort plan collaboration mode ID discovered from app-server */
-  private planCollaborationModeId?: string;
+  /** Best-effort plan collaboration mode discovered from app-server */
+  private planCollaborationMode?: CodexCollaborationMode;
   /** Guard to avoid calling collaborationMode/list repeatedly */
   private collaborationModesLoaded = false;
 
@@ -333,7 +350,7 @@ export class CodexProvider implements AgentProvider {
         ? p.itemId
         : undefined;
     const changes = itemId
-      ? this.fileChangeMetadataBuffers.get(itemId) ?? []
+      ? (this.fileChangeMetadataBuffers.get(itemId) ?? [])
       : [];
 
     const input: Record<string, unknown> = {
@@ -359,11 +376,27 @@ export class CodexProvider implements AgentProvider {
     return input;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private isCodexReasoningEffort(value: any): value is CodexReasoningEffort {
+    return (
+      value === "none" ||
+      value === "minimal" ||
+      value === "low" ||
+      value === "medium" ||
+      value === "high" ||
+      value === "xhigh"
+    );
+  }
+
   /**
-   * Extract a collaboration mode ID that looks like "plan".
+   * Extract plan collaboration mode metadata from collaborationMode/list.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private extractPlanCollaborationModeId(result: any): string | undefined {
+  private extractPlanCollaborationMode(result: any): {
+    mode: "plan";
+    model?: string;
+    reasoning_effort?: CodexReasoningEffort | null;
+  } {
     // App-server shapes have evolved; accept several likely containers.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const modes: any[] = Array.isArray(result?.data)
@@ -375,20 +408,19 @@ export class CodexProvider implements AgentProvider {
           : [];
 
     type Candidate = {
-      id: string;
       score: number;
+      model?: string;
+      reasoning_effort?: CodexReasoningEffort | null;
     };
     const candidates: Candidate[] = [];
 
     for (const m of modes) {
-      const id = String(m?.id ?? "").trim();
-      if (!id) continue;
       const terms = [
+        String(m?.mode ?? ""),
         String(m?.name ?? ""),
         String(m?.slug ?? ""),
         String(m?.title ?? ""),
         String(m?.displayName ?? ""),
-        id,
       ]
         .join(" ")
         .toLowerCase();
@@ -401,11 +433,27 @@ export class CodexProvider implements AgentProvider {
       else if (terms.includes("planner")) score = 70;
       else continue;
 
-      candidates.push({ id, score });
+      const model =
+        typeof m?.model === "string" && m.model.trim().length > 0
+          ? m.model.trim()
+          : undefined;
+      const reasoning_effort = this.isCodexReasoningEffort(m?.reasoning_effort)
+        ? m.reasoning_effort
+        : m?.reasoning_effort === null
+          ? null
+          : undefined;
+
+      candidates.push({ score, model, reasoning_effort });
     }
 
     candidates.sort((a, b) => b.score - a.score);
-    return candidates[0]?.id;
+    return {
+      mode: "plan",
+      ...(candidates[0]?.model ? { model: candidates[0].model } : {}),
+      ...(candidates[0]?.reasoning_effort !== undefined
+        ? { reasoning_effort: candidates[0].reasoning_effort }
+        : {}),
+    };
   }
 
   /**
@@ -417,10 +465,20 @@ export class CodexProvider implements AgentProvider {
     this.collaborationModesLoaded = true;
     try {
       const result = await this.sendRpc("collaborationMode/list", {});
-      this.planCollaborationModeId =
-        this.extractPlanCollaborationModeId(result);
+      const extracted = this.extractPlanCollaborationMode(result);
+      this.planCollaborationMode = {
+        mode: "plan",
+        settings: {
+          model: extracted.model ?? "",
+          reasoning_effort:
+            extracted.reasoning_effort === undefined
+              ? null
+              : extracted.reasoning_effort,
+          developer_instructions: null,
+        },
+      };
     } catch {
-      this.planCollaborationModeId = undefined;
+      this.planCollaborationMode = undefined;
     }
   }
 
@@ -441,6 +499,99 @@ export class CodexProvider implements AgentProvider {
     if (typeof turnPlan?.text === "string") return turnPlan.text;
 
     return "";
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private extractPlanUpdate(p: any): {
+    text: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    steps?: any[];
+    explanation?: string;
+  } {
+    const text = this.extractPlanText(p);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const planObj: any =
+      p?.plan && typeof p.plan === "object"
+        ? p.plan
+        : p?.turn?.plan && typeof p.turn.plan === "object"
+          ? p.turn.plan
+          : undefined;
+    const steps = Array.isArray(planObj?.steps)
+      ? planObj.steps
+      : Array.isArray(p?.plan)
+        ? p.plan
+        : Array.isArray(p?.steps)
+          ? p.steps
+          : undefined;
+    const explanation =
+      typeof planObj?.explanation === "string"
+        ? planObj.explanation
+        : typeof p?.explanation === "string"
+          ? p.explanation
+          : undefined;
+    return { text, steps, explanation };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private formatPlanMarkdown(plan: {
+    steps?: any[];
+    explanation?: string;
+  }): string {
+    const lines: string[] = [];
+    if (plan.explanation) lines.push(plan.explanation.trim());
+    const steps = Array.isArray(plan.steps) ? plan.steps : [];
+    if (steps.length > 0) {
+      if (lines.length > 0) lines.push("");
+      lines.push("## Plan");
+      for (const step of steps) {
+        const text =
+          typeof step?.step === "string"
+            ? step.step
+            : typeof step?.content === "string"
+              ? step.content
+              : "";
+        if (!text) continue;
+        const status =
+          typeof step?.status === "string" && step.status
+            ? ` (${step.status})`
+            : "";
+        lines.push(`- ${text}${status}`);
+      }
+    }
+    return lines.join("\n").trim();
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private normalizeRequestUserInputPayload(p: any): Record<string, unknown> {
+    const rawQuestions = Array.isArray(p?.questions) ? p.questions : [];
+    if (rawQuestions.length === 0) return p ?? {};
+
+    return {
+      questions: rawQuestions.map((q: any) => ({
+        ...(typeof q?.id === "string" ? { id: q.id } : {}),
+        question:
+          typeof q?.question === "string"
+            ? q.question
+            : typeof q?.prompt === "string"
+              ? q.prompt
+              : "",
+        ...(typeof q?.header === "string" ? { header: q.header } : {}),
+        options: Array.isArray(q?.options)
+          ? q.options.map((o: any) => ({
+              label:
+                typeof o?.label === "string"
+                  ? o.label
+                  : typeof o?.title === "string"
+                    ? o.title
+                    : String(o ?? ""),
+              ...(typeof o?.description === "string"
+                ? { description: o.description }
+                : {}),
+            }))
+          : [],
+        multiSelect: Boolean(q?.multiSelect),
+      })),
+    };
   }
 
   /**
@@ -493,6 +644,10 @@ export class CodexProvider implements AgentProvider {
 
     const codexPath = findCodexBinary();
     const appServerArgs = ["app-server"];
+    // Enable AskUserQuestion-style tool requests in default mode at process level.
+    // App-server reads this from Codex config overrides (`-c key=value`).
+    appServerArgs.unshift("features.default_mode_request_user_input=true");
+    appServerArgs.unshift("-c");
     const trustProjectPath = resolveCodexTrustProjectPath(this.config.cwd);
     if (trustProjectPath) {
       appServerArgs.unshift(
@@ -512,7 +667,7 @@ export class CodexProvider implements AgentProvider {
       this.initialized = false;
       this.threadId = undefined;
       this.turnId = undefined;
-      this.planCollaborationModeId = undefined;
+      this.planCollaborationMode = undefined;
       this.collaborationModesLoaded = false;
       this.fileChangeMetadataBuffers.clear();
     });
@@ -750,8 +905,30 @@ export class CodexProvider implements AgentProvider {
     if (model) turnParams.model = model;
     if (effort) turnParams.effort = effort;
     if (params.cwd) turnParams.cwd = params.cwd;
-    if (mode === "plan" && this.planCollaborationModeId) {
-      turnParams.collaborationMode = this.planCollaborationModeId;
+    if (mode === "plan") {
+      const collaborationMode =
+        this.planCollaborationMode ??
+        ({
+          mode: "plan",
+          settings: {
+            model: "",
+            reasoning_effort: null,
+            developer_instructions: null,
+          },
+        } as const);
+      const modelForPlanMode =
+        collaborationMode.settings.model || model || this.config.model;
+      if (modelForPlanMode) {
+        turnParams.collaborationMode = {
+          mode: "plan",
+          settings: {
+            model: modelForPlanMode,
+            reasoning_effort:
+              collaborationMode.settings.reasoning_effort ?? effort ?? null,
+            developer_instructions: null,
+          },
+        };
+      }
     }
 
     // Start a turn
@@ -854,8 +1031,8 @@ export class CodexProvider implements AgentProvider {
         case "item/plan/delta": {
           const delta = p.delta ?? "";
           if (delta) {
-            // Plans render as thinking in the UI
-            yield { type: "thinking", content: delta, isStreaming: true };
+            // Stream plan text to dedicated plan UI lane.
+            yield { type: "plan_update", content: delta, isStreaming: true };
             streamingPlan += delta;
             latestPlanSnapshot += delta;
           }
@@ -960,6 +1137,12 @@ export class CodexProvider implements AgentProvider {
         case "item/fileChange/requestApproval": {
           if (requestId !== undefined) {
             yield* this.handleFileChangeApproval(p, requestId, params);
+          }
+          break;
+        }
+        case "item/tool/requestUserInput": {
+          if (requestId !== undefined) {
+            yield* this.handleRequestUserInput(p, requestId, params);
           }
           break;
         }
@@ -1075,13 +1258,15 @@ export class CodexProvider implements AgentProvider {
         case "item/reasoning/summaryPartAdded":
           break;
         case "turn/plan/updated": {
-          const planText = this.extractPlanText(p);
+          const planUpdate = this.extractPlanUpdate(p);
+          const planText =
+            this.formatPlanMarkdown(planUpdate) || planUpdate.text || "";
           if (!planText) break;
 
           // Prefer delta-style updates when possible to avoid duplicate rendering.
           if (!latestPlanSnapshot) {
             latestPlanSnapshot = planText;
-            yield { type: "thinking", content: planText, isStreaming: true };
+            yield { type: "plan_update", content: planText, isStreaming: true };
             break;
           }
 
@@ -1089,7 +1274,7 @@ export class CodexProvider implements AgentProvider {
             const delta = planText.slice(latestPlanSnapshot.length);
             latestPlanSnapshot = planText;
             if (delta) {
-              yield { type: "thinking", content: delta, isStreaming: true };
+              yield { type: "plan_update", content: delta, isStreaming: true };
             }
             break;
           }
@@ -1097,7 +1282,7 @@ export class CodexProvider implements AgentProvider {
           // Non-monotonic update: emit final snapshot to keep UI in sync.
           latestPlanSnapshot = planText;
           yield {
-            type: "thinking",
+            type: "plan_update",
             content: `\n${planText}`,
             isStreaming: false,
           };
@@ -1167,10 +1352,10 @@ export class CodexProvider implements AgentProvider {
         // Final plan item is authoritative; if we streamed deltas, just finalize.
         const text = item.text ?? "";
         if (streamingPlan) {
-          yield { type: "thinking", content: "", isStreaming: false };
+          yield { type: "plan_update", content: "", isStreaming: false };
         } else if (text) {
           // Fallback when no plan deltas were emitted.
-          yield { type: "thinking", content: text, isStreaming: false };
+          yield { type: "plan_update", content: text, isStreaming: false };
         }
         break;
       }
@@ -1453,6 +1638,95 @@ export class CodexProvider implements AgentProvider {
       }
     } catch {
       this.sendResponse(requestId, { decision: "decline" });
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async *handleRequestUserInput(
+    p: any,
+    requestId: number,
+    params: SendMessageParams,
+  ): AsyncGenerator<AgentMessage> {
+    const normalizedInput = this.normalizeRequestUserInputPayload(p);
+
+    const rawQuestions = Array.isArray(p?.questions) ? p.questions : [];
+    const questionMappings = rawQuestions
+      .map((q: any, index: number) => {
+        const id =
+          typeof q?.id === "string" && q.id.trim().length > 0
+            ? q.id.trim()
+            : `q_${index + 1}`;
+        const text =
+          typeof q?.question === "string"
+            ? q.question
+            : typeof q?.prompt === "string"
+              ? q.prompt
+              : undefined;
+        const multiSelect = Boolean(q?.multiSelect);
+        return { id, text, multiSelect };
+      })
+      .filter((q: { id: string; text?: string; multiSelect: boolean }) =>
+        Boolean(q.id),
+      );
+
+    const fallbackIdsByQuestionText = new Map<string, string>();
+    for (const q of questionMappings) {
+      if (q.text) fallbackIdsByQuestionText.set(q.text, q.id);
+    }
+
+    try {
+      const result = await params.permissionHandler(
+        "AskUserQuestion",
+        normalizedInput,
+      );
+      if (!result.approved) {
+        this.sendResponse(requestId, { answers: {} });
+        return;
+      }
+
+      const responsePayload =
+        (result.modifiedInput as
+          | {
+              answers?: Record<string, string>;
+            }
+          | undefined) ?? {};
+      const rawAnswers = responsePayload.answers ?? {};
+
+      const answers: Record<string, { answers: string[] }> = {};
+      for (const [key, value] of Object.entries(rawAnswers)) {
+        const mappedId = fallbackIdsByQuestionText.get(key) ?? key;
+        if (!mappedId) continue;
+
+        const mapping =
+          questionMappings.find(
+            (q: { id: string; text?: string; multiSelect: boolean }) =>
+              q.id === mappedId,
+          ) ??
+          questionMappings.find(
+            (q: { id: string; text?: string; multiSelect: boolean }) =>
+              q.text === key,
+          );
+
+        const normalized =
+          typeof value === "string"
+            ? mapping?.multiSelect
+              ? value
+                  .split(",")
+                  .map((v) => v.trim())
+                  .filter(Boolean)
+              : value.trim()
+                ? [value.trim()]
+                : []
+            : Array.isArray((value as { answers?: unknown[] })?.answers)
+              ? (value as { answers: unknown[] }).answers
+                  .map((v) => String(v ?? "").trim())
+                  .filter(Boolean)
+              : [];
+        answers[mappedId] = { answers: normalized };
+      }
+      this.sendResponse(requestId, { answers });
+    } catch {
+      this.sendResponse(requestId, { answers: {} });
     }
   }
 

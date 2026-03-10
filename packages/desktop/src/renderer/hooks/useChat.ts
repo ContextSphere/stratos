@@ -378,6 +378,12 @@ export function useChat(
           break;
         }
 
+        case "plan_update": {
+          // Plan updates are rendered via the dedicated plan review flow
+          // and artifact viewer, not as raw assistant chat text.
+          break;
+        }
+
         case "tool_use": {
           // Skip interactive tools — they are handled via dedicated IPC channels
           const INTERACTIVE_TOOLS = new Set([
@@ -801,24 +807,27 @@ export function useChat(
       const data = rawData as PlanReviewRequest;
       if (!threadId) return;
       const state = streamingThreadsRef.current.get(threadId);
-      if (!state) return;
 
       // Close current text bubble, create a separate plan review message
-      state.assistantId = null;
       const id = nextMessageId();
-      const next = [
-        ...state.messages,
-        {
-          id,
-          role: "assistant" as const,
-          content: "",
-          timestamp: Date.now(),
-          planReviewData: data,
-        },
-      ];
-      state.messages = next;
-      if (activeThreadIdRef.current === threadId) {
+      const planReviewMessage: ChatMessage = {
+        id,
+        role: "assistant" as const,
+        content: "",
+        timestamp: Date.now(),
+        planReviewData: data,
+      };
+      if (state) {
+        state.assistantId = null;
+        const next = [...state.messages, planReviewMessage];
+        state.messages = next;
+        if (activeThreadIdRef.current === threadId) {
+          setMessages(next);
+        }
+      } else if (threadId === activeThreadIdRef.current) {
+        const next = [...messagesRef.current, planReviewMessage];
         setMessages(next);
+        saveMessages(threadId, next);
       }
 
       // Set interactive mode for plan review (only for active thread)

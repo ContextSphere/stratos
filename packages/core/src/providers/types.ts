@@ -57,6 +57,12 @@ export type AgentMessage =
   | { type: "text"; content: string; isStreaming: boolean }
   | { type: "thinking"; content: string; isStreaming: boolean }
   | {
+      type: "plan_update";
+      content: string;
+      isStreaming: boolean;
+      title?: string;
+    }
+  | {
       type: "tool_use";
       toolName: string;
       input: Record<string, unknown>;

@@ -22,15 +22,17 @@ describe("resolveToolBehavior", () => {
       }
     });
 
-    it("always triggers plan_review for ExitPlanMode", () => {
-      for (const mode of [
-        "plan",
-        "default",
-        "acceptEdits",
-        "bypassPermissions",
-      ] as const) {
-        expect(resolveToolBehavior(mode, "ExitPlanMode")).toBe("plan_review");
-      }
+    it("triggers plan_review for ExitPlanMode only in plan mode", () => {
+      expect(resolveToolBehavior("plan", "ExitPlanMode")).toBe("plan_review");
+      expect(resolveToolBehavior("default", "ExitPlanMode")).toBe(
+        "always_approve",
+      );
+      expect(resolveToolBehavior("acceptEdits", "ExitPlanMode")).toBe(
+        "always_approve",
+      );
+      expect(resolveToolBehavior("bypassPermissions", "ExitPlanMode")).toBe(
+        "always_approve",
+      );
     });
 
     it("always triggers ask_user for AskUserQuestion", () => {
