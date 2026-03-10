@@ -2,11 +2,11 @@
 
 ## Overview
 
-When Stratos uses the Codex provider in **plan mode**, the app-server behaves differently from what the original code expected. This document describes the actual app-server behavior, the issues that caused plans to not render, and the solution.
+When Stratos uses the Codex provider in **plan mode**, the `collaborationMode` parameter must be sent in `turn/start` for the server to enter plan mode. This document describes the empirically verified app-server behavior and the model resolution fix.
 
 ## App-Server Behavior (Empirically Verified)
 
-Tested via `scripts/test-codex-plan.mjs` against Codex app-server v0.111.0.
+Tested against Codex app-server v0.111.0.
 
 ### Protocol Requirements
 
@@ -24,37 +24,35 @@ turn/start (with collaborationMode)
   → turn/started
   → item/started (userMessage)
   → item/completed (userMessage)
-  → item/agentMessage/delta (text streaming — plan content)
+  → item/agentMessage/delta (text streaming)
   → item/agentMessage/delta ...
   → item/completed (agentMessage)
-  → item/started (commandExecution)     ← server may execute commands
+  → item/started (commandExecution)     ← server may execute read-only commands
   → item/completed (commandExecution)
-  → item/agentMessage/delta ...         ← more plan text
+  → item/agentMessage/delta ...         ← more text
   → item/completed (agentMessage)
-  → item/tool/requestUserInput          ← plan approval point (server request with id)
-  ← (client responds with answers)
+  → item/tool/requestUserInput          ← server asks user a clarifying question
+  ← (client responds with user's answers)
   → turn/completed
 ```
 
 Key observations:
 
-1. **No plan-specific notifications**: `item/plan/delta` and `turn/plan/updated` are never sent. All plan content comes as `item/agentMessage/delta`.
-2. **Multiple agentMessage items**: The server sends several agentMessage items per turn (one per "thought"). Each `item/started(agentMessage)` resets the current streaming context.
-3. **`requestUserInput` is the approval gate**: The server pauses the turn and sends a JSON-RPC request (has `id` field) asking for plan approval. `turn/completed` only fires after the client responds.
-4. **Commands still execute**: Even in plan mode, the server may run read-only commands (ls, grep, etc.) to gather context before producing the plan.
+1. **No plan-specific notifications**: `item/plan/delta` and `turn/plan/updated` are never sent. All content comes as `item/agentMessage/delta`.
+2. **Multiple agentMessage items**: The server sends several agentMessage items per turn (one per "thought"). Each `item/started(agentMessage)` resets the streaming context.
+3. **`requestUserInput` is NOT a plan approval gate**: It is a genuine user question (e.g., "which backend do you want?"). These must be forwarded to the user, not auto-approved.
+4. **Commands still execute**: Even in plan mode, the server may run read-only commands to gather context.
 
 ### Without `collaborationMode`
 
 If `collaborationMode` is omitted from `turn/start`:
 
 - `task_started` reports `collaboration_mode_kind: "default"`
-- No `requestUserInput` is sent
-- Turn completes normally
-- Text content is identical (plan-like) but the server treats it as a regular turn
+- The server runs in default mode — may execute write commands, behaves like a normal turn
+- No `requestUserInput` for plan approval
+- Text content may look plan-like but the server treats it as a regular turn
 
-## Root Causes
-
-### Issue 1: `collaborationMode` not sent (no model)
+## Problem: `collaborationMode` not sent (no model)
 
 ```typescript
 // Old code
@@ -64,11 +62,14 @@ if (modelForPlanMode) {  // ← guard prevented sending when model was undefined
 }
 ```
 
-`thread.model` is often `undefined` because the model picker selection doesn't always persist to the thread object. Without `collaborationMode`, the server runs in default mode.
+`thread.model` is often `undefined` because the model picker selection doesn't always persist to the thread object (separate bug). Without a model, the guard prevented `collaborationMode` from being sent, so the server ran in default mode instead of plan mode.
 
-**Fix**: Added `cachedModels?.[0]?.value` to the fallback chain, and `await getAvailableModels()` if cache is empty:
+### Fix: Model fallback chain
+
+Added `cachedModels?.[0]?.value` to the fallback chain, and `await getAvailableModels()` if cache is empty:
 
 ```typescript
+// Ensure we have a model for plan mode — fetch from server if needed.
 if (!this.cachedModels) {
   try {
     await this.getAvailableModels();
@@ -81,92 +82,16 @@ const modelForPlanMode =
   this.cachedModels?.[0]?.value;
 ```
 
-### Issue 2: `streamingText` reset per item
+This ensures `collaborationMode` is sent whenever possible, so the server correctly enters plan mode.
 
-```typescript
-case "item/started":
-  if (itemType === "agentMessage") streamingText = "";  // ← reset!
-case "item/completed":
-  if (item?.type === "agentMessage") streamingText = "";  // ← reset!
-```
+## Open Questions
 
-The server sends multiple `agentMessage` items per turn. By the time `requestUserInput` arrived, the last `agentMessage` was already completed and `streamingText` was empty.
-
-**Fix**: Added `allTurnText` — a separate accumulator that is never reset:
-
-```typescript
-let allTurnText = ""; // Accumulates ALL agentMessage text across the turn
-
-case "item/agentMessage/delta":
-  streamingText += delta;
-  allTurnText += delta;  // ← never reset
-```
-
-### Issue 3: `requestUserInput` not converted to plan review
-
-The existing `handleRequestUserInput` showed raw server questions to the user via the permission system, which is wrong for plan mode — the plan content should trigger Stratos's own plan review UI.
-
-**Fix**: In plan mode, intercept `requestUserInput`, emit `plan_update` with `allTurnText`, and auto-approve the server request:
-
-```typescript
-case "item/tool/requestUserInput":
-  if (params.mode === "plan" && allTurnText && !streamingPlan) {
-    yield { type: "plan_update", content: allTurnText, isStreaming: false };
-    // Auto-approve — Stratos's plan review handles user approval
-    this.sendResponse(requestId, { answers: { ... } });
-  } else {
-    yield* this.handleRequestUserInput(p, requestId, params);
-  }
-```
-
-## Data Flow
-
-```
-App-Server                    Codex Provider                Agent Manager              Renderer
-    │                              │                             │                        │
-    │ item/agentMessage/delta      │                             │                        │
-    ├─────────────────────────────►│ yield {type:"text"}         │                        │
-    │                              ├────────────────────────────►│ STREAM_MESSAGE          │
-    │                              │                             ├───────────────────────►│
-    │                              │ allTurnText += delta        │                        │ (shows text
-    │                              │                             │                        │  in chat)
-    │ ... (more deltas, commands)  │                             │                        │
-    │                              │                             │                        │
-    │ requestUserInput (id:0)      │                             │                        │
-    ├─────────────────────────────►│ yield {type:"plan_update"}  │                        │
-    │                              ├────────────────────────────►│ sawPlanUpdate = true    │
-    │                              │                             │ latestPlanContent += .. │
-    │                              │ sendResponse(0, answers)    │                        │
-    │◄─────────────────────────────┤                             │                        │
-    │                              │                             │                        │
-    │ turn/completed               │                             │                        │
-    ├─────────────────────────────►│ (generator returns)         │                        │
-    │                              │                             │ requestPlanReview()     │
-    │                              │                             ├───────────────────────►│
-    │                              │                             │                        │ (shows plan
-    │                              │                             │                        │  review UI)
-```
-
-## Fallback Path
-
-When `collaborationMode` can't be sent (no model available at all), the server runs in default mode. The turn completes normally without `requestUserInput`. The fallback at the end of `processTurnNotifications` catches this:
-
-```typescript
-// After while loop exits (turn/completed)
-if (params.mode === "plan" && allTurnText && !streamingPlan) {
-  yield { type: "plan_update", content: allTurnText, isStreaming: false };
-}
-```
-
-## Testing
-
-- **Diagnostic script**: `node scripts/test-codex-plan.mjs [prompt]` spawns the app-server and logs all notifications for a plan turn.
-- **Manual**: Codex + Plan mode in dev app, verify plan text renders inline and "Plan is ready" review dialog appears.
-- **Unit tests**: `pnpm test` — all existing tests pass.
+- **Plan content identification**: The app-server sends plan content as regular `agentMessage` deltas, identical to non-plan text. How should Stratos distinguish plan content from regular agent conversation to trigger the plan review UI? The Codex app presumably has custom logic for this.
+- **`requestUserInput` role in plan mode**: The server uses `requestUserInput` for genuine clarifying questions during planning. Stratos should display these to the user normally (which it already does via `handleRequestUserInput`).
+- **Plan review trigger**: Currently Stratos only triggers plan review when it receives `plan_update` messages. Since the app-server never sends plan-specific notifications, we need a different mechanism to detect when the plan is complete and show the review UI.
 
 ## Files Modified
 
-| File                                            | Change                                                                                     |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `packages/core/src/providers/codex.provider.ts` | Model fallback, allTurnText accumulator, requestUserInput interception, post-turn fallback |
-| `scripts/test-codex-plan.mjs`                   | New diagnostic script                                                                      |
+| File                                            | Change                                                    |
+| ----------------------------------------------- | --------------------------------------------------------- |
+| `packages/core/src/providers/codex.provider.ts` | Model fallback chain for `collaborationMode` in plan mode |

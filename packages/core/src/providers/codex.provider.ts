@@ -971,7 +971,6 @@ export class CodexProvider implements AgentProvider {
     let streamingReasoning = "";
     let streamingPlan = "";
     let latestPlanSnapshot = "";
-    let allTurnText = ""; // Accumulates ALL agentMessage text across the turn (not reset per item)
 
     while (!turnComplete) {
       const notif = await this.waitForNotification();
@@ -996,7 +995,6 @@ export class CodexProvider implements AgentProvider {
           const delta = p.delta ?? "";
           if (delta) {
             streamingText += delta;
-            allTurnText += delta;
             yield { type: "text", content: delta, isStreaming: true };
           }
           break;
@@ -1155,32 +1153,7 @@ export class CodexProvider implements AgentProvider {
         }
         case "item/tool/requestUserInput": {
           if (requestId !== undefined) {
-            // In plan mode, the app-server sends plan content as agentMessage
-            // deltas, then pauses with requestUserInput for plan approval.
-            // Emit accumulated text as plan_update so Stratos's plan review
-            // mechanism handles approval instead.
-            if (params.mode === "plan" && allTurnText && !streamingPlan) {
-              yield {
-                type: "plan_update",
-                content: allTurnText,
-                isStreaming: false,
-              };
-              // Auto-approve — Stratos's plan review will handle user approval
-              const rawQuestions = Array.isArray(p?.questions)
-                ? p.questions
-                : [];
-              const answers: Record<string, { answers: string[] }> = {};
-              for (const q of rawQuestions) {
-                const id =
-                  typeof q?.id === "string" && q.id.trim().length > 0
-                    ? q.id.trim()
-                    : `q_0`;
-                answers[id] = { answers: ["yes"] };
-              }
-              this.sendResponse(requestId, { answers });
-            } else {
-              yield* this.handleRequestUserInput(p, requestId, params);
-            }
+            yield* this.handleRequestUserInput(p, requestId, params);
           }
           break;
         }
@@ -1338,15 +1311,6 @@ export class CodexProvider implements AgentProvider {
           // Ignore other notifications (codex/event/*, mcp/*, etc.)
           break;
       }
-    }
-
-    // Fallback: if plan mode produced text but no plan items, treat text as plan
-    if (params.mode === "plan" && allTurnText && !streamingPlan) {
-      yield {
-        type: "plan_update",
-        content: allTurnText,
-        isStreaming: false,
-      };
     }
   }
 
