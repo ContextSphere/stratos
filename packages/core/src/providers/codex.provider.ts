@@ -186,18 +186,17 @@ function mapThinkingEffort(effort?: string): string | undefined {
 /**
  * Map Stratos mode to Codex approval policy and sandbox mode.
  *
- * Claude Code modes → Codex equivalents:
+ * Stratos Codex modes → Codex equivalents:
  *
  * plan              → read-only sandbox, never ask (sandbox enforces read-only)
- * default           → workspace-write, untrusted (ask approval for everything)
- * acceptEdits       → workspace-write, on-request (auto-accept file edits, prompt for commands)
- * bypassPermissions → danger-full-access, never (auto-approve everything)
+ * default           → workspace-write, on-request (Codex "Default permissions")
+ * fullAccess        → danger-full-access, never (Codex "Full access")
  *
  * Codex approval policy semantics:
- *   untrusted  — always ask for approval (most restrictive, matches Claude "default")
- *   on-request — ask when the model explicitly requests it (matches Claude "acceptEdits")
+ *   untrusted  — always ask for approval (more restrictive than Codex default)
+ *   on-request — ask when the model explicitly requests it (matches Codex default)
  *   on-failure — ask only when something fails
- *   never      — never ask, auto-approve everything (matches Claude "bypassPermissions")
+ *   never      — never ask, auto-approve everything (matches Codex full access)
  */
 function mapModeToPolicy(
   mode?: string,
@@ -211,7 +210,7 @@ function mapModeToPolicy(
       return { approvalPolicy: "never", sandbox: "read-only" };
     case "default":
       return {
-        approvalPolicy: "untrusted",
+        approvalPolicy: "on-request",
         sandbox: configSandbox ?? "workspace-write",
       };
     case "acceptEdits":
@@ -219,11 +218,12 @@ function mapModeToPolicy(
         approvalPolicy: "on-request",
         sandbox: configSandbox ?? "workspace-write",
       };
+    case "fullAccess":
     case "bypassPermissions":
       return { approvalPolicy: "never", sandbox: "danger-full-access" };
     default:
       return {
-        approvalPolicy: "untrusted",
+        approvalPolicy: "on-request",
         sandbox: configSandbox ?? "workspace-write",
       };
   }

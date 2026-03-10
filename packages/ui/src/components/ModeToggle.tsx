@@ -1,6 +1,6 @@
 import React from "react";
-import type { AgentMode } from "../utils/modes";
-import { AGENT_MODES, MODE_CONFIGS } from "../utils/modes";
+import type { AgentMode, ProviderType } from "../utils/modes";
+import { getAgentModes, getModeConfig } from "../utils/modes";
 
 // Static Tailwind class map — no dynamic class construction
 const COLOR_MAP: Record<string, { active: string; dot: string }> = {
@@ -11,17 +11,20 @@ const COLOR_MAP: Record<string, { active: string; dot: string }> = {
 };
 
 interface ModeToggleProps {
+  provider: ProviderType;
   mode: AgentMode | undefined;
   onModeChange: (mode: AgentMode) => void;
   disabled?: boolean;
 }
 
 export default function ModeToggle({
+  provider,
   mode,
   onModeChange,
   disabled,
 }: ModeToggleProps): React.ReactElement {
   const current: AgentMode = mode ?? "default";
+  const modes = getAgentModes(provider);
 
   return (
     <div className="flex items-center gap-2">
@@ -35,8 +38,8 @@ export default function ModeToggle({
         </span>
       </div>
       <div className="flex items-center rounded-full bg-[#1a1a1a] border border-[#2a2a2a] p-0.5">
-        {AGENT_MODES.map((m) => {
-          const config = MODE_CONFIGS[m];
+        {modes.map((m) => {
+          const config = getModeConfig(provider, m);
           const colors = COLOR_MAP[config.color];
           const isActive = current === m;
           return (

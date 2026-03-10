@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { normalizeMode, AGENT_MODES, type AgentMode } from "./utils/modes";
+import { getAgentModes, normalizeMode, type AgentMode } from "./utils/modes";
 import type { ImageAttachment } from "@stratosapp/ui";
 import {
   Sidebar,
@@ -344,12 +344,16 @@ export default function App(): React.ReactElement {
     async (provider: "claude-code" | "codex") => {
       if (!activeThreadId) {
         setPendingProvider(provider);
+        setPendingMode((prev) => (prev ? normalizeMode(prev, provider) : prev));
         return;
       }
-      await window.api.threadsUpdate(activeThreadId, { provider });
+      await window.api.threadsUpdate(activeThreadId, {
+        provider,
+        mode: normalizeMode(activeThread?.mode, provider),
+      });
       await refreshThreads();
     },
-    [activeThreadId, refreshThreads],
+    [activeThread?.mode, activeThreadId, refreshThreads],
   );
 
   const handleWorktreeModeChange = useCallback(
@@ -432,12 +436,16 @@ export default function App(): React.ReactElement {
         e.preventDefault();
         e.stopPropagation();
         if (isStreaming) return;
+        const currentProvider = ((activeThread?.provider as
+          | "claude-code"
+          | "codex") ?? pendingProvider) as "claude-code" | "codex";
         const currentMode = activeThread?.mode
-          ? normalizeMode(activeThread.mode)
+          ? normalizeMode(activeThread.mode, currentProvider)
           : (pendingMode ?? "default");
-        const currentIndex = AGENT_MODES.indexOf(currentMode);
-        const nextIndex = (currentIndex + 1) % AGENT_MODES.length;
-        handleModeChange(AGENT_MODES[nextIndex]);
+        const modes = getAgentModes(currentProvider);
+        const currentIndex = modes.indexOf(currentMode);
+        const nextIndex = (currentIndex + 1) % modes.length;
+        handleModeChange(modes[nextIndex]);
       }
     };
     document.addEventListener("keydown", handler, { capture: true });
@@ -653,6 +661,10 @@ export default function App(): React.ReactElement {
 
             {/* Chat messages */}
             <ChatView
+              provider={
+                ((activeThread?.provider as "claude-code" | "codex") ??
+                  pendingProvider) as "claude-code" | "codex"
+              }
               messages={messages}
               isStreaming={isStreaming}
               onLinkClick={handleLinkClick}
@@ -711,9 +723,20 @@ export default function App(): React.ReactElement {
                         0) && <ContextRing sessionStats={sessionStats} />}
                 </div>
                 <ModeToggle
+                  provider={
+                    ((activeThread?.provider as "claude-code" | "codex") ??
+                      pendingProvider) as "claude-code" | "codex"
+                  }
                   mode={
                     activeThread?.mode
-                      ? normalizeMode(activeThread.mode)
+                      ? normalizeMode(
+                          activeThread.mode,
+                          ((activeThread?.provider as
+                            | "claude-code"
+                            | "codex") ?? pendingProvider) as
+                            | "claude-code"
+                            | "codex",
+                        )
                       : pendingMode
                   }
                   onModeChange={handleModeChange}

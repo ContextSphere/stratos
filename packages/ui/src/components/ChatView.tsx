@@ -3,8 +3,10 @@ import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./shared/StatusIndicator";
 import { TaskPanel } from "./TaskPanel";
 import type { ChatMessage, TodoData } from "../types";
+import type { ProviderType } from "../utils/modes";
 
 interface Props {
+  provider?: ProviderType;
   messages: ChatMessage[];
   isStreaming: boolean;
   onLinkClick?: (url: string) => void;
@@ -28,6 +30,7 @@ interface Props {
 const SCROLL_THRESHOLD = 80;
 
 export function ChatView({
+  provider = "claude-code",
   messages,
   isStreaming,
   onLinkClick,
@@ -94,6 +97,7 @@ export function ChatView({
         {messages.map((msg, idx) => (
           <MessageBubble
             key={msg.id}
+            provider={provider}
             message={msg}
             onLinkClick={onLinkClick}
             onSendMessage={onSendMessage}

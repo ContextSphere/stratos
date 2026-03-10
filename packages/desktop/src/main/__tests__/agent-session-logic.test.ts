@@ -15,6 +15,7 @@ describe("resolveToolBehavior", () => {
         "default",
         "acceptEdits",
         "bypassPermissions",
+        "fullAccess",
       ] as const) {
         expect(resolveToolBehavior(mode, "EnterPlanMode")).toBe(
           "always_approve",
@@ -33,6 +34,9 @@ describe("resolveToolBehavior", () => {
       expect(resolveToolBehavior("bypassPermissions", "ExitPlanMode")).toBe(
         "always_approve",
       );
+      expect(resolveToolBehavior("fullAccess", "ExitPlanMode", "codex")).toBe(
+        "always_approve",
+      );
     });
 
     it("always triggers ask_user for AskUserQuestion", () => {
@@ -41,6 +45,7 @@ describe("resolveToolBehavior", () => {
         "default",
         "acceptEdits",
         "bypassPermissions",
+        "fullAccess",
       ] as const) {
         expect(resolveToolBehavior(mode, "AskUserQuestion")).toBe("ask_user");
       }
@@ -100,6 +105,31 @@ describe("resolveToolBehavior", () => {
     it("prompts for all regular tools (SDK handles read-only enforcement)", () => {
       expect(resolveToolBehavior("plan", "Read")).toBe(false);
       expect(resolveToolBehavior("plan", "Bash")).toBe(false);
+    });
+  });
+
+  describe("Codex fullAccess mode", () => {
+    it("auto-approves all regular tools", () => {
+      expect(resolveToolBehavior("fullAccess", "Bash", "codex")).toBe(
+        "always_approve",
+      );
+      expect(resolveToolBehavior("fullAccess", "Write", "codex")).toBe(
+        "always_approve",
+      );
+      expect(
+        resolveToolBehavior(
+          "fullAccess",
+          "mcp__chrome-devtools__click",
+          "codex",
+        ),
+      ).toBe("always_approve");
+    });
+
+    it("does not treat Codex default like acceptEdits", () => {
+      expect(resolveToolBehavior("default", "Bash", "codex")).toBe(false);
+      expect(
+        resolveToolBehavior("default", "mcp__github__list_prs", "codex"),
+      ).toBe(false);
     });
   });
 });

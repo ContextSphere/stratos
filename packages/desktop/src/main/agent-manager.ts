@@ -521,11 +521,14 @@ export class AgentManager {
       options,
     ) => {
       const currentThread = await this.storage.getThread(threadId);
-      const currentMode = normalizeMode(currentThread?.mode);
+      const currentProvider =
+        currentThread?.provider ?? thread.provider ?? "claude-code";
+      const currentMode = normalizeMode(currentThread?.mode, currentProvider);
 
       const behavior = resolveToolBehavior(
         currentMode,
         effectiveToolName(toolName, input),
+        currentProvider,
       );
 
       if (behavior === "always_approve") {
@@ -584,7 +587,7 @@ export class AgentManager {
       });
     };
 
-    const mode = normalizeMode(thread.mode);
+    const mode = normalizeMode(thread.mode, thread.provider);
     let latestPlanContent = "";
     let sawPlanUpdate = false;
     const params: SendMessageParams = {

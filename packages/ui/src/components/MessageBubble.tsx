@@ -10,8 +10,8 @@ import { PlanReviewBlock } from "./PlanReviewBlock";
 import { TodoList } from "./TodoList";
 import { WorktreeProgress } from "./WorktreeProgress";
 import type { ChatMessage } from "../types";
-import type { AgentMode } from "../utils/modes";
-import { MODE_CONFIGS } from "../utils/modes";
+import type { AgentMode, ProviderType } from "../utils/modes";
+import { getModeConfig } from "../utils/modes";
 
 // Static Tailwind class map for mode-change pills
 const PILL_COLOR_MAP: Record<
@@ -218,6 +218,7 @@ function MarkdownContent({
 }
 
 interface Props {
+  provider?: ProviderType;
   message: ChatMessage;
   onLinkClick?: (url: string) => void;
   onSendMessage?: (message: string) => void;
@@ -272,6 +273,7 @@ function highlightMentions(content: string): string {
 }
 
 export function MessageBubble({
+  provider = "claude-code",
   message,
   onLinkClick,
   onSendMessage,
@@ -293,7 +295,7 @@ export function MessageBubble({
   // Mode change indicator — renders as a centered pill, not a message bubble
   if (message.modeChange) {
     const modeKey = message.modeChange as AgentMode;
-    const config = MODE_CONFIGS[modeKey] ?? MODE_CONFIGS.default;
+    const config = getModeConfig(provider, modeKey);
     const colors = PILL_COLOR_MAP[config.color] ?? PILL_COLOR_MAP.blue;
     return (
       <div className="flex justify-center my-2">

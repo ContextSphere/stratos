@@ -4,18 +4,39 @@ export type AgentMode =
   | "plan"
   | "default"
   | "acceptEdits"
-  | "bypassPermissions";
+  | "bypassPermissions"
+  | "fullAccess";
 
-export function normalizeMode(mode: string | undefined): AgentMode {
+export type ProviderType = "claude-code" | "codex";
+
+export function normalizeMode(
+  mode: string | undefined,
+  provider?: ProviderType,
+): AgentMode {
   if (!mode || mode === "execute") return "default";
-  if (["plan", "default", "acceptEdits", "bypassPermissions"].includes(mode))
+  if (provider === "codex") {
+    if (mode === "acceptEdits") return "default";
+    if (mode === "bypassPermissions") return "fullAccess";
+  }
+  if (
+    [
+      "plan",
+      "default",
+      "acceptEdits",
+      "bypassPermissions",
+      "fullAccess",
+    ].includes(mode)
+  ) {
     return mode as AgentMode;
+  }
   return "default";
 }
 
-export const AGENT_MODES: AgentMode[] = [
-  "plan",
-  "default",
-  "acceptEdits",
-  "bypassPermissions",
-];
+const PROVIDER_AGENT_MODES: Record<ProviderType, AgentMode[]> = {
+  "claude-code": ["plan", "default", "acceptEdits", "bypassPermissions"],
+  codex: ["plan", "default", "fullAccess"],
+};
+
+export function getAgentModes(provider: ProviderType): AgentMode[] {
+  return PROVIDER_AGENT_MODES[provider];
+}

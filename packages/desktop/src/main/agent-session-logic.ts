@@ -1,4 +1,4 @@
-import type { AgentMode } from "@stratosapp/core";
+import type { AgentMode, ProviderType } from "@stratosapp/core";
 
 /**
  * Interactive tool names that require special handling (not rendered as tool cards).
@@ -56,6 +56,7 @@ export type SpecialToolBehavior = "plan_review" | "ask_user" | "always_approve";
 export function resolveToolBehavior(
   mode: AgentMode,
   toolName: string,
+  provider: ProviderType = "claude-code",
 ): SpecialToolBehavior | false {
   // EnterPlanMode is always silently approved
   if (toolName === "EnterPlanMode") return "always_approve";
@@ -69,11 +70,16 @@ export function resolveToolBehavior(
   // AskUserQuestion always shows the question dialog
   if (toolName === "AskUserQuestion") return "ask_user";
 
+  // Codex full access mirrors the Codex app's "Full access" mode.
+  if (provider === "codex" && mode === "fullAccess") {
+    return "always_approve";
+  }
+
   // In bypass mode, everything else is approved
   if (mode === "bypassPermissions") return "always_approve";
 
   // In acceptEdits mode, approve common file/shell tools and MCP tools
-  if (mode === "acceptEdits") {
+  if (provider !== "codex" && mode === "acceptEdits") {
     if (
       ACCEPT_EDITS_AUTO_APPROVE.has(toolName) ||
       toolName.startsWith("mcp__")

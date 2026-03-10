@@ -153,6 +153,62 @@ describe("CodexProvider", () => {
     );
   });
 
+  it("maps Codex default mode to on-request workspace-write", async () => {
+    const provider = new CodexProvider() as any;
+    provider.threadId = "thr_existing";
+    provider.ensureAppServer = vi.fn().mockResolvedValue(undefined);
+    provider.sendRpc = vi.fn().mockResolvedValue({ turn: { id: "turn_1" } });
+    provider.waitForNotification = vi.fn().mockResolvedValueOnce({
+      method: "turn/completed",
+      params: { turn: { status: "completed" } },
+    });
+
+    for await (const _msg of provider.sendMessage({
+      prompt: "hello",
+      mode: "default",
+      permissionHandler: async () => ({ approved: true }),
+    })) {
+      // no-op
+    }
+
+    expect(provider.sendRpc).toHaveBeenCalledWith(
+      "turn/start",
+      expect.objectContaining({
+        threadId: "thr_existing",
+        approvalPolicy: "on-request",
+        sandbox: "workspace-write",
+      }),
+    );
+  });
+
+  it("maps Codex fullAccess mode to never danger-full-access", async () => {
+    const provider = new CodexProvider() as any;
+    provider.threadId = "thr_existing";
+    provider.ensureAppServer = vi.fn().mockResolvedValue(undefined);
+    provider.sendRpc = vi.fn().mockResolvedValue({ turn: { id: "turn_1" } });
+    provider.waitForNotification = vi.fn().mockResolvedValueOnce({
+      method: "turn/completed",
+      params: { turn: { status: "completed" } },
+    });
+
+    for await (const _msg of provider.sendMessage({
+      prompt: "hello",
+      mode: "fullAccess",
+      permissionHandler: async () => ({ approved: true }),
+    })) {
+      // no-op
+    }
+
+    expect(provider.sendRpc).toHaveBeenCalledWith(
+      "turn/start",
+      expect.objectContaining({
+        threadId: "thr_existing",
+        approvalPolicy: "never",
+        sandbox: "danger-full-access",
+      }),
+    );
+  });
+
   it("includes file change metadata in Edit permission payload", async () => {
     const provider = new CodexProvider() as any;
     const permissionHandler = vi.fn().mockResolvedValue({ approved: true });

@@ -2,13 +2,30 @@ export type AgentMode =
   | "plan"
   | "default"
   | "acceptEdits"
-  | "bypassPermissions";
+  | "bypassPermissions"
+  | "fullAccess";
 
-/** Normalize legacy 'execute' values from stored threads */
-export function normalizeMode(mode: string | undefined): AgentMode {
+/** Normalize legacy and provider-specific stored mode values */
+export function normalizeMode(
+  mode: string | undefined,
+  provider?: ProviderType,
+): AgentMode {
   if (!mode || mode === "execute") return "default";
-  if (["plan", "default", "acceptEdits", "bypassPermissions"].includes(mode))
+  if (provider === "codex") {
+    if (mode === "acceptEdits") return "default";
+    if (mode === "bypassPermissions") return "fullAccess";
+  }
+  if (
+    [
+      "plan",
+      "default",
+      "acceptEdits",
+      "bypassPermissions",
+      "fullAccess",
+    ].includes(mode)
+  ) {
     return mode as AgentMode;
+  }
   return "default";
 }
 
@@ -35,7 +52,7 @@ export interface ThreadWorktree {
 }
 
 /** Supported provider identifiers */
-export type ProviderType = 'claude-code' | 'codex'
+export type ProviderType = "claude-code" | "codex";
 
 export interface Thread {
   id: string;

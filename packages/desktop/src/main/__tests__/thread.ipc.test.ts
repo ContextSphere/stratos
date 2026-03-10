@@ -28,7 +28,9 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("@stratosapp/core", () => ({
-  FileStorageAdapter: vi.fn(() => mockStorage),
+  FileStorageAdapter: vi.fn(function MockFileStorageAdapter() {
+    return mockStorage;
+  }),
   readTraceEntries: vi.fn(),
   clearTraceFile: vi.fn(),
 }));
@@ -37,7 +39,7 @@ describe("thread IPC session reset behavior", () => {
   let registerThreadIpc: typeof import("../threads/thread.ipc").registerThreadIpc;
   let setThreadSessionClearer: typeof import("../threads/thread.ipc").setThreadSessionClearer;
   let IPC_CHANNELS: typeof import("../../common/ipc-channels").IPC_CHANNELS;
-  let clearSession: ReturnType<typeof vi.fn>;
+  let clearSession: (threadId: string) => void;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -50,7 +52,7 @@ describe("thread IPC session reset behavior", () => {
     setThreadSessionClearer = threadIpc.setThreadSessionClearer;
     IPC_CHANNELS = ipcChannels.IPC_CHANNELS;
 
-    clearSession = vi.fn();
+    clearSession = vi.fn<(threadId: string) => void>();
     setThreadSessionClearer(clearSession);
     registerThreadIpc();
   });

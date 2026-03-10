@@ -894,8 +894,8 @@ export function useChat(
     );
 
     api.onMcpStatusChanged(
-      ({ servers }: { threadId: string; servers: McpServerInfo[] }) => {
-        setMcpServers(servers.length > 0 ? servers : null);
+      ({ servers }: { threadId: string; servers: unknown[] }) => {
+        setMcpServers(servers.length > 0 ? (servers as McpServerInfo[]) : null);
       },
     );
 

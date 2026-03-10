@@ -172,16 +172,21 @@ yield { type: 'text', content: '', isStreaming: false }
 
 ## Mode Mapping
 
-Stratos has four permission modes that map to Codex approval policies and sandbox modes:
+This section was originally written when Stratos mapped Codex onto Claude-style
+permission modes. That is no longer the target model.
 
-| Stratos Mode          | Claude Code Behavior                     | Codex `approvalPolicy` | Codex `sandbox`      |
-| --------------------- | ---------------------------------------- | ---------------------- | -------------------- |
-| **plan**              | Read-only, no file modifications         | `never`                | `read-only`          |
-| **default**           | Prompts for every tool use               | `untrusted`            | `workspace-write`    |
-| **acceptEdits**       | Auto-accepts edits, prompts for commands | `on-request`           | `workspace-write`    |
-| **bypassPermissions** | Skips all permission prompts             | `never`                | `danger-full-access` |
+Current Codex should be treated as having three user-facing modes:
 
-### Codex Approval Policy Semantics
+- `Plan`
+- `Default permissions`
+- `Full access`
+
+For the validated current mapping and implementation plan, see:
+
+- [Codex permissions research notes](/Users/ajay/stratos/docs/codex-permissions.md)
+- [Codex permissions implementation spec](/Users/ajay/stratos/docs/codex-permissions-implementation-spec.md)
+
+### Low-Level Approval Policy Semantics
 
 | Policy              | Behavior                                                                                   |
 | ------------------- | ------------------------------------------------------------------------------------------ |
