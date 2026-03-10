@@ -118,4 +118,187 @@ describe("CodexProvider", () => {
       ]),
     );
   });
+
+  it("includes file change metadata in Edit permission payload", async () => {
+    const provider = new CodexProvider() as any;
+    const permissionHandler = vi.fn().mockResolvedValue({ approved: true });
+    provider.sendResponse = vi.fn();
+    provider.waitForNotification = vi
+      .fn()
+      .mockResolvedValueOnce({
+        method: "item/started",
+        params: {
+          item: {
+            type: "fileChange",
+            id: "fc_1",
+            changes: [
+              {
+                path: "/repo/a.ts",
+                kind: "update",
+                diff: "@@ -1 +1 @@",
+              },
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        method: "item/fileChange/requestApproval",
+        id: 42,
+        params: {
+          itemId: "fc_1",
+          reason: null,
+          grantRoot: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        method: "turn/completed",
+        params: {
+          turn: { status: "completed" },
+        },
+      });
+
+    const out: unknown[] = [];
+    for await (const msg of provider.processTurnNotifications({
+      prompt: "test",
+      permissionHandler,
+    })) {
+      out.push(msg);
+    }
+
+    expect(out).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "permission_request",
+          toolName: "Edit",
+          input: expect.objectContaining({
+            itemId: "fc_1",
+            file_path: "/repo/a.ts",
+            kind: "update",
+            diff: "@@ -1 +1 @@",
+            changes: [
+              {
+                file_path: "/repo/a.ts",
+                kind: "update",
+                diff: "@@ -1 +1 @@",
+              },
+            ],
+          }),
+        }),
+      ]),
+    );
+    expect(permissionHandler).toHaveBeenCalledWith(
+      "Edit",
+      expect.objectContaining({
+        itemId: "fc_1",
+        file_path: "/repo/a.ts",
+        kind: "update",
+      }),
+    );
+    expect(provider.sendResponse).toHaveBeenCalledWith(42, {
+      decision: "accept",
+    });
+  });
+
+  it("keeps itemId in Edit approval payload when reason/grantRoot are null", async () => {
+    const provider = new CodexProvider() as any;
+    const permissionHandler = vi.fn().mockResolvedValue({ approved: true });
+    provider.sendResponse = vi.fn();
+    provider.waitForNotification = vi
+      .fn()
+      .mockResolvedValueOnce({
+        method: "item/fileChange/requestApproval",
+        id: 43,
+        params: {
+          itemId: "fc_2",
+          reason: null,
+          grantRoot: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        method: "turn/completed",
+        params: {
+          turn: { status: "completed" },
+        },
+      });
+
+    const out: unknown[] = [];
+    for await (const msg of provider.processTurnNotifications({
+      prompt: "test",
+      permissionHandler,
+    })) {
+      out.push(msg);
+    }
+
+    expect(out).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "permission_request",
+          toolName: "Edit",
+          input: expect.objectContaining({
+            itemId: "fc_2",
+          }),
+        }),
+      ]),
+    );
+    expect(permissionHandler).toHaveBeenCalledWith(
+      "Edit",
+      expect.objectContaining({
+        itemId: "fc_2",
+      }),
+    );
+    expect(permissionHandler).not.toHaveBeenCalledWith("Edit", {});
+  });
+
+  it("preserves reason and grantRoot in Edit approval payload", async () => {
+    const provider = new CodexProvider() as any;
+    const permissionHandler = vi.fn().mockResolvedValue({ approved: true });
+    provider.sendResponse = vi.fn();
+    provider.waitForNotification = vi
+      .fn()
+      .mockResolvedValueOnce({
+        method: "item/fileChange/requestApproval",
+        id: 44,
+        params: {
+          itemId: "fc_3",
+          reason: "Write access required",
+          grantRoot: "/tmp",
+        },
+      })
+      .mockResolvedValueOnce({
+        method: "turn/completed",
+        params: {
+          turn: { status: "completed" },
+        },
+      });
+
+    const out: unknown[] = [];
+    for await (const msg of provider.processTurnNotifications({
+      prompt: "test",
+      permissionHandler,
+    })) {
+      out.push(msg);
+    }
+
+    expect(out).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "permission_request",
+          toolName: "Edit",
+          input: expect.objectContaining({
+            itemId: "fc_3",
+            reason: "Write access required",
+            grantRoot: "/tmp",
+          }),
+        }),
+      ]),
+    );
+    expect(permissionHandler).toHaveBeenCalledWith(
+      "Edit",
+      expect.objectContaining({
+        itemId: "fc_3",
+        reason: "Write access required",
+        grantRoot: "/tmp",
+      }),
+    );
+  });
 });

@@ -269,6 +269,11 @@ export class CodexProvider implements AgentProvider {
   private commandOutputBuffers = new Map<string, string>();
   /** Track file change output streaming per item */
   private fileChangeOutputBuffers = new Map<string, string>();
+  /** Track file change metadata for approval payload enrichment */
+  private fileChangeMetadataBuffers = new Map<
+    string,
+    Array<{ file_path: string; kind: string; diff?: string }>
+  >();
   /** Track reasoning streaming per item */
   private reasoningBuffers = new Map<
     string,
@@ -281,6 +286,77 @@ export class CodexProvider implements AgentProvider {
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private normalizeFileChangeKind(kind: any): string {
+    if (typeof kind === "string" && kind) return kind;
+    if (kind && typeof kind.type === "string" && kind.type) return kind.type;
+    return "update";
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private captureFileChangeMetadata(item: any): void {
+    const itemId = typeof item?.id === "string" ? item.id : "";
+    const rawChanges = Array.isArray(item?.changes) ? item.changes : [];
+    if (!itemId || rawChanges.length === 0) return;
+
+    const changes = rawChanges.map(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (change: any) => {
+        const out: { file_path: string; kind: string; diff?: string } = {
+          file_path:
+            typeof change?.path === "string" && change.path
+              ? change.path
+              : "Unknown file",
+          kind: this.normalizeFileChangeKind(change?.kind),
+        };
+        if (typeof change?.diff === "string" && change.diff) {
+          out.diff = change.diff;
+        }
+        return out;
+      },
+    );
+
+    this.fileChangeMetadataBuffers.set(itemId, changes);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private buildFileChangeApprovalInput(
+    p: any,
+    requestId: number,
+  ): Record<string, unknown> {
+    const reason = p.reason ?? undefined;
+    const grantRoot = p.grantRoot ?? undefined;
+    const itemId =
+      typeof p.itemId === "string" && p.itemId.length > 0
+        ? p.itemId
+        : undefined;
+    const changes = itemId
+      ? this.fileChangeMetadataBuffers.get(itemId) ?? []
+      : [];
+
+    const input: Record<string, unknown> = {
+      ...(itemId ? { itemId } : {}),
+      ...(changes.length > 0 ? { changes } : {}),
+      ...(reason ? { reason } : {}),
+      ...(grantRoot ? { grantRoot } : {}),
+    };
+
+    if (changes.length === 1) {
+      const change = changes[0];
+      input.file_path = change.file_path;
+      input.kind = change.kind;
+      if (change.diff) {
+        input.diff = change.diff;
+      }
+    }
+
+    if (Object.keys(input).length === 0) {
+      input.requestId = requestId;
+    }
+
+    return input;
   }
 
   /**
@@ -438,6 +514,7 @@ export class CodexProvider implements AgentProvider {
       this.turnId = undefined;
       this.planCollaborationModeId = undefined;
       this.collaborationModesLoaded = false;
+      this.fileChangeMetadataBuffers.clear();
     });
 
     // Ignore stderr (logging noise)
@@ -658,6 +735,7 @@ export class CodexProvider implements AgentProvider {
     this.notificationQueue = [];
     this.commandOutputBuffers.clear();
     this.fileChangeOutputBuffers.clear();
+    this.fileChangeMetadataBuffers.clear();
     this.reasoningBuffers.clear();
 
     // Build turn parameters
@@ -839,6 +917,9 @@ export class CodexProvider implements AgentProvider {
               },
               toolCallId,
             };
+          }
+          if (itemType === "fileChange") {
+            this.captureFileChangeMetadata(item);
           }
           break;
         }
@@ -1160,7 +1241,10 @@ export class CodexProvider implements AgentProvider {
         }
 
         // Clean up buffer
-        if (itemId) this.fileChangeOutputBuffers.delete(itemId);
+        if (itemId) {
+          this.fileChangeOutputBuffers.delete(itemId);
+          this.fileChangeMetadataBuffers.delete(itemId);
+        }
         break;
       }
 
@@ -1347,27 +1431,20 @@ export class CodexProvider implements AgentProvider {
     requestId: number,
     params: SendMessageParams,
   ): AsyncGenerator<AgentMessage> {
-    const reason = p.reason ?? undefined;
-    const grantRoot = p.grantRoot ?? undefined;
+    const input = this.buildFileChangeApprovalInput(p, requestId);
 
     // Emit a permission_request so the UI can show an approval dialog
     const permRequestId = `file_approval_${requestId}`;
     yield {
       type: "permission_request",
       toolName: "Edit",
-      input: {
-        ...(reason ? { reason } : {}),
-        ...(grantRoot ? { grantRoot } : {}),
-      },
+      input,
       requestId: permRequestId,
     };
 
     // Ask the permission handler
     try {
-      const result = await params.permissionHandler("Edit", {
-        ...(reason ? { reason } : {}),
-        ...(grantRoot ? { grantRoot } : {}),
-      });
+      const result = await params.permissionHandler("Edit", input);
 
       if (result.approved) {
         this.sendResponse(requestId, { decision: "accept" });
@@ -1529,6 +1606,7 @@ export class CodexProvider implements AgentProvider {
     this.cachedModels = undefined;
     this.commandOutputBuffers.clear();
     this.fileChangeOutputBuffers.clear();
+    this.fileChangeMetadataBuffers.clear();
     this.reasoningBuffers.clear();
   }
 }
