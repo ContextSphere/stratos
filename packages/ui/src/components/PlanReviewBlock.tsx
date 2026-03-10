@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import type { PlanReviewRequest } from "../types";
+import type { ProviderType } from "../utils/modes";
 
 interface PlanReviewBlockProps {
+  provider?: ProviderType;
   data: PlanReviewRequest;
   onDecision: (
     requestId: string,
@@ -10,7 +12,13 @@ interface PlanReviewBlockProps {
   onViewPlan?: (content: string, title: string) => void;
 }
 
+const BTN_ENABLED =
+  "border-[#2a2a2a] bg-[#1a1a1a] text-gray-400 hover:border-[#3a3a3a] hover:text-gray-300 cursor-pointer";
+const BTN_DISABLED =
+  "border-[#2a2a2a] bg-[#1a1a1a] text-gray-600 opacity-60 cursor-not-allowed";
+
 export function PlanReviewBlock({
+  provider,
   data,
   onDecision,
   onViewPlan,
@@ -23,6 +31,8 @@ export function PlanReviewBlock({
     setSubmitted(true);
     onDecision(data.requestId, { type });
   }
+
+  const isCodex = provider === "codex";
 
   return (
     <div className="my-3 rounded-lg border border-[#2a2a2a] bg-[#111] p-3">
@@ -43,35 +53,42 @@ export function PlanReviewBlock({
       </div>
 
       <div className="space-y-1.5">
-        <button
-          onClick={() => handleChoice("bypass")}
-          disabled={disabled}
-          className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${
-            disabled
-              ? "border-[#2a2a2a] bg-[#1a1a1a] text-gray-600 opacity-60 cursor-not-allowed"
-              : "border-[#2a2a2a] bg-[#1a1a1a] text-gray-400 hover:border-[#3a3a3a] hover:text-gray-300 cursor-pointer"
-          }`}
-        >
-          <span className="text-sm">Yes, bypass permissions</span>
-          <span className="block text-xs text-gray-500 mt-0.5">
-            Auto-approve tool permissions
-          </span>
-        </button>
+        {isCodex ? (
+          <button
+            onClick={() => handleChoice("implement")}
+            disabled={disabled}
+            className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${disabled ? BTN_DISABLED : BTN_ENABLED}`}
+          >
+            <span className="text-sm">Implement plan</span>
+            <span className="block text-xs text-gray-500 mt-0.5">
+              Auto-approve and execute the plan
+            </span>
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={() => handleChoice("bypass")}
+              disabled={disabled}
+              className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${disabled ? BTN_DISABLED : BTN_ENABLED}`}
+            >
+              <span className="text-sm">Yes, bypass permissions</span>
+              <span className="block text-xs text-gray-500 mt-0.5">
+                Auto-approve tool permissions
+              </span>
+            </button>
 
-        <button
-          onClick={() => handleChoice("manual")}
-          disabled={disabled}
-          className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${
-            disabled
-              ? "border-[#2a2a2a] bg-[#1a1a1a] text-gray-600 opacity-60 cursor-not-allowed"
-              : "border-[#2a2a2a] bg-[#1a1a1a] text-gray-400 hover:border-[#3a3a3a] hover:text-gray-300 cursor-pointer"
-          }`}
-        >
-          <span className="text-sm">Yes, manually approve edits</span>
-          <span className="block text-xs text-gray-500 mt-0.5">
-            Require manual approval for each tool
-          </span>
-        </button>
+            <button
+              onClick={() => handleChoice("manual")}
+              disabled={disabled}
+              className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${disabled ? BTN_DISABLED : BTN_ENABLED}`}
+            >
+              <span className="text-sm">Yes, manually approve edits</span>
+              <span className="block text-xs text-gray-500 mt-0.5">
+                Require manual approval for each tool
+              </span>
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

@@ -289,6 +289,21 @@ export class AgentManager {
               modifiedInput: { ...input, allowedPrompts: [] },
             });
             break;
+          case "implement":
+            if (threadId) {
+              try {
+                await this.storage.updateThread(threadId, {
+                  mode: "fullAccess",
+                });
+              } catch {}
+              this.sendToRenderer(
+                IPC_CHANNELS.MODE_CHANGED,
+                { mode: "fullAccess" },
+                threadId,
+              );
+            }
+            resolve({ approved: true });
+            break;
           case "feedback":
           case "deny":
           default:

@@ -1102,8 +1102,14 @@ export function useChat(
       window.api.respondPlanReview(requestId, decision);
       // Clear interactive mode when plan review is decided (via buttons or InputBar)
       setInteractiveMode({ type: "none" });
+      if (decision.type === "implement") {
+        // Small delay to let mode change propagate, then auto-send
+        setTimeout(() => {
+          sendMessage("Implement plan");
+        }, 100);
+      }
     },
-    [],
+    [sendMessage],
   );
 
   const handleInteractiveResponse = useCallback(

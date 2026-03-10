@@ -422,6 +422,7 @@ export function MessageBubble({
             {message.planReviewData && onPlanReviewDecision && (
               <div className="mt-3">
                 <PlanReviewBlock
+                  provider={provider}
                   data={message.planReviewData}
                   onDecision={onPlanReviewDecision}
                   onViewPlan={onViewPlan}
