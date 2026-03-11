@@ -19,6 +19,7 @@ import {
 import type {
   AgentProvider,
   AgentMessage,
+  AgentMode,
   PermissionHandler,
   SendMessageParams,
   ProviderType,
@@ -134,6 +135,8 @@ export class AgentManager {
       }) => void;
     }
   >();
+  /** Tracks effective mode per thread during active streams (reflects plan-review changes). */
+  private threadEffectiveModes = new Map<string, AgentMode>();
   private elicitationCounter = 0;
   private questionCounter = 0;
   private planReviewCounter = 0;
@@ -260,6 +263,7 @@ export class AgentManager {
           case "clear-bypass":
           case "bypass":
             if (threadId) {
+              this.threadEffectiveModes.set(threadId, "bypassPermissions");
               try {
                 await this.storage.updateThread(threadId, {
                   mode: "bypassPermissions",
@@ -275,6 +279,7 @@ export class AgentManager {
             break;
           case "manual":
             if (threadId) {
+              this.threadEffectiveModes.set(threadId, "default");
               try {
                 await this.storage.updateThread(threadId, { mode: "default" });
               } catch {}
@@ -560,7 +565,12 @@ export class AgentManager {
       const currentThread = await this.storage.getThread(threadId);
       const currentProvider =
         currentThread?.provider ?? thread.provider ?? "claude-code";
-      const currentMode = normalizeMode(currentThread?.mode, currentProvider);
+      // Use threadEffectiveModes for the current mode — it reflects plan-review decisions
+      // immediately without requiring a storage round-trip, fixing the race where concurrent
+      // canUseTool requests fire before the plan-review storage update completes.
+      const currentMode =
+        this.threadEffectiveModes.get(threadId) ??
+        normalizeMode(currentThread?.mode ?? thread.mode, currentProvider);
 
       const behavior = resolveToolBehavior(
         currentMode,
@@ -625,6 +635,7 @@ export class AgentManager {
     };
 
     const mode = normalizeMode(thread.mode, thread.provider);
+    this.threadEffectiveModes.set(threadId, mode);
     let latestPlanContent = "";
     let sawPlanUpdate = false;
     const params: SendMessageParams = {
@@ -738,6 +749,7 @@ export class AgentManager {
       }
     } finally {
       this.activeStreams.delete(threadId);
+      this.threadEffectiveModes.delete(threadId);
       this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, {
         threadId,
         isRunning: false,
