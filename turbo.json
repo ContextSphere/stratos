@@ -20,7 +20,7 @@
     "lint": {},
     "build:mac": {
       "dependsOn": ["build"],
-      "outputs": ["release/**"]
+      "outputs": ["packages/desktop/dist/**"]
     }
   }
 }
