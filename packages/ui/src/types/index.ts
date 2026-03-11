@@ -109,4 +109,5 @@ export interface ModelInfo {
   value: string;
   displayName: string;
   description: string;
+  supportsReasoning?: boolean;
 }

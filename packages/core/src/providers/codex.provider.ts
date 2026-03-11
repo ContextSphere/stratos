@@ -1821,6 +1821,7 @@ export class CodexProvider implements AgentProvider {
           value: m.model ?? m.id,
           displayName: m.displayName ?? m.model ?? m.id,
           description: m.description ?? "",
+          supportsReasoning: true,
         }),
       );
 
@@ -1838,31 +1839,37 @@ export class CodexProvider implements AgentProvider {
         value: "gpt-5.3-codex",
         displayName: "GPT-5.3 Codex",
         description: "Latest frontier agentic coding model",
+        supportsReasoning: true,
       },
       {
         value: "gpt-5.2-codex",
         displayName: "GPT-5.2 Codex",
         description: "Advanced agentic coding model",
+        supportsReasoning: true,
       },
       {
         value: "gpt-5.1-codex",
         displayName: "GPT-5.1 Codex",
         description: "Agentic coding model with deep reasoning",
+        supportsReasoning: true,
       },
       {
         value: "gpt-5.1-codex-mini",
         displayName: "GPT-5.1 Codex Mini",
         description: "Fast, lightweight coding model",
+        supportsReasoning: true,
       },
       {
         value: "gpt-5.4",
         displayName: "GPT-5.4",
         description: "Latest general-purpose model",
+        supportsReasoning: true,
       },
       {
         value: "gpt-5.2",
         displayName: "GPT-5.2",
         description: "General-purpose model with coding capabilities",
+        supportsReasoning: true,
       },
     ];
   }
