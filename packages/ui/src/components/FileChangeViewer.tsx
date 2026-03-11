@@ -11,6 +11,7 @@ import {
   getFileName,
 } from "../utils/monaco-language";
 import "../utils/monaco-theme";
+import { useTheme, monacoThemeName } from "../context/ThemeContext";
 
 interface Props {
   toolCall: ToolCall;
@@ -70,6 +71,7 @@ function calculateChangeStats(
 
 export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
   useMonacoFontReady();
+  const theme = useTheme();
   const [isExpanded, setIsExpanded] = useState(true);
   const [shouldRenderMonaco, setShouldRenderMonaco] = useState(false);
 
@@ -129,7 +131,7 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
   // Binary file indicator
   if (isBinary) {
     return (
-      <div className="rounded-lg bg-[#111] border border-[#333] p-3 text-xs">
+      <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="font-mono font-semibold text-gray-300">
@@ -159,7 +161,7 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
 
   if (isEmpty) {
     return (
-      <div className="rounded-lg bg-[#111] border border-[#333] p-3 text-xs">
+      <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="font-mono font-semibold text-gray-300">
@@ -180,7 +182,7 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
   // Read tool: show header only, no content
   if (toolCall.toolName === "Read") {
     return (
-      <div className="rounded-lg bg-[#111] border border-[#333] p-3 text-xs">
+      <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <span className="font-mono font-semibold text-gray-300 flex-shrink-0">
@@ -202,11 +204,11 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
   }
 
   return (
-    <div className="rounded-lg bg-[#111] border border-[#333] overflow-hidden text-xs">
+    <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] overflow-hidden text-xs">
       {/* Header - always visible */}
       <button
         onClick={toggleExpand}
-        className="w-full p-3 flex items-center justify-between hover:bg-[#1a1a1a] transition-colors text-left"
+        className="w-full p-3 flex items-center justify-between hover:bg-[var(--bg-surface)] transition-colors text-left"
         aria-expanded={isExpanded}
         aria-label={`${isExpanded ? "Collapse" : "Expand"} ${toolCall.toolName} for ${fileName}`}
       >
@@ -237,7 +239,7 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
 
       {/* Content - expandable */}
       {isExpanded && (
-        <div className="border-t border-[#2a2a2a]">
+        <div className="border-t border-[var(--border)]">
           {isTooLarge ? (
             // Too large - show message
             <div className="p-4 text-center">
@@ -262,7 +264,7 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
                   height={height}
                   language="diff"
                   value={displayContent}
-                  theme="cursor-dark"
+                  theme={monacoThemeName(theme)}
                   options={{
                     readOnly: true,
                     minimap: { enabled: false },
@@ -293,7 +295,7 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
                   language={language}
                   original={oldContent}
                   modified={newContent}
-                  theme="cursor-dark"
+                  theme={monacoThemeName(theme)}
                   options={{
                     readOnly: true,
                     renderSideBySide: true,
@@ -327,7 +329,7 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
                   height={height}
                   language={language}
                   value={displayContent}
-                  theme="cursor-dark"
+                  theme={monacoThemeName(theme)}
                   options={{
                     readOnly: true,
                     minimap: { enabled: false },

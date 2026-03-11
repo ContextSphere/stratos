@@ -3,6 +3,7 @@ import Editor, { type OnMount } from "@monaco-editor/react";
 import { useMonacoFontReady } from "../../hooks/useMonacoFontReady";
 import { MarkdownPreview } from "./MarkdownPreview";
 import "../../utils/monaco-theme";
+import { useTheme, monacoThemeName } from "../../context/ThemeContext";
 import {
   getLanguageFromPath,
   MONO_FONT_FAMILY,
@@ -16,6 +17,7 @@ interface Props {
 
 export function ArtifactEditorPreview({ content, filePath, onSave }: Props) {
   useMonacoFontReady();
+  const theme = useTheme();
   const isMarkdown = filePath.endsWith(".md");
   const [mode, setMode] = useState<"preview" | "raw">(
     isMarkdown ? "preview" : "raw",
@@ -86,14 +88,14 @@ export function ArtifactEditorPreview({ content, filePath, onSave }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[#2a2a2a] flex-shrink-0">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] flex-shrink-0">
         {isMarkdown && (
-          <div className="flex rounded-md overflow-hidden border border-[#333]">
+          <div className="flex rounded-md overflow-hidden border border-[var(--border-mid)]">
             <button
               onClick={() => setMode("preview")}
               className={`px-2.5 py-1 text-xs transition-colors ${
                 mode === "preview"
-                  ? "bg-[#2a2a2a] text-gray-200"
+                  ? "bg-[var(--border)] text-gray-200"
                   : "text-gray-500 hover:text-gray-300"
               }`}
             >
@@ -103,7 +105,7 @@ export function ArtifactEditorPreview({ content, filePath, onSave }: Props) {
               onClick={() => setMode("raw")}
               className={`px-2.5 py-1 text-xs transition-colors ${
                 mode === "raw"
-                  ? "bg-[#2a2a2a] text-gray-200"
+                  ? "bg-[var(--border)] text-gray-200"
                   : "text-gray-500 hover:text-gray-300"
               }`}
             >
@@ -132,7 +134,7 @@ export function ArtifactEditorPreview({ content, filePath, onSave }: Props) {
           value={currentContent}
           onChange={handleEditorChange}
           onMount={handleEditorMount}
-          theme="cursor-dark"
+          theme={monacoThemeName(theme)}
           options={{
             minimap: { enabled: false },
             scrollBeyondLastLine: false,

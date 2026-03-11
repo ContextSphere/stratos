@@ -78,7 +78,7 @@ function FolderMenu({
   return (
     <div
       ref={ref}
-      className="absolute right-0 top-full mt-1 z-50 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-lg py-1 min-w-[140px]"
+      className="absolute right-0 top-full mt-1 z-50 bg-[var(--bg-surface)] border border-white/10 rounded-lg shadow-lg py-1 min-w-[140px]"
     >
       <button
         onClick={(e) => {
@@ -86,7 +86,7 @@ function FolderMenu({
           onRemove();
           onClose();
         }}
-        className="w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:text-red-400 hover:bg-[#2a2a2a] transition-colors"
+        className="w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:text-red-400 hover:bg-[var(--border)] transition-colors"
       >
         Remove folder
       </button>
@@ -117,8 +117,8 @@ function ThreadRow({
     <div
       className={`group no-drag flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-lg cursor-pointer transition-colors text-sm ${
         isActive
-          ? "bg-[#2a2a2a] text-gray-200"
-          : "text-gray-400 hover:bg-[#1a1a1a] hover:text-gray-200"
+          ? "bg-[var(--border)] text-gray-200"
+          : "text-gray-400 hover:bg-[var(--bg-surface)] hover:text-gray-200"
       }`}
       onClick={() => onThreadClick(thread.id)}
     >
@@ -222,7 +222,7 @@ export function ThreadList({
         </span>
         <button
           onClick={onAddFolder}
-          className="no-drag p-1 rounded-md text-gray-500 hover:text-gray-300 hover:bg-[#1a1a1a] transition-colors"
+          className="no-drag p-1 rounded-md text-gray-500 hover:text-gray-300 hover:bg-[var(--bg-surface)] transition-colors"
           title="Add folder"
         >
           <svg
@@ -264,7 +264,7 @@ export function ThreadList({
               <div key={folder.id}>
                 {/* Folder row */}
                 <div
-                  className="group no-drag flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors text-sm text-gray-300 hover:bg-[#1a1a1a] relative"
+                  className="group no-drag flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors text-sm text-gray-300 hover:bg-[var(--bg-surface)] relative"
                   title={folder.name}
                   onClick={() =>
                     onToggleFolderCollapsed(folder.id, !isCollapsed)

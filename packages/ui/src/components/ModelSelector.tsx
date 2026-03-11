@@ -154,7 +154,7 @@ export default function ModelSelector({
         </button>
 
         {isOpen && (
-          <div className="absolute bottom-full mb-1 left-0 z-50 min-w-48 bg-[#1a1a1a] border border-[#333] rounded-lg shadow-xl overflow-hidden">
+          <div className="absolute bottom-full mb-1 left-0 z-50 min-w-48 bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-lg shadow-xl overflow-hidden">
             {models.map((model, i) => (
               <button
                 key={model.value}
@@ -166,8 +166,8 @@ export default function ModelSelector({
                 onMouseEnter={() => setHighlightedIndex(i)}
                 className={`w-full text-left px-3 py-2 text-xs flex flex-col gap-0.5 ${
                   i === highlightedIndex
-                    ? "bg-[#2a2a2a] text-gray-200"
-                    : "text-gray-400 hover:bg-[#222]"
+                    ? "bg-[var(--border)] text-gray-200"
+                    : "text-gray-400 hover:bg-[var(--border)]"
                 }`}
               >
                 <span>{model.displayName}</span>

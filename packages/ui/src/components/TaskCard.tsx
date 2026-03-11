@@ -1,42 +1,45 @@
-import { useState } from 'react'
-import type { TaskInfo, ToolCall } from '../types'
-import { ToolCallCard } from './ToolCallCard'
+import { useState } from "react";
+import type { TaskInfo, ToolCall } from "../types";
+import { ToolCallCard } from "./ToolCallCard";
 
 interface Props {
-  taskInfo: TaskInfo
-  childToolCalls: ToolCall[]
-  onToggleToolCalls?: (expanded: boolean) => void
+  taskInfo: TaskInfo;
+  childToolCalls: ToolCall[];
+  onToggleToolCalls?: (expanded: boolean) => void;
 }
 
 const SUBAGENT_ICONS: Record<string, string> = {
-  'Explore': '🔍',
-  'Plan': '📋',
-  'kg-learner': '🧠',
-  'Bash': '⚡',
-  'general-purpose': '🔧'
-}
+  Explore: "🔍",
+  Plan: "📋",
+  "kg-learner": "🧠",
+  Bash: "⚡",
+  "general-purpose": "🔧",
+};
 
-const statusColors: Record<TaskInfo['status'], string> = {
-  running: 'text-blue-400',
-  completed: 'text-green-400',
-  error: 'text-red-400'
-}
+const statusColors: Record<TaskInfo["status"], string> = {
+  running: "text-blue-400",
+  completed: "text-green-400",
+  error: "text-red-400",
+};
 
-const statusLabels: Record<TaskInfo['status'], string> = {
-  running: 'Running...',
-  completed: 'Done',
-  error: 'Error'
-}
+const statusLabels: Record<TaskInfo["status"], string> = {
+  running: "Running...",
+  completed: "Done",
+  error: "Error",
+};
 
-function truncateText(text: string, lines: number): { truncated: string; hasMore: boolean } {
-  const textLines = text.split('\n')
+function truncateText(
+  text: string,
+  lines: number,
+): { truncated: string; hasMore: boolean } {
+  const textLines = text.split("\n");
   if (textLines.length <= lines) {
-    return { truncated: text, hasMore: false }
+    return { truncated: text, hasMore: false };
   }
   return {
-    truncated: textLines.slice(0, lines).join('\n'),
-    hasMore: true
-  }
+    truncated: textLines.slice(0, lines).join("\n"),
+    hasMore: true,
+  };
 }
 
 /**
@@ -46,42 +49,51 @@ function truncateText(text: string, lines: number): { truncated: string; hasMore
  */
 function extractResultText(result: string): string {
   try {
-    const parsed = JSON.parse(result)
+    const parsed = JSON.parse(result);
     if (Array.isArray(parsed)) {
       return parsed
-        .filter(block => block.type === 'text' && block.text)
-        .map(block => block.text)
-        .join('\n\n')
+        .filter((block) => block.type === "text" && block.text)
+        .map((block) => block.text)
+        .join("\n\n");
     }
   } catch {
     // Not JSON, return as-is
   }
-  return result
+  return result;
 }
 
-export function TaskCard({ taskInfo, childToolCalls, onToggleToolCalls }: Props): React.ReactElement {
-  const [detailsExpanded, setDetailsExpanded] = useState(false)
-  const [promptExpanded, setPromptExpanded] = useState(false)
-  const [resultExpanded, setResultExpanded] = useState(false)
+export function TaskCard({
+  taskInfo,
+  childToolCalls,
+  onToggleToolCalls,
+}: Props): React.ReactElement {
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
+  const [resultExpanded, setResultExpanded] = useState(false);
 
-  const completedCount = childToolCalls.filter(tc => tc.status === 'completed').length
-  const totalCount = childToolCalls.length
+  const completedCount = childToolCalls.filter(
+    (tc) => tc.status === "completed",
+  ).length;
+  const totalCount = childToolCalls.length;
 
   const elapsedTime = taskInfo.endTime
     ? ((taskInfo.endTime - taskInfo.startTime) / 1000).toFixed(1)
-    : null
+    : null;
 
-  const icon = SUBAGENT_ICONS[taskInfo.subagentType] ?? '🔧'
+  const icon = SUBAGENT_ICONS[taskInfo.subagentType] ?? "🔧";
 
-  const { truncated: promptPreview, hasMore: hasMorePrompt } = truncateText(taskInfo.prompt, 3)
+  const { truncated: promptPreview, hasMore: hasMorePrompt } = truncateText(
+    taskInfo.prompt,
+    3,
+  );
 
   // Extract and format the result text
-  const resultText = taskInfo.result ? extractResultText(taskInfo.result) : ''
+  const resultText = taskInfo.result ? extractResultText(taskInfo.result) : "";
   const { truncated: resultPreview, hasMore: hasMoreResult } = resultText
     ? truncateText(resultText, 3)
-    : { truncated: '', hasMore: false }
+    : { truncated: "", hasMore: false };
 
-  const toolCallsExpanded = taskInfo.toolCallsExpanded ?? false
+  const toolCallsExpanded = taskInfo.toolCallsExpanded ?? false;
 
   return (
     <div className="rounded-lg bg-[#0d0d18] border border-[#3a3a5a] p-3 text-xs">
@@ -89,18 +101,22 @@ export function TaskCard({ taskInfo, childToolCalls, onToggleToolCalls }: Props)
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-base">{icon}</span>
-          <span className="font-semibold text-gray-200">{taskInfo.subagentType}</span>
+          <span className="font-semibold text-gray-200">
+            {taskInfo.subagentType}
+          </span>
         </div>
-        <span className={`text-xs font-medium ${statusColors[taskInfo.status]}`}>
+        <span
+          className={`text-xs font-medium ${statusColors[taskInfo.status]}`}
+        >
           {statusLabels[taskInfo.status]}
-          {taskInfo.status === 'running' && <span className="ml-1 animate-pulse">⟳</span>}
+          {taskInfo.status === "running" && (
+            <span className="ml-1 animate-pulse">⟳</span>
+          )}
         </span>
       </div>
 
       {/* Description */}
-      <div className="text-sm text-gray-300 mb-2">
-        {taskInfo.description}
-      </div>
+      <div className="text-sm text-gray-300 mb-2">{taskInfo.description}</div>
 
       {/* Elapsed time (only when completed) */}
       {elapsedTime && (
@@ -115,14 +131,14 @@ export function TaskCard({ taskInfo, childToolCalls, onToggleToolCalls }: Props)
           onClick={() => setDetailsExpanded(!detailsExpanded)}
           className="flex items-center gap-1.5 text-gray-400 hover:text-gray-300 transition-colors"
         >
-          <span className="text-gray-600">{detailsExpanded ? '▾' : '▸'}</span>
+          <span className="text-gray-600">{detailsExpanded ? "▾" : "▸"}</span>
           Task details
         </button>
         {detailsExpanded && (
           <div className="mt-2 pl-4 space-y-2">
             <div>
               <div className="text-gray-500 mb-1">Prompt:</div>
-              <pre className="p-2 bg-[#0a0a0a] rounded text-gray-300 font-mono text-xs whitespace-pre-wrap">
+              <pre className="p-2 bg-[var(--bg-root)] rounded text-gray-300 font-mono text-xs whitespace-pre-wrap">
                 {promptExpanded ? taskInfo.prompt : promptPreview}
               </pre>
               {hasMorePrompt && (
@@ -130,7 +146,7 @@ export function TaskCard({ taskInfo, childToolCalls, onToggleToolCalls }: Props)
                   onClick={() => setPromptExpanded(!promptExpanded)}
                   className="mt-1 text-blue-400 hover:underline"
                 >
-                  {promptExpanded ? 'Show less ↑' : 'Show more ↓'}
+                  {promptExpanded ? "Show less ↑" : "Show more ↓"}
                 </button>
               )}
             </div>
@@ -143,16 +159,20 @@ export function TaskCard({ taskInfo, childToolCalls, onToggleToolCalls }: Props)
         <div className="mt-2">
           <button
             onClick={() => {
-              const newExpanded = !toolCallsExpanded
-              onToggleToolCalls?.(newExpanded)
+              const newExpanded = !toolCallsExpanded;
+              onToggleToolCalls?.(newExpanded);
             }}
             className="flex items-center gap-1.5 text-gray-400 hover:text-gray-300 transition-colors"
           >
-            <span className="text-gray-600">{toolCallsExpanded ? '▾' : '▸'}</span>
-            {taskInfo.status === 'running'
+            <span className="text-gray-600">
+              {toolCallsExpanded ? "▾" : "▸"}
+            </span>
+            {taskInfo.status === "running"
               ? `${completedCount}/${totalCount} tool calls`
               : `${totalCount} tool calls`}
-            {taskInfo.status === 'running' && <span className="ml-1 animate-pulse">⟳</span>}
+            {taskInfo.status === "running" && (
+              <span className="ml-1 animate-pulse">⟳</span>
+            )}
           </button>
           {toolCallsExpanded && (
             <div className="mt-2 pl-4 space-y-2">
@@ -165,18 +185,18 @@ export function TaskCard({ taskInfo, childToolCalls, onToggleToolCalls }: Props)
       )}
 
       {/* Result (collapsible, only when completed) */}
-      {resultText && taskInfo.status === 'completed' && (
+      {resultText && taskInfo.status === "completed" && (
         <div className="mt-2">
           <button
             onClick={() => setResultExpanded(!resultExpanded)}
             className="flex items-center gap-1.5 text-gray-400 hover:text-gray-300 transition-colors"
           >
-            <span className="text-gray-600">{resultExpanded ? '▾' : '▸'}</span>
+            <span className="text-gray-600">{resultExpanded ? "▾" : "▸"}</span>
             Result
           </button>
           {resultExpanded && (
             <div className="mt-2 pl-4">
-              <pre className="p-2 bg-[#0a0a0a] rounded text-gray-300 font-mono text-xs whitespace-pre-wrap max-h-64 overflow-y-auto">
+              <pre className="p-2 bg-[var(--bg-root)] rounded text-gray-300 font-mono text-xs whitespace-pre-wrap max-h-64 overflow-y-auto">
                 {resultText}
               </pre>
             </div>
@@ -189,5 +209,5 @@ export function TaskCard({ taskInfo, childToolCalls, onToggleToolCalls }: Props)
         </div>
       )}
     </div>
-  )
+  );
 }

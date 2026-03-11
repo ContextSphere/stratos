@@ -6,6 +6,7 @@ import {
   MONO_FONT_FAMILY,
 } from "../utils/monaco-language";
 import "../utils/monaco-theme";
+import { useTheme, monacoThemeName } from "../context/ThemeContext";
 import type { DirEntry } from "../bridges/types";
 
 const MAX_FILE_SIZE = 1024 * 1024; // 1MB
@@ -100,6 +101,7 @@ export function FileExplorer({
   readFile,
 }: Props): React.ReactElement {
   useMonacoFontReady();
+  const theme = useTheme();
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [openFile, setOpenFile] = useState<{
     path: string;
@@ -245,10 +247,10 @@ export function FileExplorer({
 
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-[#2a2a2a] flex-shrink-0">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--border)] flex-shrink-0">
           <button
             onClick={handleBack}
-            className="p-1 rounded hover:bg-[#2a2a2a] text-gray-400 hover:text-gray-200 transition-colors"
+            className="p-1 rounded hover:bg-[var(--border)] text-gray-400 hover:text-gray-200 transition-colors"
             title="Back to file tree"
           >
             <svg
@@ -285,7 +287,7 @@ export function FileExplorer({
             <Editor
               value={openFile.content}
               language={getLanguageFromPath(openFile.path)}
-              theme="cursor-dark"
+              theme={monacoThemeName(theme)}
               onMount={(editor) => {
                 editorRef.current = editor;
                 if (cursorTargetLine && cursorTargetLine > 0) {
@@ -364,7 +366,7 @@ function TreeView({
       {nodes.map((node) => (
         <div key={node.path}>
           <button
-            className="w-full flex items-center gap-1.5 px-2 py-1 text-sm text-gray-300 hover:bg-[#1a1a1a] transition-colors text-left"
+            className="w-full flex items-center gap-1.5 px-2 py-1 text-sm text-gray-300 hover:bg-[var(--bg-surface)] transition-colors text-left"
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
             onClick={() => {
               if (node.entry.type === "directory") {

@@ -98,11 +98,11 @@ describe("ThreadList", () => {
     const alphaEl = screen
       .getByText("Alpha")
       .closest('div[class*="rounded-lg"]')!;
-    expect(alphaEl.className).toContain("bg-[#2a2a2a]");
+    expect(alphaEl.className).toContain("bg-[var(--border)]");
     const betaEl = screen
       .getByText("Beta")
       .closest('div[class*="rounded-lg"]')!;
-    expect(betaEl.className).not.toContain("bg-[#2a2a2a]");
+    expect(betaEl.className).not.toContain("bg-[var(--border)]");
   });
 
   it("calls onThreadClick with correct id", async () => {

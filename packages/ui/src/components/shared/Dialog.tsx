@@ -1,14 +1,14 @@
-import { ReactNode, useCallback, useEffect } from 'react'
+import { ReactNode, useCallback, useEffect } from "react";
 
 export interface DialogProps {
-  isOpen: boolean
-  onClose: () => void
-  title: string
-  subtitle?: string
-  icon?: ReactNode
-  iconGradient?: string
-  maxWidth?: 'sm' | 'md' | 'lg'
-  children: ReactNode
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  subtitle?: string;
+  icon?: ReactNode;
+  iconGradient?: string;
+  maxWidth?: "sm" | "md" | "lg";
+  children: ReactNode;
 }
 
 /**
@@ -32,38 +32,38 @@ export function Dialog({
   title,
   subtitle,
   icon,
-  iconGradient = 'from-blue-500 to-purple-600',
-  maxWidth = 'md',
-  children
+  iconGradient = "from-blue-500 to-purple-600",
+  maxWidth = "md",
+  children,
 }: DialogProps): React.ReactElement | null {
   const maxWidthStyles = {
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg'
-  }
+    sm: "max-w-sm",
+    md: "max-w-md",
+    lg: "max-w-lg",
+  };
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose()
+      if (e.key === "Escape") {
+        onClose();
       }
     },
-    [onClose]
-  )
+    [onClose],
+  );
 
   useEffect(() => {
     if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown)
-      return () => document.removeEventListener('keydown', handleKeyDown)
+      document.addEventListener("keydown", handleKeyDown);
+      return () => document.removeEventListener("keydown", handleKeyDown);
     }
-  }, [isOpen, handleKeyDown])
+  }, [isOpen, handleKeyDown]);
 
-  if (!isOpen) return null
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div
-        className={`no-drag bg-[#1a1a1a] border border-[#333] rounded-2xl shadow-2xl w-full ${maxWidthStyles[maxWidth]} mx-4 overflow-hidden`}
+        className={`no-drag bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-2xl shadow-2xl w-full ${maxWidthStyles[maxWidth]} mx-4 overflow-hidden`}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-2">
@@ -99,14 +99,18 @@ export function Dialog({
         <div className="px-6 pb-6">{children}</div>
       </div>
     </div>
-  )
+  );
 }
 
 /**
  * Dialog body wrapper for consistent spacing
  */
-export function DialogBody({ children }: { children: ReactNode }): React.ReactElement {
-  return <div className="mt-4">{children}</div>
+export function DialogBody({
+  children,
+}: {
+  children: ReactNode;
+}): React.ReactElement {
+  return <div className="mt-4">{children}</div>;
 }
 
 /**
@@ -114,15 +118,17 @@ export function DialogBody({ children }: { children: ReactNode }): React.ReactEl
  */
 export function DialogSection({
   title,
-  children
+  children,
 }: {
-  title?: string
-  children: ReactNode
+  title?: string;
+  children: ReactNode;
 }): React.ReactElement {
   return (
     <div className="mb-4 last:mb-0">
-      {title && <h3 className="text-sm font-medium text-gray-300 mb-2">{title}</h3>}
+      {title && (
+        <h3 className="text-sm font-medium text-gray-300 mb-2">{title}</h3>
+      )}
       {children}
     </div>
-  )
+  );
 }

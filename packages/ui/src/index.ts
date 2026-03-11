@@ -59,6 +59,14 @@ export type {
   McpServerInfo,
 } from "./bridges/types";
 
+// Theme
+export {
+  ThemeContext,
+  useTheme,
+  monacoThemeName,
+} from "./context/ThemeContext";
+export type { AppTheme } from "./context/ThemeContext";
+
 // Hooks
 export { useTodoData } from "./hooks/useTodoData";
 

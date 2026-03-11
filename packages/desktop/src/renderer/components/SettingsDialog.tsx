@@ -1,13 +1,49 @@
 import { Dialog, DialogBody, Button } from "@stratosapp/ui";
+import { ComponentGallery } from "./ComponentGallery";
+
+type AppTheme = "dark" | "light";
+
+interface ThemeOption {
+  id: AppTheme;
+  label: string;
+  preview: { bg: string; surface: string; border: string; text: string };
+}
+
+const THEMES: ThemeOption[] = [
+  {
+    id: "dark",
+    label: "Dark",
+    preview: {
+      bg: "var(--bg-root)",
+      surface: "var(--bg-surface)",
+      border: "var(--border)",
+      text: "#e0e0e0",
+    },
+  },
+  {
+    id: "light",
+    label: "Light",
+    preview: {
+      bg: "#ececec",
+      surface: "#ffffff",
+      border: "#d0d0d0",
+      text: "var(--bg-surface)",
+    },
+  },
+];
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  theme: AppTheme;
+  onThemeChange: (theme: AppTheme) => void;
 }
 
 export function SettingsDialog({
   isOpen,
   onClose,
+  theme,
+  onThemeChange,
 }: Props): React.ReactElement | null {
   return (
     <Dialog
@@ -30,7 +66,111 @@ export function SettingsDialog({
       maxWidth="lg"
     >
       <DialogBody>
-        <div className="space-y-5">
+        <div className="space-y-6">
+          {/* Appearance */}
+          <section>
+            <h3
+              className="text-xs font-semibold uppercase tracking-wider mb-3"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Appearance
+            </h3>
+            <div className="flex gap-3">
+              {THEMES.map((t) => {
+                const active = theme === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => onThemeChange(t.id)}
+                    className={`relative flex flex-col items-center gap-2 rounded-xl p-1 transition-all focus:outline-none ${
+                      active
+                        ? "ring-2 ring-blue-500"
+                        : "ring-1 ring-transparent hover:ring-gray-600"
+                    }`}
+                  >
+                    {/* Mini preview */}
+                    <div
+                      className="w-24 h-16 rounded-lg overflow-hidden flex"
+                      style={{
+                        background: t.preview.bg,
+                        border: `1px solid ${t.preview.border}`,
+                      }}
+                    >
+                      {/* Sidebar strip */}
+                      <div
+                        className="w-5 h-full flex-shrink-0"
+                        style={{
+                          background: t.preview.bg,
+                          borderRight: `1px solid ${t.preview.border}`,
+                        }}
+                      />
+                      {/* Content area */}
+                      <div className="flex-1 p-1.5 flex flex-col gap-1">
+                        <div
+                          className="h-1.5 w-8 rounded-full"
+                          style={{ background: t.preview.surface }}
+                        />
+                        <div
+                          className="h-1 w-10 rounded-full"
+                          style={{
+                            background: t.preview.surface,
+                            opacity: 0.6,
+                          }}
+                        />
+                        <div className="flex-1" />
+                        <div
+                          className="h-3 rounded"
+                          style={{
+                            background: t.preview.surface,
+                            border: `1px solid ${t.preview.border}`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <span
+                      className="text-xs font-medium"
+                      style={{
+                        color: active ? "#3b82f6" : "var(--text-secondary)",
+                      }}
+                    >
+                      {t.label}
+                    </span>
+                    {active && (
+                      <span className="absolute top-1 right-1 w-3 h-3 rounded-full bg-blue-500 flex items-center justify-center">
+                        <svg
+                          viewBox="0 0 8 8"
+                          className="w-2 h-2 text-white"
+                          fill="currentColor"
+                        >
+                          <path
+                            d="M1.5 4l2 2L6.5 2"
+                            stroke="currentColor"
+                            strokeWidth="1.2"
+                            fill="none"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Component Gallery */}
+          <section>
+            <h3
+              className="text-xs font-semibold uppercase tracking-wider mb-3"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Component Preview
+            </h3>
+            <ComponentGallery />
+          </section>
+
           <div className="flex gap-2 justify-end pt-1">
             <Button variant="secondary" onClick={onClose}>
               Close

@@ -2,7 +2,10 @@ import { join } from "path";
 import { homedir } from "os";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 
+export type AppTheme = "dark" | "light";
+
 export interface AppSettings {
+  theme?: AppTheme;
   [key: string]: unknown;
 }
 
@@ -15,7 +18,7 @@ function getStorePath(): string {
 }
 
 function getDefaults(): AppSettings {
-  return {};
+  return { theme: "dark" };
 }
 
 export function loadSettings(): AppSettings {

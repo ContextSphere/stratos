@@ -138,7 +138,7 @@ export function ToolsPopover({
   const closeButton = (
     <button
       onClick={onClose}
-      className="p-1 rounded hover:bg-[#2a2a2a] text-gray-500 hover:text-gray-300 transition-colors"
+      className="p-1 rounded hover:bg-[var(--border)] text-gray-500 hover:text-gray-300 transition-colors"
       title="Close"
     >
       <svg
@@ -168,7 +168,7 @@ export function ToolsPopover({
         footer={`${mcpToolCount} MCP · ${builtInCount} built-in · ${sessionTools.length} total`}
       >
         {builtInCount > 0 && (
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2a2a2a]">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)]">
             <span className="text-xs text-gray-400">
               Built-in Claude Code tools
             </span>
@@ -191,7 +191,7 @@ export function ToolsPopover({
               return (
                 <div
                   key={server.name}
-                  className="border-b border-[#2a2a2a] last:border-0"
+                  className="border-b border-[var(--border)] last:border-0"
                 >
                   <button
                     onClick={() =>
@@ -199,7 +199,7 @@ export function ToolsPopover({
                         expandedServer === server.name ? null : server.name,
                       )
                     }
-                    className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-[#222] transition-colors"
+                    className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-[var(--border)] transition-colors"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <div
@@ -303,7 +303,7 @@ export function ToolsPopover({
                         {server.tools.map((tool) => (
                           <div
                             key={tool}
-                            className="text-xs font-mono text-gray-500 bg-[#111] px-2 py-1 rounded truncate"
+                            className="text-xs font-mono text-gray-500 bg-[var(--bg-overlay)] px-2 py-1 rounded truncate"
                             title={tool}
                           >
                             {tool}
@@ -320,7 +320,7 @@ export function ToolsPopover({
 
         {/* Footer action: open config */}
         {onOpenConfig && (
-          <div className="border-t border-[#2a2a2a] px-4 py-2">
+          <div className="border-t border-[var(--border)] px-4 py-2">
             <button
               onClick={() => {
                 // Find a project-scoped config path, or fall back to first available

@@ -121,7 +121,7 @@ export function ConnectCodexDialog({
               )}
             </Card>
 
-            <div className="mb-4 p-3 bg-[#1a1a1a] rounded-lg">
+            <div className="mb-4 p-3 bg-[var(--bg-surface)] rounded-lg">
               <p className="text-xs text-gray-400">
                 Codex uses your OpenAI account for authentication. Signing out
                 will require re-authentication to continue using Codex.
@@ -150,9 +150,9 @@ export function ConnectCodexDialog({
               </p>
             </div>
 
-            <div className="mb-4 p-3 bg-[#1a1a1a] rounded-lg">
+            <div className="mb-4 p-3 bg-[var(--bg-surface)] rounded-lg">
               <p className="text-xs text-gray-500 mb-2">Install via npm:</p>
-              <code className="text-xs text-gray-300 bg-[#0f0f0f] px-2 py-1 rounded block">
+              <code className="text-xs text-gray-300 bg-[var(--bg-main)] px-2 py-1 rounded block">
                 npm install -g @openai/codex
               </code>
             </div>

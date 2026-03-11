@@ -13,9 +13,9 @@ interface PlanReviewBlockProps {
 }
 
 const BTN_ENABLED =
-  "border-[#2a2a2a] bg-[#1a1a1a] text-gray-400 hover:border-[#3a3a3a] hover:text-gray-300 cursor-pointer";
+  "border-[var(--border)] bg-[var(--bg-surface)] text-gray-400 hover:border-[var(--border-mid)] hover:text-gray-300 cursor-pointer";
 const BTN_DISABLED =
-  "border-[#2a2a2a] bg-[#1a1a1a] text-gray-600 opacity-60 cursor-not-allowed";
+  "border-[var(--border)] bg-[var(--bg-surface)] text-gray-600 opacity-60 cursor-not-allowed";
 
 export function PlanReviewBlock({
   provider,
@@ -35,7 +35,7 @@ export function PlanReviewBlock({
   const isCodex = provider === "codex";
 
   return (
-    <div className="my-3 rounded-lg border border-[#2a2a2a] bg-[#111] p-3">
+    <div className="my-3 rounded-lg border border-[var(--border)] bg-[var(--bg-overlay)] p-3">
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm font-medium text-gray-200">
           Plan is ready. Would you like to proceed?

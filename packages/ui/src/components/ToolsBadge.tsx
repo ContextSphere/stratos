@@ -25,7 +25,7 @@ export function ToolsBadge({
     <>
       <button
         onClick={() => setIsPopoverOpen(!isPopoverOpen)}
-        className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#1a1a1a] text-gray-400 hover:bg-[#2a2a2a] transition-colors whitespace-nowrap"
+        className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[var(--bg-surface)] text-gray-400 hover:bg-[var(--border)] transition-colors whitespace-nowrap"
         title="View available tools"
       >
         <svg

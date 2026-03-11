@@ -64,7 +64,7 @@ export function ToolCallCard({ toolCall }: Props): React.ReactElement {
     return (
       <Suspense
         fallback={
-          <div className="rounded-lg bg-[#111] border border-[#333] p-3 text-xs">
+          <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs">
             <div className="flex items-center justify-between mb-1">
               <span className="font-mono font-semibold text-gray-300">
                 {toolCall.toolName}
@@ -85,7 +85,7 @@ export function ToolCallCard({ toolCall }: Props): React.ReactElement {
   }
 
   return (
-    <div className="rounded-lg bg-[#111] border border-[#333] p-3 text-xs">
+    <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs">
       <div className="flex items-center justify-between mb-1">
         <span className="font-mono font-semibold text-gray-300">
           {toolCall.toolName}
@@ -94,7 +94,7 @@ export function ToolCallCard({ toolCall }: Props): React.ReactElement {
           {statusLabels[toolCall.status]}
         </span>
       </div>
-      <pre className="mt-1.5 p-2 bg-[#0a0a0a] rounded text-gray-300 font-mono text-xs whitespace-pre-wrap max-h-32 overflow-y-auto">
+      <pre className="mt-1.5 p-2 bg-[var(--bg-root)] rounded text-gray-300 font-mono text-xs whitespace-pre-wrap max-h-32 overflow-y-auto">
         {formatInput(toolCall.input)}
       </pre>
       {toolCall.output && (

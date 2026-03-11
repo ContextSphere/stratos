@@ -7,12 +7,44 @@
   --font-mono: 'DM Mono', 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
 
+/* ── Theme palette ─────────────────────────────────────────────────── */
+:root {
+  /* Dark theme (default) */
+  --bg-root:    #0a0a0a;
+  --bg-main:    #0f0f0f;
+  --bg-surface: #1a1a1a;
+  --bg-overlay: #121212;
+  --border:     #2a2a2a;
+  --border-mid: #333333;
+  --text-primary:   #e0e0e0;
+  --text-secondary: #9ca3af;
+  --text-muted:     #6b7280;
+  --text-faint:     #4b5563;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
+}
+
+[data-theme="light"] {
+  --bg-root:    #ececec;
+  --bg-main:    #f2f2f2;
+  --bg-surface: #ffffff;
+  --bg-overlay: #e6e6e6;
+  --border:     #d0d0d0;
+  --border-mid: #b8b8b8;
+  --text-primary:   #1a1a1a;
+  --text-secondary: #4b5563;
+  --text-muted:     #6b7280;
+  --text-faint:     #9ca3af;
+  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.25);
+}
+
 body {
   margin: 0;
   padding: 0;
   overflow: hidden;
   background: transparent;
-  color: #e0e0e0;
+  color: var(--text-primary);
   height: 100vh;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -28,7 +60,7 @@ pre, code, kbd, samp {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #0a0a0a;
+  background: var(--bg-root);
 }
 
 /* Panel resize handle hover effect */
@@ -57,10 +89,10 @@ pre, code, kbd, samp {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--scrollbar-thumb-hover);
 }

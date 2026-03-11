@@ -47,7 +47,7 @@ export function ChatInfoBar({
   onReconnectMcpServer,
 }: ChatInfoBarProps): React.ReactElement {
   return (
-    <div className="flex-shrink-0 bg-[#0f0f0f] border-b border-white/[0.06] px-3 py-1">
+    <div className="flex-shrink-0 bg-[var(--bg-main)] border-b border-white/[0.06] px-3 py-1">
       <div className="flex items-center justify-between text-xs gap-2 min-h-[28px]">
         {/* Left: directory pills */}
         <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">

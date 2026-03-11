@@ -1,9 +1,12 @@
-import { InputHTMLAttributes, forwardRef } from 'react'
+import { InputHTMLAttributes, forwardRef } from "react";
 
-export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'className'> {
-  label?: string
-  error?: string
-  className?: string
+export interface InputProps extends Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "className"
+> {
+  label?: string;
+  error?: string;
+  className?: string;
 }
 
 /**
@@ -14,19 +17,21 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
  * <Input label="Password" type="password" error="Password is required" />
  */
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, className = '', ...props }, ref) => {
+  ({ label, error, className = "", ...props }, ref) => {
     return (
       <div className="w-full">
-        {label && <label className="block text-xs text-gray-500 mb-1.5">{label}</label>}
+        {label && (
+          <label className="block text-xs text-gray-500 mb-1.5">{label}</label>
+        )}
         <input
           ref={ref}
-          className={`w-full bg-[#111] border ${error ? 'border-red-500' : 'border-[#333]'} rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors ${props.type === 'password' ? 'font-mono' : ''} ${className}`}
+          className={`w-full bg-[var(--bg-overlay)] border ${error ? "border-red-500" : "border-[var(--border-mid)]"} rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors ${props.type === "password" ? "font-mono" : ""} ${className}`}
           {...props}
         />
         {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
       </div>
-    )
-  }
-)
+    );
+  },
+);
 
-Input.displayName = 'Input'
+Input.displayName = "Input";

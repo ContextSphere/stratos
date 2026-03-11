@@ -29,10 +29,10 @@ export function PreviewPane({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0f0f0f] border-l border-[#2a2a2a]">
+    <div className="flex flex-col h-full bg-[var(--bg-main)] border-l border-[var(--border)]">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#2a2a2a] flex-shrink-0">
-        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#2a2a2a] text-gray-400 uppercase tracking-wide">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--border)] flex-shrink-0">
+        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--border)] text-gray-400 uppercase tracking-wide">
           {TYPE_LABELS[preview.type] || "Preview"}
         </span>
         <span
@@ -44,7 +44,7 @@ export function PreviewPane({
         {preview.url && (
           <button
             onClick={handleOpenExternal}
-            className="p-1 rounded hover:bg-[#2a2a2a] text-gray-500 hover:text-gray-300 transition-colors"
+            className="p-1 rounded hover:bg-[var(--border)] text-gray-500 hover:text-gray-300 transition-colors"
             title="Open in browser"
           >
             <svg
@@ -65,7 +65,7 @@ export function PreviewPane({
         )}
         <button
           onClick={onClose}
-          className="p-1 rounded hover:bg-[#2a2a2a] text-gray-500 hover:text-gray-300 transition-colors"
+          className="p-1 rounded hover:bg-[var(--border)] text-gray-500 hover:text-gray-300 transition-colors"
           title="Close preview"
         >
           <svg

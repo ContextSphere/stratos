@@ -31,13 +31,13 @@ export default function ModeToggle({
       <div className="flex items-center gap-1.5">
         <span className="text-xs text-gray-600">Mode</span>
         <span
-          className="text-[10px] px-1.5 py-0.5 rounded bg-[#1a1a1a] border border-[#2a2a2a] text-gray-500"
+          className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-surface)] border border-[var(--border)] text-gray-500"
           title="Keyboard shortcut: Shift+Tab"
         >
           Shift+Tab
         </span>
       </div>
-      <div className="flex items-center rounded-full bg-[#1a1a1a] border border-[#2a2a2a] p-0.5">
+      <div className="flex items-center rounded-full bg-[var(--bg-surface)] border border-[var(--border)] p-0.5">
         {modes.map((m) => {
           const config = getModeConfig(provider, m);
           const colors = COLOR_MAP[config.color];

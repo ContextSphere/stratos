@@ -35,7 +35,7 @@ export function Sidebar({
   pendingPermissionThreadIds,
 }: Props): React.ReactElement {
   return (
-    <div className="flex-shrink-0 flex flex-col bg-[#0a0a0a] overflow-hidden w-[232px] min-w-[232px] h-full">
+    <div className="flex-shrink-0 flex flex-col bg-[var(--bg-root)] overflow-hidden w-[232px] min-w-[232px] h-full">
       <div className="flex flex-col h-full">
         {/* Traffic-light clearance */}
         <div className="drag-region h-7 flex-shrink-0" />
@@ -46,7 +46,7 @@ export function Sidebar({
           </span>
           <button
             onClick={onToggleSidebar}
-            className="no-drag p-1 rounded-md text-gray-500 hover:text-gray-300 hover:bg-[#1a1a1a] transition-colors"
+            className="no-drag p-1 rounded-md text-gray-500 hover:text-gray-300 hover:bg-[var(--bg-surface)] transition-colors"
             title="Collapse sidebar"
           >
             <svg
@@ -87,7 +87,7 @@ export function Sidebar({
         <div className="flex-shrink-0 border-t border-white/10 px-3 py-2">
           <button
             onClick={onSettingsClick}
-            className="no-drag w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-500 hover:bg-[#1a1a1a] hover:text-gray-300 transition-colors text-sm"
+            className="no-drag w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-500 hover:bg-[var(--bg-surface)] hover:text-gray-300 transition-colors text-sm"
             title="Settings"
           >
             <svg
