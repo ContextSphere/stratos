@@ -12,7 +12,7 @@ jobs:
   release-macos:
     name: Build and Upload macOS Release
     runs-on: macos-latest
-    environment: production
+    environment: release
     env:
       MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
