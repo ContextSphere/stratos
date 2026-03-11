@@ -736,6 +736,29 @@ export class AgentManager {
         void this.requestPlanReview(threadId, { allowedPrompts: [] });
       }
     } catch (err: any) {
+      // If the error is due to a stale session (process exited), retry once
+      // without the sessionId so a fresh session is started.
+      const isStaleSession =
+        session.sessionId &&
+        typeof err?.message === "string" &&
+        /process exited|exited with code/i.test(err.message);
+
+      if (isStaleSession) {
+        console.warn(
+          `[agent-manager] Stale session for thread ${threadId}, retrying without resume`,
+        );
+        session.sessionId = undefined;
+        try {
+          this.storage.updateThread(threadId, {
+            sessionId: undefined,
+          });
+        } catch {}
+        // Retry the send — recursive call will use sessionId=undefined
+        this.activeStreams.delete(threadId);
+        this.threadEffectiveModes.delete(threadId);
+        return this.runStream(threadId, prompt, images);
+      }
+
       if (!specificErrorSent) {
         this.sendToRenderer(
           IPC_CHANNELS.STREAM_MESSAGE,
