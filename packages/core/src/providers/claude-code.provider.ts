@@ -581,11 +581,16 @@ export class ClaudeCodeProvider implements AgentProvider {
               if (toolId) {
                 this.pendingToolIds.set(blockIndex, toolId);
               }
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const parentId = (msg as any).parent_tool_use_id as
+                | string
+                | undefined;
               yield {
                 type: "tool_use",
                 toolName: block.name,
                 input: block.input ?? {},
                 toolCallId: toolId,
+                ...(parentId && { parentToolUseId: parentId }),
               };
             }
           }
