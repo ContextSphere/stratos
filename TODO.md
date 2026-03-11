@@ -10,4 +10,4 @@
 
 - [ ] **Agent view for Claude Code** — When an agent is launched it just shows as a tool call. Give it a nicer treatment like the task view.
 - [ ] **Theme switching** — Dark mode, light mode, etc.
-- [ ] **Diff viewer** — Similar to Codex's diff viewer.
+- [x] **Diff viewer** — Similar to Codex's diff viewer.
