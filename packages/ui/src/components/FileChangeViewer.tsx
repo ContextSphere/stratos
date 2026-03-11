@@ -177,6 +177,30 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
     );
   }
 
+  // Read tool: show header only, no content
+  if (toolCall.toolName === "Read") {
+    return (
+      <div className="rounded-lg bg-[#111] border border-[#333] p-3 text-xs">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="font-mono font-semibold text-gray-300 flex-shrink-0">
+              {toolCall.toolName}
+            </span>
+            <span className="text-gray-500 flex-shrink-0">•</span>
+            <span className="font-mono text-gray-400 truncate" title={filePath}>
+              {fileName}
+            </span>
+          </div>
+          <span
+            className={`text-xs ml-2 flex-shrink-0 ${statusColors[toolCall.status]}`}
+          >
+            {statusLabels[toolCall.status]}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg bg-[#111] border border-[#333] overflow-hidden text-xs">
       {/* Header - always visible */}
