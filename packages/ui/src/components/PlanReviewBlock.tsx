@@ -13,9 +13,9 @@ interface PlanReviewBlockProps {
 }
 
 const BTN_ENABLED =
-  "border-[var(--border)] bg-[var(--bg-surface)] text-gray-400 hover:border-[var(--border-mid)] hover:text-gray-300 cursor-pointer";
+  "border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-control)] hover:border-[var(--border-mid)] hover:text-[var(--text-primary)] cursor-pointer";
 const BTN_DISABLED =
-  "border-[var(--border)] bg-[var(--bg-surface)] text-gray-600 opacity-60 cursor-not-allowed";
+  "border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-muted)] opacity-60 cursor-not-allowed";
 
 export function PlanReviewBlock({
   provider,
@@ -37,7 +37,7 @@ export function PlanReviewBlock({
   return (
     <div className="my-3 rounded-lg border border-[var(--border)] bg-[var(--bg-overlay)] p-3">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-medium text-gray-200">
+        <p className="text-sm font-medium text-[var(--text-primary)]">
           Plan is ready. Would you like to proceed?
         </p>
         {data.planContent && onViewPlan && (
@@ -60,7 +60,7 @@ export function PlanReviewBlock({
             className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${disabled ? BTN_DISABLED : BTN_ENABLED}`}
           >
             <span className="text-sm">Implement plan</span>
-            <span className="block text-xs text-gray-500 mt-0.5">
+            <span className="block text-xs text-[var(--text-muted)] mt-0.5">
               Auto-approve and execute the plan
             </span>
           </button>
@@ -72,7 +72,7 @@ export function PlanReviewBlock({
               className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${disabled ? BTN_DISABLED : BTN_ENABLED}`}
             >
               <span className="text-sm">Yes, bypass permissions</span>
-              <span className="block text-xs text-gray-500 mt-0.5">
+              <span className="block text-xs text-[var(--text-muted)] mt-0.5">
                 Auto-approve tool permissions
               </span>
             </button>
@@ -83,7 +83,7 @@ export function PlanReviewBlock({
               className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${disabled ? BTN_DISABLED : BTN_ENABLED}`}
             >
               <span className="text-sm">Yes, manually approve edits</span>
-              <span className="block text-xs text-gray-500 mt-0.5">
+              <span className="block text-xs text-[var(--text-muted)] mt-0.5">
                 Require manual approval for each tool
               </span>
             </button>

@@ -41,12 +41,12 @@ export function Sidebar({
         <div className="drag-region h-7 flex-shrink-0" />
         {/* Header with logo */}
         <div className="flex-shrink-0 flex items-center justify-between px-3 pb-1">
-          <span className="font-semibold text-gray-200">
+          <span className="font-semibold text-[var(--text-primary)]">
             <span className="text-blue-500">Stratos</span>
           </span>
           <button
             onClick={onToggleSidebar}
-            className="no-drag p-1 rounded-md text-gray-500 hover:text-gray-300 hover:bg-[var(--bg-surface)] transition-colors"
+            className="no-drag p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors"
             title="Collapse sidebar"
           >
             <svg
@@ -66,7 +66,7 @@ export function Sidebar({
         </div>
 
         {/* Thread list */}
-        <div className="flex-1 flex flex-col min-h-0 border-t border-white/10 overflow-y-auto px-1 py-2">
+        <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] overflow-y-auto px-1 py-2">
           <ThreadList
             threads={threads}
             folders={folders}
@@ -84,10 +84,10 @@ export function Sidebar({
         </div>
 
         {/* Settings footer */}
-        <div className="flex-shrink-0 border-t border-white/10 px-3 py-2">
+        <div className="flex-shrink-0 border-t border-[var(--border)] px-3 py-2">
           <button
             onClick={onSettingsClick}
-            className="no-drag w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-500 hover:bg-[var(--bg-surface)] hover:text-gray-300 transition-colors text-sm"
+            className="no-drag w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[var(--text-control)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] transition-colors text-sm"
             title="Settings"
           >
             <svg

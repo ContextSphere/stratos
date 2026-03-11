@@ -33,7 +33,8 @@ export function Button({
   const variantStyles = {
     primary:
       "bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 disabled:cursor-not-allowed",
-    secondary: "bg-[var(--border)] hover:bg-[var(--border-mid)] text-gray-300",
+    secondary:
+      "bg-[var(--border)] hover:bg-[var(--border-mid)] text-[var(--text-primary)]",
     destructive:
       "bg-red-600/20 border border-red-500/30 text-red-400 hover:bg-red-600/30",
     icon: "bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed",

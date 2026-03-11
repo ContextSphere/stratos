@@ -121,7 +121,9 @@ export default function ModelSelector({
   }, [isOpen, models, highlightedIndex, onModelChange]);
 
   if (isLoading) {
-    return <div className="text-xs text-gray-600">Loading models...</div>;
+    return (
+      <div className="text-xs text-[var(--text-muted)]">Loading models...</div>
+    );
   }
 
   const currentModel = selectedModel || models[0]?.value;
@@ -130,16 +132,16 @@ export default function ModelSelector({
     currentModelInfo?.supportsReasoning ?? isOpusModel(currentModelInfo);
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1 bg-[var(--bg-surface)] border border-[var(--border)] rounded-lg px-2 py-0.5">
       <div className="relative" ref={dropdownRef}>
         <button
           onClick={() => setIsOpen((v) => !v)}
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-400 transition-colors cursor-pointer"
+          className="flex items-center gap-1 text-xs text-[var(--text-control)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           title={currentModelInfo?.description}
         >
           {currentModelInfo?.displayName ?? currentModel}
           <svg
-            className="w-3 h-3 opacity-50"
+            className="w-3 h-3"
             fill="none"
             stroke="currentColor"
             strokeWidth={2}
@@ -166,13 +168,13 @@ export default function ModelSelector({
                 onMouseEnter={() => setHighlightedIndex(i)}
                 className={`w-full text-left px-3 py-2 text-xs flex flex-col gap-0.5 ${
                   i === highlightedIndex
-                    ? "bg-[var(--border)] text-gray-200"
-                    : "text-gray-400 hover:bg-[var(--border)]"
+                    ? "bg-[var(--border)] text-[var(--text-primary)]"
+                    : "text-[var(--text-control)] hover:bg-[var(--border)]"
                 }`}
               >
                 <span>{model.displayName}</span>
                 {model.description && (
-                  <span className="text-gray-600 text-[11px]">
+                  <span className="text-[var(--text-muted)] text-[11px]">
                     {model.description}
                   </span>
                 )}
@@ -184,19 +186,34 @@ export default function ModelSelector({
 
       {showEffort && (
         <>
-          <span className="text-xs text-gray-600">·</span>
-          <select
-            value={thinkingEffort || "high"}
-            onChange={(e) => onThinkingEffortChange(e.target.value)}
-            className="w-auto bg-transparent border-none text-xs text-gray-500 hover:text-gray-400 focus:outline-none focus:text-gray-400 transition-colors cursor-pointer px-0"
-            title="Thinking effort level"
-          >
-            {EFFORT_LEVELS.map((level) => (
-              <option key={level.value} value={level.value}>
-                {level.label} effort
-              </option>
-            ))}
-          </select>
+          <span className="text-xs text-[var(--text-muted)]">·</span>
+          <label className="inline-flex items-center gap-0.5 cursor-pointer text-[var(--text-control)] hover:text-[var(--text-primary)] transition-colors">
+            <select
+              value={thinkingEffort || "high"}
+              onChange={(e) => onThinkingEffortChange(e.target.value)}
+              className="appearance-none bg-transparent border-none text-xs text-inherit focus:outline-none cursor-pointer p-0"
+              title="Thinking effort level"
+            >
+              {EFFORT_LEVELS.map((level) => (
+                <option key={level.value} value={level.value}>
+                  {level.label} effort
+                </option>
+              ))}
+            </select>
+            <svg
+              className="pointer-events-none w-3 h-3 flex-shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </label>
         </>
       )}
     </div>

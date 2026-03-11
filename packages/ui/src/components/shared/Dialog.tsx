@@ -63,10 +63,10 @@ export function Dialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div
-        className={`no-drag bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-2xl shadow-2xl w-full ${maxWidthStyles[maxWidth]} mx-4 overflow-hidden`}
+        className={`no-drag bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-2xl shadow-2xl w-full ${maxWidthStyles[maxWidth]} mx-4 flex flex-col max-h-[90vh]`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-2">
+        <div className="flex-shrink-0 flex items-center justify-between px-6 pt-6 pb-2">
           <div className="flex items-center gap-3">
             {icon && (
               <div
@@ -96,7 +96,7 @@ export function Dialog({
         </div>
 
         {/* Body */}
-        <div className="px-6 pb-6">{children}</div>
+        <div className="px-6 pb-6 overflow-y-auto">{children}</div>
       </div>
     </div>
   );

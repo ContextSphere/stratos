@@ -1,20 +1,109 @@
-import { Button } from "@stratosapp/ui";
+import { useState } from "react";
+import {
+  Button,
+  ProviderToggle,
+  ModelSelector,
+  ModeToggle,
+  WorktreeToggle,
+  ToolCallCard,
+  TaskCard,
+} from "@stratosapp/ui";
+import type { ToolCall, TaskInfo } from "@stratosapp/ui";
+type AgentMode = "plan" | "default" | "acceptEdits" | "bypassPermissions";
+
+const SAMPLE_MODELS = [
+  {
+    value: "claude-opus-4-6",
+    displayName: "Default (recommended)",
+    description: "Opus 4.6 · Most capable for complex work",
+    supportsReasoning: true,
+  },
+  {
+    value: "claude-sonnet-4-6",
+    displayName: "Sonnet 4.6",
+    description: "Fast and balanced",
+    supportsReasoning: false,
+  },
+  {
+    value: "claude-haiku-4-5",
+    displayName: "Haiku 4.5",
+    description: "Lightweight and quick",
+    supportsReasoning: false,
+  },
+];
+
+const SAMPLE_BASH_TOOL: ToolCall = {
+  toolCallId: "tc-bash",
+  toolName: "Bash",
+  input: {
+    command: "pnpm test --filter @stratosapp/ui",
+    description: "Run UI tests",
+  },
+  status: "completed",
+  output: "✓ 14 tests passed",
+};
+
+const SAMPLE_EDIT_TOOL: ToolCall = {
+  toolCallId: "tc-edit",
+  toolName: "Edit",
+  input: {
+    file_path: "packages/ui/src/components/shared/Dialog.tsx",
+    old_string: 'className="overflow-hidden"',
+    new_string: 'className="flex flex-col max-h-[90vh]"',
+  },
+  status: "completed",
+};
+
+const SAMPLE_READ_TOOL: ToolCall = {
+  toolCallId: "tc-read",
+  toolName: "Read",
+  input: { file_path: "packages/ui/src/components/shared/Dialog.tsx" },
+  status: "running",
+};
+
+const SAMPLE_TASK: TaskInfo = {
+  taskId: "task-1",
+  subagentType: "Explore",
+  description: "Search for all Dialog component usages across the codebase",
+  prompt:
+    "Find all files that import and use the Dialog component from @stratosapp/ui",
+  status: "completed",
+  startTime: Date.now() - 4200,
+  endTime: Date.now(),
+  result: JSON.stringify([
+    {
+      type: "text",
+      text: "Found 6 usages in: SettingsDialog.tsx, PermissionDialog.tsx, ConnectDialog.tsx, ConfirmDialog.tsx, RenameDialog.tsx, DeleteDialog.tsx",
+    },
+  ]),
+  toolCallsExpanded: false,
+};
 
 /**
- * Live component gallery that reads CSS custom properties.
+ * Live component gallery showing all real app components.
  * Automatically reflects the active theme — no props needed.
  */
 export function ComponentGallery(): React.ReactElement {
+  const [provider, setProvider] = useState<"claude-code" | "codex">(
+    "claude-code",
+  );
+  const [model, setModel] = useState("claude-opus-4-6");
+  const [effort, setEffort] = useState("high");
+  const [mode, setMode] = useState<AgentMode>("default");
+  const [worktreeMode, setWorktreeMode] = useState<"local" | "worktree">(
+    "worktree",
+  );
+
   return (
     <div
-      className="rounded-xl p-4 space-y-5 text-sm"
+      className="rounded-xl p-4 space-y-6 text-sm"
       style={{
         background: "var(--bg-surface)",
         border: "1px solid var(--border)",
         color: "var(--text-primary)",
       }}
     >
-      {/* Color swatches */}
+      {/* Colors */}
       <GallerySection label="Colors">
         <div className="flex flex-wrap gap-2">
           {[
@@ -83,18 +172,60 @@ export function ComponentGallery(): React.ReactElement {
         </div>
       </GallerySection>
 
-      {/* Inputs */}
-      <GallerySection label="Input">
-        <input
-          type="text"
-          placeholder="Type something…"
-          className="w-full px-3 py-1.5 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
+      {/* Provider Toggle */}
+      <GallerySection label="Provider Toggle">
+        <ProviderToggle provider={provider} onProviderChange={setProvider} />
+      </GallerySection>
+
+      {/* Model Selector */}
+      <GallerySection label="Model Selector">
+        <div
+          className="flex items-center gap-2 px-3 py-2 rounded-lg"
           style={{
             background: "var(--bg-overlay)",
             border: "1px solid var(--border)",
-            color: "var(--text-primary)",
           }}
-          readOnly
+        >
+          <ModelSelector
+            selectedModel={model}
+            onModelChange={setModel}
+            thinkingEffort={effort}
+            onThinkingEffortChange={setEffort}
+            models={SAMPLE_MODELS}
+          />
+        </div>
+      </GallerySection>
+
+      {/* Mode Toggle */}
+      <GallerySection label="Mode Toggle">
+        <ModeToggle provider={provider} mode={mode} onModeChange={setMode} />
+      </GallerySection>
+
+      {/* Worktree Toggle */}
+      <GallerySection label="Worktree Toggle">
+        <WorktreeToggle
+          worktreeMode={worktreeMode}
+          isGitRepo={true}
+          disabled={false}
+          onWorktreeModeChange={setWorktreeMode}
+        />
+      </GallerySection>
+
+      {/* Tool Cards */}
+      <GallerySection label="Tool Cards">
+        <div className="space-y-2">
+          <ToolCallCard toolCall={SAMPLE_BASH_TOOL} />
+          <ToolCallCard toolCall={SAMPLE_READ_TOOL} />
+          <ToolCallCard toolCall={SAMPLE_EDIT_TOOL} />
+        </div>
+      </GallerySection>
+
+      {/* Task / Agent Card */}
+      <GallerySection label="Agent Task Card">
+        <TaskCard
+          taskInfo={SAMPLE_TASK}
+          childToolCalls={[SAMPLE_BASH_TOOL, SAMPLE_READ_TOOL]}
+          onToggleToolCalls={() => {}}
         />
       </GallerySection>
 
@@ -127,8 +258,8 @@ export function ComponentGallery(): React.ReactElement {
         </div>
       </GallerySection>
 
-      {/* Card surface */}
-      <GallerySection label="Card surface">
+      {/* Card Surface */}
+      <GallerySection label="Card Surface">
         <div
           className="rounded-lg p-3 space-y-1"
           style={{

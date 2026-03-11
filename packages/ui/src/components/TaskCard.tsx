@@ -96,12 +96,12 @@ export function TaskCard({
   const toolCallsExpanded = taskInfo.toolCallsExpanded ?? false;
 
   return (
-    <div className="rounded-lg bg-[#0d0d18] border border-[#3a3a5a] p-3 text-xs">
+    <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs">
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-base">{icon}</span>
-          <span className="font-semibold text-gray-200">
+          <span className="font-semibold text-[var(--text-primary)]">
             {taskInfo.subagentType}
           </span>
         </div>
@@ -116,11 +116,13 @@ export function TaskCard({
       </div>
 
       {/* Description */}
-      <div className="text-sm text-gray-300 mb-2">{taskInfo.description}</div>
+      <div className="text-sm text-[var(--text-secondary)] mb-2">
+        {taskInfo.description}
+      </div>
 
       {/* Elapsed time (only when completed) */}
       {elapsedTime && (
-        <div className="text-xs text-gray-500 mb-2">
+        <div className="text-xs text-[var(--text-muted)] mb-2">
           Elapsed: {elapsedTime}s
         </div>
       )}
@@ -129,16 +131,18 @@ export function TaskCard({
       <div className="mt-2">
         <button
           onClick={() => setDetailsExpanded(!detailsExpanded)}
-          className="flex items-center gap-1.5 text-gray-400 hover:text-gray-300 transition-colors"
+          className="flex items-center gap-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
         >
-          <span className="text-gray-600">{detailsExpanded ? "▾" : "▸"}</span>
+          <span className="text-[var(--text-muted)]">
+            {detailsExpanded ? "▾" : "▸"}
+          </span>
           Task details
         </button>
         {detailsExpanded && (
           <div className="mt-2 pl-4 space-y-2">
             <div>
-              <div className="text-gray-500 mb-1">Prompt:</div>
-              <pre className="p-2 bg-[var(--bg-root)] rounded text-gray-300 font-mono text-xs whitespace-pre-wrap">
+              <div className="text-[var(--text-muted)] mb-1">Prompt:</div>
+              <pre className="p-2 bg-[var(--bg-root)] rounded text-[var(--text-primary)] font-mono text-xs whitespace-pre-wrap">
                 {promptExpanded ? taskInfo.prompt : promptPreview}
               </pre>
               {hasMorePrompt && (
@@ -162,9 +166,9 @@ export function TaskCard({
               const newExpanded = !toolCallsExpanded;
               onToggleToolCalls?.(newExpanded);
             }}
-            className="flex items-center gap-1.5 text-gray-400 hover:text-gray-300 transition-colors"
+            className="flex items-center gap-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
           >
-            <span className="text-gray-600">
+            <span className="text-[var(--text-muted)]">
               {toolCallsExpanded ? "▾" : "▸"}
             </span>
             {taskInfo.status === "running"
@@ -189,20 +193,22 @@ export function TaskCard({
         <div className="mt-2">
           <button
             onClick={() => setResultExpanded(!resultExpanded)}
-            className="flex items-center gap-1.5 text-gray-400 hover:text-gray-300 transition-colors"
+            className="flex items-center gap-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
           >
-            <span className="text-gray-600">{resultExpanded ? "▾" : "▸"}</span>
+            <span className="text-[var(--text-muted)]">
+              {resultExpanded ? "▾" : "▸"}
+            </span>
             Result
           </button>
           {resultExpanded && (
             <div className="mt-2 pl-4">
-              <pre className="p-2 bg-[var(--bg-root)] rounded text-gray-300 font-mono text-xs whitespace-pre-wrap max-h-64 overflow-y-auto">
+              <pre className="p-2 bg-[var(--bg-root)] rounded text-[var(--text-primary)] font-mono text-xs whitespace-pre-wrap max-h-64 overflow-y-auto">
                 {resultText}
               </pre>
             </div>
           )}
           {!resultExpanded && hasMoreResult && (
-            <div className="mt-1 pl-4 text-gray-500 text-xs">
+            <div className="mt-1 pl-4 text-[var(--text-muted)] text-xs">
               {resultPreview}... (click to expand)
             </div>
           )}

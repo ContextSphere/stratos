@@ -33,72 +33,6 @@ import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
 import { ConnectCodexDialog } from "./components/ConnectCodexDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 
-function ContextRing({
-  sessionStats,
-}: {
-  sessionStats: SessionStats;
-}): React.ReactElement {
-  const totalTokens =
-    sessionStats.totalInputTokens + sessionStats.totalOutputTokens;
-  const contextPercent =
-    sessionStats.contextWindow && totalTokens > 0
-      ? Math.min(
-          100,
-          Math.round((totalTokens / sessionStats.contextWindow) * 100),
-        )
-      : null;
-  const ringPercent = contextPercent ?? 0;
-  const ringColor =
-    contextPercent != null && contextPercent >= 80 ? "#d97706" : "#4b5563";
-
-  return (
-    <div className="relative no-drag group flex-shrink-0">
-      <button
-        type="button"
-        aria-label="Session stats"
-        className="w-3.5 h-3.5 rounded-full flex items-center justify-center"
-        title="Session stats"
-      >
-        <span
-          className="block w-3.5 h-3.5 rounded-full"
-          style={{
-            background: `conic-gradient(${ringColor} ${ringPercent}%, var(--border) ${ringPercent}% 100%)`,
-          }}
-        />
-        <span className="absolute w-2.5 h-2.5 rounded-full bg-[var(--bg-main)]" />
-      </button>
-      <div className="pointer-events-none absolute left-0 bottom-[calc(100%+6px)] w-44 rounded-lg border border-[var(--border)] bg-[var(--bg-overlay)] px-2.5 py-2 text-[11px] text-gray-300 opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-150 z-20">
-        <div className="flex items-center justify-between">
-          <span className="text-gray-500">Context</span>
-          <span
-            className={
-              contextPercent != null && contextPercent >= 80
-                ? "text-amber-400"
-                : "text-gray-300"
-            }
-          >
-            {contextPercent != null ? `${contextPercent}%` : "—"}
-          </span>
-        </div>
-        <div className="mt-1 flex items-center justify-between">
-          <span className="text-gray-500">Cost</span>
-          <span>${sessionStats.totalCost.toFixed(2)}</span>
-        </div>
-        <div className="mt-1 flex items-center justify-between">
-          <span className="text-gray-500">Tokens</span>
-          <span>
-            {totalTokens >= 1_000_000
-              ? (totalTokens / 1_000_000).toFixed(1) + "M"
-              : totalTokens >= 1_000
-                ? (totalTokens / 1_000).toFixed(1) + "k"
-                : String(totalTokens)}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function App(): React.ReactElement {
   const {
     threads,
@@ -555,7 +489,7 @@ export default function App(): React.ReactElement {
                   {sidebarCollapsed && (
                     <button
                       onClick={toggleSidebar}
-                      className="no-drag p-1 rounded-md text-gray-500 hover:text-gray-300 hover:bg-[var(--border)] transition-colors"
+                      className="no-drag p-1 rounded-md text-[var(--text-control)] hover:text-[var(--text-primary)] hover:bg-[var(--border)] transition-colors"
                       title="Expand sidebar"
                     >
                       <svg
@@ -587,7 +521,9 @@ export default function App(): React.ReactElement {
                     />
                     <span
                       className={
-                        claude.isConnected ? "text-gray-400" : "text-gray-600"
+                        claude.isConnected
+                          ? "text-[var(--text-control)]"
+                          : "text-[var(--text-muted)]"
                       }
                     >
                       Claude
@@ -605,7 +541,9 @@ export default function App(): React.ReactElement {
                     />
                     <span
                       className={
-                        codex.isConnected ? "text-gray-400" : "text-gray-600"
+                        codex.isConnected
+                          ? "text-[var(--text-control)]"
+                          : "text-[var(--text-muted)]"
                       }
                     >
                       Codex
@@ -623,7 +561,9 @@ export default function App(): React.ReactElement {
                     />
                     <span
                       className={
-                        github.isConnected ? "text-gray-400" : "text-gray-600"
+                        github.isConnected
+                          ? "text-[var(--text-control)]"
+                          : "text-[var(--text-muted)]"
                       }
                     >
                       GitHub
@@ -720,7 +660,7 @@ export default function App(): React.ReactElement {
                       onProviderChange={handleProviderChange}
                       disabled={isStreaming || messages.length > 0}
                     />
-                    <span className="text-xs text-gray-700">|</span>
+                    <span className="text-xs text-[var(--text-muted)]">|</span>
                     <ModelSelector
                       selectedModel={activeThread?.model}
                       onModelChange={handleModelChange}
@@ -734,11 +674,6 @@ export default function App(): React.ReactElement {
                       isOpen={modelPickerOpen}
                       onOpenChange={setModelPickerOpen}
                     />
-                    {sessionStats &&
-                      (sessionStats.totalCost > 0 ||
-                        sessionStats.totalInputTokens +
-                          sessionStats.totalOutputTokens >
-                          0) && <ContextRing sessionStats={sessionStats} />}
                   </div>
                   <ModeToggle
                     provider={

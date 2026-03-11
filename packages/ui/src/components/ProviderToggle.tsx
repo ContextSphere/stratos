@@ -50,9 +50,9 @@ export default function ProviderToggle({
               disabled={disabled}
               className={`no-drag flex items-center gap-1 px-2 py-0.5 rounded text-[11px] transition-colors ${
                 isActive
-                  ? "bg-[var(--border)] text-gray-200"
-                  : "text-gray-500 hover:text-gray-400"
-              } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                  ? "bg-[var(--border)] text-[var(--text-primary)]"
+                  : "text-[var(--text-control)] hover:text-[var(--text-primary)]"
+              } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
               title={`Use ${p.label} provider`}
             >
               {p.icon}

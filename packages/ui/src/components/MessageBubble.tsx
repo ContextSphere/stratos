@@ -73,13 +73,13 @@ function ThinkingBlock({
     <div className="mb-1">
       <button
         onClick={handleToggle}
-        className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-400 transition-colors"
+        className="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
       >
         <span className="text-[10px]">{expanded ? "▾" : "▸"}</span>
         {expanded ? "Hide reasoning" : "Reasoning"}
       </button>
       {expanded && (
-        <pre className="mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap break-words pl-3 border-l-2 border-white/[0.06] font-sans text-xs leading-relaxed text-gray-500">
+        <pre className="mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap break-words pl-3 border-l-2 border-[var(--border)] font-sans text-xs leading-relaxed text-[var(--text-muted)]">
           {content}
         </pre>
       )}
@@ -113,7 +113,7 @@ function buildMarkdownComponents(onLinkClick?: (url: string) => void) {
         </SyntaxHighlighter>
       ) : (
         <code
-          className={`${className ?? ""} bg-gray-800 px-1.5 py-0.5 rounded text-xs`}
+          className={`${className ?? ""} bg-[var(--bg-overlay)] px-1.5 py-0.5 rounded text-xs`}
           {...props}
         >
           {children}
@@ -153,30 +153,34 @@ function buildMarkdownComponents(onLinkClick?: (url: string) => void) {
     },
     blockquote({ children }: { children?: React.ReactNode }) {
       return (
-        <blockquote className="border-l-4 border-gray-600 pl-4 italic my-2">
+        <blockquote className="border-l-4 border-[var(--border-mid)] pl-4 italic my-2">
           {children}
         </blockquote>
       );
     },
     table({ children }: { children?: React.ReactNode }) {
       return (
-        <table className="border-collapse border border-gray-700 my-2 w-full">
+        <table className="border-collapse border border-[var(--border-mid)] my-2 w-full">
           {children}
         </table>
       );
     },
     thead({ children }: { children?: React.ReactNode }) {
-      return <thead className="bg-gray-800">{children}</thead>;
+      return <thead className="bg-[var(--bg-overlay)]">{children}</thead>;
     },
     th({ children }: { children?: React.ReactNode }) {
       return (
-        <th className="border border-gray-700 px-3 py-2 text-left font-semibold">
+        <th className="border border-[var(--border-mid)] px-3 py-2 text-left font-semibold">
           {children}
         </th>
       );
     },
     td({ children }: { children?: React.ReactNode }) {
-      return <td className="border border-gray-700 px-3 py-2">{children}</td>;
+      return (
+        <td className="border border-[var(--border-mid)] px-3 py-2">
+          {children}
+        </td>
+      );
     },
     a({ children, href }: { children?: React.ReactNode; href?: string }) {
       return (
@@ -331,7 +335,7 @@ export function MessageBubble({
             className={
               isUser
                 ? "max-w-[85%] rounded-2xl px-4 py-3 break-words bg-blue-600 text-white"
-                : "w-full break-words text-gray-200 py-1"
+                : "w-full break-words text-[var(--text-primary)] py-1"
             }
           >
             {/* Thinking block */}
@@ -396,7 +400,7 @@ export function MessageBubble({
 
             {/* Message text */}
             {cleanContent && (
-              <div className="text-sm leading-relaxed prose prose-invert prose-sm max-w-none">
+              <div className="text-sm leading-relaxed prose prose-sm max-w-none">
                 <MarkdownContent
                   content={cleanContent}
                   onLinkClick={onLinkClick}

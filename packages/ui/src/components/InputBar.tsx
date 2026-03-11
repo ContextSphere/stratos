@@ -344,7 +344,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
 
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="no-drag flex-shrink-0 w-10 h-10 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-mid)] hover:bg-[var(--border)] text-gray-400 hover:text-gray-200 flex items-center justify-center transition-colors"
+            className="no-drag flex-shrink-0 w-10 h-10 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-mid)] hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center justify-center transition-colors"
             title="Attach image"
           >
             <svg
@@ -371,7 +371,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             data-placeholder={placeholder}
-            className="no-drag flex-1 min-h-[44px] max-h-[200px] overflow-y-auto bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-xl px-4 py-3 text-sm text-gray-200 focus:outline-none focus:border-blue-500 transition-colors empty:before:content-[attr(data-placeholder)] empty:before:text-gray-600 empty:before:pointer-events-none whitespace-pre-wrap"
+            className="no-drag flex-1 min-h-[44px] max-h-[200px] overflow-y-auto bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] focus:outline-none focus:border-blue-500 transition-colors empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--text-muted)] empty:before:pointer-events-none whitespace-pre-wrap"
             role="textbox"
             aria-multiline="true"
           />
@@ -395,7 +395,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
             <button
               onClick={handleSend}
               disabled={!canSend}
-              className="no-drag flex-shrink-0 w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white flex items-center justify-center transition-colors"
+              className="no-drag flex-shrink-0 w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-[var(--border-mid)] disabled:cursor-not-allowed text-white flex items-center justify-center transition-colors"
               title="Send"
             >
               <svg

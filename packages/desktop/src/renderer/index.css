@@ -20,6 +20,7 @@
   --text-secondary: #9ca3af;
   --text-muted:     #6b7280;
   --text-faint:     #4b5563;
+  --text-control:   #c9cdd4;
   --scrollbar-thumb: rgba(255, 255, 255, 0.1);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
 }
@@ -35,6 +36,7 @@
   --text-secondary: #4b5563;
   --text-muted:     #6b7280;
   --text-faint:     #9ca3af;
+  --text-control:   #1a1a1a;
   --scrollbar-thumb: rgba(0, 0, 0, 0.15);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.25);
 }

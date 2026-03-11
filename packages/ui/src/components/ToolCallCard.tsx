@@ -43,10 +43,12 @@ function SkillCard({ toolCall }: Props): React.ReactElement {
         : ((Object.values(toolCall.input)[0] as string | undefined) ?? "skill");
 
   return (
-    <div className="rounded-lg bg-[#0d0d14] border border-[#2a2a4a] p-3 text-xs flex items-center gap-2">
-      <span className="text-purple-400 text-base">✦</span>
-      <span className="text-purple-300 font-medium">Using skill:</span>
-      <span className="font-mono text-purple-200">{skillName}</span>
+    <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs flex items-center gap-2">
+      <span className="text-purple-500 text-base">✦</span>
+      <span className="text-[var(--text-secondary)] font-medium">
+        Using skill:
+      </span>
+      <span className="font-mono text-[var(--text-primary)]">{skillName}</span>
       <span className={`ml-auto text-xs ${statusColors[toolCall.status]}`}>
         {statusLabels[toolCall.status]}
       </span>
@@ -66,14 +68,14 @@ export function ToolCallCard({ toolCall }: Props): React.ReactElement {
         fallback={
           <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs">
             <div className="flex items-center justify-between mb-1">
-              <span className="font-mono font-semibold text-gray-300">
+              <span className="font-mono font-semibold text-[var(--text-primary)]">
                 {toolCall.toolName}
               </span>
               <span className={`text-xs ${statusColors[toolCall.status]}`}>
                 {statusLabels[toolCall.status]}
               </span>
             </div>
-            <div className="mt-1.5 text-gray-500 text-xs animate-pulse">
+            <div className="mt-1.5 text-[var(--text-muted)] text-xs animate-pulse">
               Loading...
             </div>
           </div>
@@ -87,18 +89,18 @@ export function ToolCallCard({ toolCall }: Props): React.ReactElement {
   return (
     <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs">
       <div className="flex items-center justify-between mb-1">
-        <span className="font-mono font-semibold text-gray-300">
+        <span className="font-mono font-semibold text-[var(--text-primary)]">
           {toolCall.toolName}
         </span>
         <span className={`text-xs ${statusColors[toolCall.status]}`}>
           {statusLabels[toolCall.status]}
         </span>
       </div>
-      <pre className="mt-1.5 p-2 bg-[var(--bg-root)] rounded text-gray-300 font-mono text-xs whitespace-pre-wrap max-h-32 overflow-y-auto">
+      <pre className="mt-1.5 p-2 bg-[var(--bg-root)] rounded text-[var(--text-primary)] font-mono text-xs whitespace-pre-wrap max-h-32 overflow-y-auto">
         {formatInput(toolCall.input)}
       </pre>
       {toolCall.output && (
-        <div className="mt-1.5 text-gray-500 font-mono text-xs whitespace-pre-wrap break-words line-clamp-2">
+        <div className="mt-1.5 text-[var(--text-muted)] font-mono text-xs whitespace-pre-wrap break-words line-clamp-2">
           {toolCall.output}
         </div>
       )}

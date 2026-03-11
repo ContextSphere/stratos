@@ -78,7 +78,7 @@ function FolderMenu({
   return (
     <div
       ref={ref}
-      className="absolute right-0 top-full mt-1 z-50 bg-[var(--bg-surface)] border border-white/10 rounded-lg shadow-lg py-1 min-w-[140px]"
+      className="absolute right-0 top-full mt-1 z-50 bg-[var(--bg-surface)] border border-[var(--border)] rounded-lg shadow-lg py-1 min-w-[140px]"
     >
       <button
         onClick={(e) => {
@@ -86,7 +86,7 @@ function FolderMenu({
           onRemove();
           onClose();
         }}
-        className="w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:text-red-400 hover:bg-[var(--border)] transition-colors"
+        className="w-full text-left px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-red-400 hover:bg-[var(--border)] transition-colors"
       >
         Remove folder
       </button>
@@ -117,8 +117,8 @@ function ThreadRow({
     <div
       className={`group no-drag flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-lg cursor-pointer transition-colors text-sm ${
         isActive
-          ? "bg-[var(--border)] text-gray-200"
-          : "text-gray-400 hover:bg-[var(--bg-surface)] hover:text-gray-200"
+          ? "bg-[var(--border)] text-[var(--text-primary)]"
+          : "text-[var(--text-control)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]"
       }`}
       onClick={() => onThreadClick(thread.id)}
     >
@@ -149,7 +149,7 @@ function ThreadRow({
           </button>
           <button
             onClick={() => setConfirmDelete(null)}
-            className="text-xs text-gray-500 hover:text-gray-300 px-1"
+            className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] px-1"
           >
             Cancel
           </button>
@@ -160,7 +160,7 @@ function ThreadRow({
             e.stopPropagation();
             setConfirmDelete(thread.id);
           }}
-          className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-600 hover:text-red-400 transition-all"
+          className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-muted)] hover:text-red-400 transition-all"
           title="Delete thread"
         >
           <svg
@@ -217,12 +217,12 @@ export function ThreadList({
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2">
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+        <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
           Threads
         </span>
         <button
           onClick={onAddFolder}
-          className="no-drag p-1 rounded-md text-gray-500 hover:text-gray-300 hover:bg-[var(--bg-surface)] transition-colors"
+          className="no-drag p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors"
           title="Add folder"
         >
           <svg
@@ -244,11 +244,11 @@ export function ThreadList({
       {/* Folder list */}
       <div className="flex-1 overflow-y-auto space-y-0.5 px-1">
         {folders.length === 0 ? (
-          <p className="text-xs text-gray-600 py-4 px-3 text-center">
+          <p className="text-xs text-[var(--text-muted)] py-4 px-3 text-center">
             No folders yet.{" "}
             <button
               onClick={onAddFolder}
-              className="text-gray-400 hover:text-gray-200 underline"
+              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] underline"
             >
               Add a folder
             </button>{" "}
@@ -264,7 +264,7 @@ export function ThreadList({
               <div key={folder.id}>
                 {/* Folder row */}
                 <div
-                  className="group no-drag flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors text-sm text-gray-300 hover:bg-[var(--bg-surface)] relative"
+                  className="group no-drag flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)] relative"
                   title={folder.name}
                   onClick={() =>
                     onToggleFolderCollapsed(folder.id, !isCollapsed)
@@ -272,7 +272,7 @@ export function ThreadList({
                 >
                   {/* Collapse chevron */}
                   <svg
-                    className={`w-3 h-3 text-gray-500 flex-shrink-0 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
+                    className={`w-3 h-3 text-[var(--text-muted)] flex-shrink-0 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
                     fill="none"
                     stroke="currentColor"
                     strokeWidth={2}
@@ -287,7 +287,7 @@ export function ThreadList({
 
                   {/* Folder icon */}
                   <svg
-                    className="w-4 h-4 text-gray-500 flex-shrink-0"
+                    className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0"
                     fill="none"
                     stroke="currentColor"
                     strokeWidth={1.5}
@@ -313,7 +313,7 @@ export function ThreadList({
                         e.stopPropagation();
                         setMenuOpenFolderId(isMenuOpen ? null : folder.id);
                       }}
-                      className="p-0.5 rounded text-gray-500 hover:text-gray-300 transition-colors"
+                      className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                       title="Folder options"
                     >
                       <svg
@@ -333,7 +333,7 @@ export function ThreadList({
                         e.stopPropagation();
                         onCreateThreadInFolder(folder.id);
                       }}
-                      className="p-0.5 rounded text-gray-500 hover:text-gray-300 transition-colors"
+                      className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                       title={`New thread in ${folder.name}`}
                     >
                       <svg
@@ -365,7 +365,7 @@ export function ThreadList({
                 {!isCollapsed && (
                   <div className="space-y-0.5 mt-0.5">
                     {folderThreads.length === 0 ? (
-                      <p className="text-xs text-gray-600 py-1 pl-7 pr-3">
+                      <p className="text-xs text-[var(--text-muted)] py-1 pl-7 pr-3">
                         No threads
                       </p>
                     ) : (

@@ -47,20 +47,20 @@ export function ChatInfoBar({
   onReconnectMcpServer,
 }: ChatInfoBarProps): React.ReactElement {
   return (
-    <div className="flex-shrink-0 bg-[var(--bg-main)] border-b border-white/[0.06] px-3 py-1">
+    <div className="flex-shrink-0 bg-[var(--bg-main)] border-b border-[var(--border)] px-3 py-1">
       <div className="flex items-center justify-between text-xs gap-2 min-h-[28px]">
         {/* Left: directory pills */}
         <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
           {primaryCwd && (
             <span
-              className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.04] text-gray-400 whitespace-nowrap flex-shrink-0"
+              className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--bg-surface)] text-[var(--text-control)] whitespace-nowrap flex-shrink-0"
               title={primaryCwd}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 20 20"
                 fill="currentColor"
-                className="w-3 h-3 flex-shrink-0 text-gray-500"
+                className="w-3 h-3 flex-shrink-0 text-[var(--text-control)]"
               >
                 <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
               </svg>
@@ -94,7 +94,7 @@ export function ChatInfoBar({
             <button
               onClick={() => onToggleTaskPanel?.()}
               title="Toggle task panel"
-              className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.04] text-gray-400 hover:bg-white/[0.07] transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--bg-surface)] text-[var(--text-control)] hover:bg-[var(--border)] transition-colors whitespace-nowrap"
             >
               <span className="text-xs">
                 {todoData.todos.filter((t) => t.status === "completed").length}/
@@ -106,7 +106,7 @@ export function ChatInfoBar({
           {primaryCwd && onToggleFileExplorer && (
             <button
               onClick={onToggleFileExplorer}
-              className="no-drag p-1 rounded-md text-gray-600 hover:text-gray-400 hover:bg-white/[0.04] transition-colors"
+              className="no-drag p-1 rounded-md text-[var(--text-control)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors"
               title="Toggle file explorer"
             >
               <svg

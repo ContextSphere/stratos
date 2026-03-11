@@ -134,17 +134,19 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
       <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="font-mono font-semibold text-gray-300">
+            <span className="font-mono font-semibold text-[var(--text-primary)]">
               {toolCall.toolName}
             </span>
-            <span className="text-gray-500">•</span>
-            <span className="font-mono text-gray-400">{fileName}</span>
+            <span className="text-[var(--text-muted)]">•</span>
+            <span className="font-mono text-[var(--text-secondary)]">
+              {fileName}
+            </span>
           </div>
           <span className={`text-xs ${statusColors[toolCall.status]}`}>
             {statusLabels[toolCall.status]}
           </span>
         </div>
-        <div className="mt-2 text-gray-500 text-xs">
+        <div className="mt-2 text-[var(--text-muted)] text-xs">
           📦 Binary file ({fileName.split(".").pop()?.toUpperCase()})
         </div>
       </div>
@@ -164,17 +166,21 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
       <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="font-mono font-semibold text-gray-300">
+            <span className="font-mono font-semibold text-[var(--text-primary)]">
               {toolCall.toolName}
             </span>
-            <span className="text-gray-500">•</span>
-            <span className="font-mono text-gray-400">{fileName}</span>
+            <span className="text-[var(--text-muted)]">•</span>
+            <span className="font-mono text-[var(--text-secondary)]">
+              {fileName}
+            </span>
           </div>
           <span className={`text-xs ${statusColors[toolCall.status]}`}>
             {statusLabels[toolCall.status]}
           </span>
         </div>
-        <div className="mt-2 text-gray-500 text-xs">📄 Empty file</div>
+        <div className="mt-2 text-[var(--text-muted)] text-xs">
+          📄 Empty file
+        </div>
       </div>
     );
   }
@@ -185,11 +191,14 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
       <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="font-mono font-semibold text-gray-300 flex-shrink-0">
+            <span className="font-mono font-semibold text-[var(--text-primary)] flex-shrink-0">
               {toolCall.toolName}
             </span>
-            <span className="text-gray-500 flex-shrink-0">•</span>
-            <span className="font-mono text-gray-400 truncate" title={filePath}>
+            <span className="text-[var(--text-muted)] flex-shrink-0">•</span>
+            <span
+              className="font-mono text-[var(--text-secondary)] truncate"
+              title={filePath}
+            >
               {fileName}
             </span>
           </div>
@@ -213,18 +222,21 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
         aria-label={`${isExpanded ? "Collapse" : "Expand"} ${toolCall.toolName} for ${fileName}`}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="text-gray-400 flex-shrink-0">
+          <span className="text-[var(--text-muted)] flex-shrink-0">
             {isExpanded ? "▾" : "▸"}
           </span>
-          <span className="font-mono font-semibold text-gray-300 flex-shrink-0">
+          <span className="font-mono font-semibold text-[var(--text-primary)] flex-shrink-0">
             {toolCall.toolName}
           </span>
-          <span className="text-gray-500 flex-shrink-0">•</span>
-          <span className="font-mono text-gray-400 truncate" title={filePath}>
+          <span className="text-[var(--text-muted)] flex-shrink-0">•</span>
+          <span
+            className="font-mono text-[var(--text-secondary)] truncate"
+            title={filePath}
+          >
             {fileName}
           </span>
           {changeStats && (
-            <span className="text-gray-500 flex-shrink-0 ml-1">
+            <span className="text-[var(--text-muted)] flex-shrink-0 ml-1">
               <span className="text-green-400">+{changeStats.added}</span>{" "}
               <span className="text-red-400">-{changeStats.removed}</span>
             </span>
@@ -243,14 +255,14 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
           {isTooLarge ? (
             // Too large - show message
             <div className="p-4 text-center">
-              <div className="text-gray-400 mb-2">
+              <div className="text-[var(--text-secondary)] mb-2">
                 📊 File too large for inline preview (
                 {countLines(
                   toolCall.toolName === "Edit" ? newContent : displayContent,
                 )}{" "}
                 lines)
               </div>
-              <div className="text-gray-500 text-xs">
+              <div className="text-[var(--text-muted)] text-xs">
                 Files larger than {MAX_LINES_INLINE} lines are not displayed
                 inline.
               </div>
@@ -357,7 +369,7 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
             </div>
           ) : (
             // Loading placeholder
-            <div className="p-4 flex items-center justify-center text-gray-500">
+            <div className="p-4 flex items-center justify-center text-[var(--text-muted)]">
               <div className="animate-pulse">Loading editor...</div>
             </div>
           )}
