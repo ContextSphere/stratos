@@ -67,6 +67,7 @@ export type AgentMessage =
       toolName: string;
       input: Record<string, unknown>;
       toolCallId: string;
+      parentToolUseId?: string;
     }
   | { type: "tool_result"; toolCallId: string; output: string }
   | { type: "todo_update"; todos: TodoItem[] }

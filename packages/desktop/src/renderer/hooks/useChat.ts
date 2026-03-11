@@ -430,7 +430,7 @@ export function useChat(
             status: "running",
           };
 
-          if (msg.toolName === "Task") {
+          if (msg.toolName === "Task" || msg.toolName === "Agent") {
             // Task tool call - create TaskInfo and track it
             const taskInfo: TaskInfo = {
               taskId: msg.toolCallId,
@@ -458,11 +458,12 @@ export function useChat(
                 toolCalls: [toolCall],
               },
             ]);
-          } else if (state.activeTaskId) {
-            // Child tool call - associate with active task
+          } else if (msg.parentToolUseId || state.activeTaskId) {
+            // Child tool call - associate with parent task by direct reference or active task
+            const parentTaskId = msg.parentToolUseId ?? state.activeTaskId;
             apply((prev) =>
               prev.map((m) => {
-                if (m.taskInfo?.taskId === state.activeTaskId) {
+                if (m.taskInfo?.taskId === parentTaskId && m.taskInfo) {
                   return {
                     ...m,
                     taskInfo: {
@@ -471,9 +472,9 @@ export function useChat(
                         ...m.taskInfo.childToolCalls,
                         msg.toolCallId,
                       ],
-                    },
+                    } as ChatMessage["taskInfo"],
                     toolCalls: [...(m.toolCalls ?? []), toolCall],
-                  };
+                  } as ChatMessage;
                 }
                 return m;
               }),
