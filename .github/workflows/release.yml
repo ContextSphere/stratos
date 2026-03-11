@@ -13,8 +13,8 @@ jobs:
     name: Build and Upload macOS Release
     runs-on: macos-latest
     env:
-      CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
-      CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -46,6 +46,31 @@ jobs:
             echo "Tag version $TAG_VERSION does not match packages/desktop/package.json version $PKG_VERSION"
             exit 1
           fi
+
+      - name: Prepare macOS signing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_vars=(
+            MACOS_CERTIFICATE_P12_BASE64
+            APPLE_ID
+            APPLE_APP_SPECIFIC_PASSWORD
+            APPLE_TEAM_ID
+          )
+
+          for var in "${required_vars[@]}"; do
+            if [ -z "${!var:-}" ]; then
+              echo "Missing required secret: $var"
+              exit 1
+            fi
+          done
+
+          CERT_PATH="$RUNNER_TEMP/stratos-signing-cert.p12"
+          CERT_PATH="$CERT_PATH" node -e "require('fs').writeFileSync(process.env.CERT_PATH, Buffer.from(process.env.MACOS_CERTIFICATE_P12_BASE64, 'base64'))"
+
+          echo "CSC_LINK=$CERT_PATH" >> "$GITHUB_ENV"
+          echo "CSC_KEY_PASSWORD=${MACOS_CERTIFICATE_PASSWORD:-}" >> "$GITHUB_ENV"
 
       - name: Build and package macOS app
         run: |
