@@ -4,6 +4,7 @@ import type {
   SendMessageParams,
   ProviderConfig,
   ModelInfo,
+  McpServerInfo,
 } from "./types";
 
 import { execSync, spawn, type ChildProcess } from "child_process";
@@ -311,6 +312,23 @@ export class CodexProvider implements AgentProvider {
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private mapMcpServerStatus(
+    authStatus: any,
+    tools: any,
+  ): McpServerInfo["status"] {
+    if (authStatus === "oAuth" || authStatus === "bearerToken") {
+      return "connected";
+    }
+    if (authStatus === "notLoggedIn") {
+      return "needs-auth";
+    }
+    if (authStatus === "unsupported") {
+      return tools && Object.keys(tools).length > 0 ? "connected" : "failed";
+    }
+    return "failed";
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -886,11 +904,13 @@ export class CodexProvider implements AgentProvider {
     // Emit session_init on first message
     if (!this.sessionInitSent) {
       this.sessionInitSent = true;
+      const mcpServers = await this.getMcpServerStatus();
       yield {
         type: "session_init",
         sessionId: this.threadId,
         tools: [],
         slashCommands: [],
+        mcpServers,
       };
     }
 
@@ -1902,6 +1922,39 @@ export class CodexProvider implements AgentProvider {
       // Skills discovery is optional
     }
     return [];
+  }
+
+  async getMcpServerStatus(): Promise<McpServerInfo[]> {
+    if (!this.appServer) return [];
+
+    try {
+      const result = await this.sendRpc("mcpServerStatus/list", {});
+      const servers = Array.isArray(result?.data) ? result.data : [];
+      return servers.map(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (s: any): McpServerInfo => ({
+          name: s.name,
+          status: this.mapMcpServerStatus(s.authStatus, s.tools),
+          tools: s.tools ? Object.keys(s.tools) : [],
+          scope: s.scope,
+          error: s.error,
+          configType: s.config?.type,
+          configId: s.config?.id,
+        }),
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  async reconnectMcpServer(
+    _serverName: string,
+  ): Promise<{ authUrl?: string } | void> {
+    try {
+      await this.sendRpc("config/mcpServer/reload", {});
+    } catch {
+      // Ignore unsupported reload failures.
+    }
   }
 
   async dispose(): Promise<void> {

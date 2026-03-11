@@ -38,4 +38,27 @@ describe("ChatInfoBar", () => {
 
     expect(screen.queryByLabelText("Session stats")).not.toBeInTheDocument();
   });
+
+  it("renders the tools badge when MCP servers exist without session tools", () => {
+    render(
+      <ChatInfoBar
+        sessionStats={{
+          totalCost: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          contextWindow: null,
+        }}
+        mcpServers={[
+          {
+            name: "github",
+            status: "connected",
+            tools: ["search_repos"],
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTitle("View available tools")).toBeInTheDocument();
+    expect(screen.getByText("0 tools")).toBeInTheDocument();
+  });
 });

@@ -46,6 +46,9 @@ export function ChatInfoBar({
   onOpenMcpConfig,
   onReconnectMcpServer,
 }: ChatInfoBarProps): React.ReactElement {
+  const hasToolsBadge =
+    (sessionTools?.length ?? 0) > 0 || (mcpServers?.length ?? 0) > 0;
+
   return (
     <div className="flex-shrink-0 bg-[var(--bg-main)] border-b border-[var(--border)] px-3 py-1">
       <div className="flex items-center justify-between text-xs gap-2 min-h-[28px]">
@@ -79,10 +82,10 @@ export function ChatInfoBar({
 
         {/* Right: tools, tasks, file explorer */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          {sessionTools && sessionTools.length > 0 && (
+          {hasToolsBadge && (
             <ToolsBadge
-              toolCount={sessionTools.length}
-              sessionTools={sessionTools}
+              toolCount={sessionTools?.length ?? 0}
+              sessionTools={sessionTools ?? []}
               mcpServers={mcpServers}
               onToggleServer={onToggleMcpServer}
               onOpenConfig={onOpenMcpConfig}

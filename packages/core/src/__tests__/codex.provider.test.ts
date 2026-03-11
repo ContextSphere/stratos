@@ -105,7 +105,7 @@ describe("CodexProvider", () => {
       expect.objectContaining({
         threadId: "thr_existing",
         approvalPolicy: "never",
-        sandbox: "read-only",
+        sandbox: "workspace-write",
       }),
     );
     expect(out).toEqual(
@@ -150,6 +150,104 @@ describe("CodexProvider", () => {
       expect.not.objectContaining({
         config: expect.anything(),
       }),
+    );
+  });
+
+  it("maps Codex MCP auth statuses into McpServerInfo", async () => {
+    const provider = new CodexProvider() as any;
+    provider.appServer = {};
+    provider.sendRpc = vi.fn().mockResolvedValue({
+      data: [
+        { name: "oauth-server", authStatus: "oAuth", tools: { a: {} } },
+        {
+          name: "token-server",
+          authStatus: "bearerToken",
+          tools: { b: {}, c: {} },
+        },
+        {
+          name: "login-server",
+          authStatus: "notLoggedIn",
+          tools: { login: {} },
+        },
+        {
+          name: "no-auth-server",
+          authStatus: "unsupported",
+          tools: { ping: {} },
+        },
+        { name: "broken-server", authStatus: "unsupported", tools: {} },
+      ],
+    });
+
+    await expect(provider.getMcpServerStatus()).resolves.toEqual([
+      {
+        name: "oauth-server",
+        status: "connected",
+        tools: ["a"],
+        scope: undefined,
+        error: undefined,
+        configType: undefined,
+        configId: undefined,
+      },
+      {
+        name: "token-server",
+        status: "connected",
+        tools: ["b", "c"],
+        scope: undefined,
+        error: undefined,
+        configType: undefined,
+        configId: undefined,
+      },
+      {
+        name: "login-server",
+        status: "needs-auth",
+        tools: ["login"],
+        scope: undefined,
+        error: undefined,
+        configType: undefined,
+        configId: undefined,
+      },
+      {
+        name: "no-auth-server",
+        status: "connected",
+        tools: ["ping"],
+        scope: undefined,
+        error: undefined,
+        configType: undefined,
+        configId: undefined,
+      },
+      {
+        name: "broken-server",
+        status: "failed",
+        tools: [],
+        scope: undefined,
+        error: undefined,
+        configType: undefined,
+        configId: undefined,
+      },
+    ]);
+    expect(provider.sendRpc).toHaveBeenCalledWith("mcpServerStatus/list", {});
+  });
+
+  it("returns empty MCP status when the app server is unavailable or RPC fails", async () => {
+    const provider = new CodexProvider() as any;
+    await expect(provider.getMcpServerStatus()).resolves.toEqual([]);
+
+    provider.appServer = {};
+    provider.sendRpc = vi.fn().mockRejectedValue(new Error("rpc failed"));
+    await expect(provider.getMcpServerStatus()).resolves.toEqual([]);
+  });
+
+  it("reloads MCP config when reconnecting a Codex MCP server", async () => {
+    const provider = new CodexProvider() as any;
+    provider.sendRpc = vi.fn().mockResolvedValue({});
+
+    await expect(
+      provider.reconnectMcpServer("example-server"),
+    ).resolves.toBeUndefined();
+
+    expect(provider.sendRpc).toHaveBeenCalledWith(
+      "config/mcpServer/reload",
+      {},
     );
   });
 
@@ -495,6 +593,65 @@ describe("CodexProvider", () => {
           type: "plan_update",
           isStreaming: true,
           content: expect.stringContaining("## Plan"),
+        }),
+      ]),
+    );
+  });
+
+  it("includes MCP servers in session_init", async () => {
+    const provider = new CodexProvider() as any;
+    provider.ensureAppServer = vi.fn().mockResolvedValue(undefined);
+    provider.appServer = {};
+    provider.sendRpc = vi.fn().mockImplementation((method: string) => {
+      if (method === "thread/start") {
+        return Promise.resolve({ thread: { id: "thr_new" } });
+      }
+      if (method === "mcpServerStatus/list") {
+        return Promise.resolve({
+          data: [
+            {
+              name: "github",
+              authStatus: "oAuth",
+              tools: { search_repos: {}, get_issue: {} },
+            },
+          ],
+        });
+      }
+      if (method === "turn/start") {
+        return Promise.resolve({ turn: { id: "turn_1" } });
+      }
+      return Promise.resolve({});
+    });
+    provider.waitForNotification = vi.fn().mockResolvedValueOnce({
+      method: "turn/completed",
+      params: { turn: { status: "completed" } },
+    });
+
+    const out: unknown[] = [];
+    for await (const msg of provider.sendMessage({
+      prompt: "hello",
+      mode: "default",
+      permissionHandler: async () => ({ approved: true }),
+    })) {
+      out.push(msg);
+    }
+
+    expect(out).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "session_init",
+          sessionId: "thr_new",
+          mcpServers: [
+            {
+              name: "github",
+              status: "connected",
+              tools: ["search_repos", "get_issue"],
+              scope: undefined,
+              error: undefined,
+              configType: undefined,
+              configId: undefined,
+            },
+          ],
         }),
       ]),
     );
