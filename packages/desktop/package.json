@@ -4,6 +4,15 @@
   "productName": "Stratos",
   "description": "Stratos — Open Source AI Agent Desktop",
   "main": "./out/main/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ContextSphere/stratos.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ContextSphere/stratos/issues"
+  },
+  "homepage": "https://github.com/ContextSphere/stratos#readme",
+  "license": "Apache-2.0",
   "scripts": {
     "dev": "electron-vite dev",
     "dev:fullscreen": "FULLSCREEN=1 electron-vite dev",
@@ -17,6 +26,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build:mac": "electron-vite build && electron-builder --mac",
+    "build:mac:dir": "electron-vite build && electron-builder --mac --dir",
     "postinstall": "bash scripts/patch-electron-name.sh"
   },
   "dependencies": {
