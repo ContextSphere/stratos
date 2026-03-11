@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const handleMocks = new Map<string, Function>();
+type IpcHandler = (...args: unknown[]) => unknown;
+const handleMocks = new Map<string, IpcHandler>();
 const mockStorage = {
   listThreads: vi.fn().mockReturnValue([]),
   getActiveThreadId: vi.fn(),
@@ -20,7 +21,7 @@ const mockStorage = {
 
 vi.mock("electron", () => ({
   ipcMain: {
-    handle: vi.fn((channel: string, handler: Function) => {
+    handle: vi.fn((channel: string, handler: IpcHandler) => {
       handleMocks.set(channel, handler);
     }),
     removeHandler: vi.fn(),

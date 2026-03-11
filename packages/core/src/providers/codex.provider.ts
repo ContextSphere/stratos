@@ -1703,6 +1703,12 @@ export class CodexProvider implements AgentProvider {
     params: SendMessageParams,
   ): AsyncGenerator<AgentMessage> {
     const normalizedInput = this.normalizeRequestUserInputPayload(p);
+    yield {
+      type: "permission_request",
+      toolName: "AskUserQuestion",
+      input: normalizedInput,
+      requestId: `user_input_${requestId}`,
+    };
 
     const rawQuestions = Array.isArray(p?.questions) ? p.questions : [];
     const questionMappings = rawQuestions

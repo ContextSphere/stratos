@@ -225,7 +225,7 @@ export class ClaudeCodeProvider implements AgentProvider {
       resolveParked?.();
     };
 
-    const self = this;
+    // eslint-disable-next-line require-yield
     async function* parkedPrompt() {
       // Never yield a real message — just park forever
       await new Promise<void>((resolve) => {
@@ -234,19 +234,19 @@ export class ClaudeCodeProvider implements AgentProvider {
     }
 
     // Build elicitation handler wrapper if we have one stored
-    const elicitationHandler = self.lastElicitationHandler;
+    const elicitationHandler = this.lastElicitationHandler;
 
     const controlQ = query({
       prompt: parkedPrompt(),
       options: {
         ...(cliPath ? { pathToClaudeCodeExecutable: cliPath } : {}),
-        ...(self.config.model ? { model: self.config.model } : {}),
-        cwd: self.config.cwd ?? process.env.HOME,
-        resume: self.sessionId,
+        ...(this.config.model ? { model: this.config.model } : {}),
+        cwd: this.config.cwd ?? process.env.HOME,
+        resume: this.sessionId,
         permissionMode: "plan" as const,
-        ...(hasMcpServers ? { mcpServers: self.config.mcpServers } : {}),
-        ...(self.config.settingSources
-          ? { settingSources: self.config.settingSources }
+        ...(hasMcpServers ? { mcpServers: this.config.mcpServers } : {}),
+        ...(this.config.settingSources
+          ? { settingSources: this.config.settingSources }
           : {}),
         ...(elicitationHandler
           ? {
