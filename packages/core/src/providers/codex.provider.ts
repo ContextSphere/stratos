@@ -70,18 +70,46 @@ function findCodexBinary(): string {
   const binaryName = process.platform === "win32" ? "codex.exe" : "codex";
   const binaryRelPath = path.join("vendor", targetTriple, "codex", binaryName);
 
-  // Walk up from multiple starting points looking for the codex binary
+  // The native binary lives in the platform-specific optional package,
+  // e.g. @openai/codex-darwin-arm64, not in @openai/codex itself.
+  const platformPackageMap: Record<string, string> = {
+    "x86_64-unknown-linux-musl": "@openai/codex-linux-x64",
+    "aarch64-unknown-linux-musl": "@openai/codex-linux-arm64",
+    "x86_64-apple-darwin": "@openai/codex-darwin-x64",
+    "aarch64-apple-darwin": "@openai/codex-darwin-arm64",
+    "x86_64-pc-windows-msvc": "@openai/codex-win32-x64",
+    "aarch64-pc-windows-msvc": "@openai/codex-win32-arm64",
+  };
+  const platformPackage = platformPackageMap[targetTriple];
+
+  // Walk up from multiple starting points looking for the codex binary.
+  // app.asar.unpacked must come before __dirname: in a packaged app __dirname
+  // is inside app.asar, and Electron's fs intercept makes existsSync return
+  // true for asar-relative paths, but spawn() goes to the OS and fails with
+  // ENOTDIR because app.asar is a file, not a directory.
+  const resourcesPath: string | undefined = (process as any).resourcesPath;
   const startDirs = [
+    ...(resourcesPath
+      ? [path.join(resourcesPath, "app.asar.unpacked"), resourcesPath]
+      : []),
     __dirname,
     process.cwd(),
-    ...(process.versions?.electron
-      ? [(process as any).resourcesPath ?? ""]
-      : []),
   ].filter(Boolean);
 
   for (const startDir of startDirs) {
     let dir = startDir;
     for (let i = 0; i < 10; i++) {
+      // Check platform-specific package (primary location)
+      if (platformPackage) {
+        const platformCandidate = path.join(
+          dir,
+          "node_modules",
+          platformPackage,
+          binaryRelPath,
+        );
+        if (fs.existsSync(platformCandidate)) return platformCandidate;
+      }
+
       // Check pnpm hoisted layout: node_modules/.pnpm/@openai+codex@*-<platform>-<arch>/...
       const pnpmDir = path.join(dir, "node_modules", ".pnpm");
       try {
@@ -100,6 +128,21 @@ function findCodexBinary(): string {
               binaryRelPath,
             );
             if (fs.existsSync(candidate)) return candidate;
+
+            // Also check platform package inside pnpm entry
+            if (platformPackage) {
+              const [, pkgName] = platformPackage.split("/");
+              const pnpmPlatformCandidate = path.join(
+                pnpmDir,
+                entry,
+                "node_modules",
+                "@openai",
+                pkgName,
+                binaryRelPath,
+              );
+              if (fs.existsSync(pnpmPlatformCandidate))
+                return pnpmPlatformCandidate;
+            }
           }
         }
       } catch {

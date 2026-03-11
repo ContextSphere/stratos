@@ -15,6 +15,10 @@ files:
 asarUnpack:
   - "node_modules/@anthropic-ai/claude-agent-sdk/**"
   - "node_modules/@img/**"
+  - "node_modules/@openai/codex/**"
+  - "node_modules/@openai/codex-sdk/**"
+  - "node_modules/@openai/codex-darwin-arm64/**"
+  - "node_modules/@openai/codex-darwin-x64/**"
 
 mac:
   category: public.app-category.developer-tools
