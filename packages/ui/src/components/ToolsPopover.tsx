@@ -165,7 +165,13 @@ export function ToolsPopover({
       <PanelCard
         title="Available Tools"
         headerAction={closeButton}
-        footer={`${mcpToolCount} MCP · ${builtInCount} built-in · ${sessionTools.length} total`}
+        footer={[
+          `${mcpToolCount} MCP`,
+          builtInCount > 0 ? `${builtInCount} built-in` : null,
+          sessionTools.length > 0 ? `${sessionTools.length} total` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       >
         {builtInCount > 0 && (
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)]">

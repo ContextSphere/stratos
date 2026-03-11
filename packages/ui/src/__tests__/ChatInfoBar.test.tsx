@@ -59,6 +59,6 @@ describe("ChatInfoBar", () => {
     );
 
     expect(screen.getByTitle("View available tools")).toBeInTheDocument();
-    expect(screen.getByText("0 tools")).toBeInTheDocument();
+    expect(screen.getByText("1 tools")).toBeInTheDocument();
   });
 });
