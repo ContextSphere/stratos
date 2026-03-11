@@ -26,6 +26,7 @@ import type {
 } from "@stratosapp/core";
 import { loadSettings } from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
+import { resolveClaudePathOrUndefined } from "./integrations/claude-path";
 
 /**
  * Build explicit MCP servers for an agent session.
@@ -190,8 +191,14 @@ export class AgentManager {
           (providerName ?? "claude-code") as ProviderType,
         );
         const settings = loadSettings();
+        const cliPath =
+          (providerName ?? "claude-code") === "claude-code"
+            ? await resolveClaudePathOrUndefined(
+                settings.cliPath as string | undefined,
+              )
+            : undefined;
         await provider.initialize({
-          cliPath: settings.cliPath as string | undefined,
+          cliPath,
         });
         try {
           return await provider.getAvailableModels();
@@ -516,12 +523,18 @@ export class AgentManager {
       const providerName = (thread.provider ?? "claude-code") as ProviderType;
       const provider = createProvider(providerName);
       const settings = loadSettings();
+      const resolvedClaudeCliPath =
+        providerName === "claude-code"
+          ? await resolveClaudePathOrUndefined(
+              settings.cliPath as string | undefined,
+            )
+          : undefined;
       const threadCwd = thread.cwd ?? process.env.HOME!;
       const mcpServers = buildMcpServers(threadCwd);
       await provider.initialize({
         ...(providerName === "claude-code"
           ? {
-              cliPath: settings.cliPath as string | undefined,
+              cliPath: resolvedClaudeCliPath,
               settingSources: ["project", "user", "local"] as (
                 | "project"
                 | "user"
@@ -957,8 +970,11 @@ export class AgentManager {
   > {
     const provider = new ClaudeCodeProvider();
     const settings = loadSettings();
+    const cliPath = await resolveClaudePathOrUndefined(
+      settings.cliPath as string | undefined,
+    );
     await provider.initialize({
-      cliPath: settings.cliPath as string | undefined,
+      cliPath,
       settingSources: ["project", "user", "local"],
     });
     try {

@@ -48,6 +48,7 @@ git push origin v0.1.0-alpha.1
    - the app installs into `/Applications`
    - macOS does not show an unidentified developer warning
    - the notarized app launches on a machine that has not built Stratos locally
+   - the packaged app passes the smoke-test checklist in `docs/release-validation.md`
 7. Publish the GitHub release once verification passes.
 
 ## Local Validation

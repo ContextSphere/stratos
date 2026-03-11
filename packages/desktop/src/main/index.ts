@@ -6,9 +6,9 @@ import { join } from "path";
 // Always strip CLAUDECODE to prevent nested-session detection by the SDK
 delete process.env.CLAUDECODE;
 
-// electron-vite sets ELECTRON_RENDERER_URL in dev mode; app.isPackaged is unreliable
-// when the Electron binary is renamed (e.g., for dock name patching)
-const isDev = !!process.env.ELECTRON_RENDERER_URL || !app.isPackaged;
+// `process.defaultApp` stays true for the renamed dev Electron binary, while
+// packaged builds should ignore any inherited ELECTRON_RENDERER_URL from the shell.
+const isDev = !!process.defaultApp || !app.isPackaged;
 if (!isDev && process.platform === "darwin") {
   try {
     const userShell = process.env.SHELL || "/bin/zsh";

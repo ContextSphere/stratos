@@ -5,9 +5,12 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    // Bundle the workspace core package into the main process output so
+    // packaged builds do not depend on copying its dist files into app.asar.
+    plugins: [externalizeDepsPlugin({ exclude: ["@stratosapp/core"] })],
     resolve: {
       alias: {
+        "@stratosapp/core": resolve("../core/src/index.ts"),
         "@common": resolve("src/common"),
       },
     },
@@ -16,6 +19,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: {
+        "@stratosapp/core": resolve("../core/src/index.ts"),
         "@common": resolve("src/common"),
       },
     },
