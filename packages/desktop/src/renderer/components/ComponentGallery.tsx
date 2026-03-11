@@ -9,7 +9,12 @@ import {
   TaskCard,
 } from "@stratosapp/ui";
 import type { ToolCall, TaskInfo } from "@stratosapp/ui";
-type AgentMode = "plan" | "default" | "acceptEdits" | "bypassPermissions";
+type AgentMode =
+  | "plan"
+  | "default"
+  | "acceptEdits"
+  | "bypassPermissions"
+  | "fullAccess";
 
 const SAMPLE_MODELS = [
   {
@@ -76,6 +81,7 @@ const SAMPLE_TASK: TaskInfo = {
       text: "Found 6 usages in: SettingsDialog.tsx, PermissionDialog.tsx, ConnectDialog.tsx, ConfirmDialog.tsx, RenameDialog.tsx, DeleteDialog.tsx",
     },
   ]),
+  childToolCalls: [],
   toolCallsExpanded: false,
 };
 
