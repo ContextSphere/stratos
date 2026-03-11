@@ -48,7 +48,9 @@ jobs:
           fi
 
       - name: Build and package macOS app
-        run: pnpm build:mac
+        run: |
+          pnpm --filter @stratosapp/desktop build
+          pnpm --filter @stratosapp/desktop exec electron-builder --mac --publish never
 
       - name: Generate checksums
         working-directory: packages/desktop/dist
