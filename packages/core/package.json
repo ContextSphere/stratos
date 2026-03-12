@@ -2,9 +2,28 @@
   "name": "@stratosapp/core",
   "version": "0.0.1",
   "description": "Stratos core SDK — provider abstraction, session management, storage",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ContextSphere/stratos.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/ContextSphere/stratos#readme",
+  "bugs": {
+    "url": "https://github.com/ContextSphere/stratos/issues"
+  },
   "type": "commonjs",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch --preserveWatchOutput",
