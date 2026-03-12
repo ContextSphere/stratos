@@ -72,4 +72,4 @@ If you're unsure whether your agent's output meets the bar, read the diff as if 
 - Assume good intent and focus on technical clarity
 - If unsure about direction, ask early
 
-A dedicated `CODE_OF_CONDUCT.md` will be added as project governance matures.
+See [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) for full community guidelines.

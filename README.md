@@ -6,6 +6,14 @@
 
 <p align="center"><strong>An open-source framework for building agent-powered IDEs.</strong></p>
 
+<p align="center">
+  <a href="https://github.com/ContextSphere/stratos/actions/workflows/ci.yml"><img src="https://github.com/ContextSphere/stratos/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/ContextSphere/stratos/releases/latest"><img src="https://img.shields.io/github/v/release/ContextSphere/stratos" alt="Release" /></a>
+  <a href="https://www.npmjs.com/package/@stratosapp/core"><img src="https://img.shields.io/npm/v/@stratosapp/core?label=%40stratosapp%2Fcore" alt="npm @stratosapp/core" /></a>
+  <a href="https://www.npmjs.com/package/@stratosapp/ui"><img src="https://img.shields.io/npm/v/@stratosapp/ui?label=%40stratosapp%2Fui" alt="npm @stratosapp/ui" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" /></a>
+</p>
+
 Stratos gives you everything you need to create a personalized, visual interface for managing AI agents — for yourself, your team, or your product. Whether you live in a terminal or have never opened one, Stratos makes working with agents seamless.
 
 It ships with a fully functional desktop app out of the box, and its modular architecture means you can extend, embed, or rebuild any layer. Stratos is also fully vibe-codable — it can build new features for itself. An app that builds itself.
@@ -57,7 +65,7 @@ Stratos is a monorepo with three packages. Each layer has strict boundaries so y
 
 ### Use the app
 
-Download the [macOS .dmg](#) or build from source:
+Download the [latest macOS .dmg](https://github.com/ContextSphere/stratos/releases/latest) or build from source:
 
 ```bash
 pnpm install
