@@ -96,9 +96,6 @@ pnpm add @stratosapp/core
 
 <img width="1352" height="873" alt="Screenshot 2026-03-11 at 8 46 56 PM" src="https://github.com/user-attachments/assets/60673f45-7454-4126-9d34-011effde4afc" />
 
-
-
-
 - Multi-thread agent sessions with folder organization
 - Real-time streaming of tokens, tool calls, reasoning, and file changes
 - Integrated file explorer and diff preview
@@ -126,6 +123,25 @@ The repo ships with full [harness engineering](./docs/harness-engineering.md): `
 That said, AI-native does not mean AI-sloppy. We care deeply about clean architecture, clear boundaries, and long-term maintainability. If an agent produces code that doesn't meet the bar, it gets the same scrutiny as any other PR.
 
 The goal: anyone should be able to point an agent at this repo and build something meaningful on top of it.
+
+---
+
+## Contributors
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/talktoajayprakash"><img src="https://avatars.githubusercontent.com/u/12077515?v=4" width="64" height="64" alt="Ajay Prakash" style="border-radius:50%" /></a><br />
+      <strong>Ajay Prakash</strong><br />
+      <a href="https://github.com/talktoajayprakash">GitHub</a> · <a href="https://www.linkedin.com/in/ajay-prakash-3780b132/">LinkedIn</a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/nikhilesh-payyavuala"><img src="https://avatars.githubusercontent.com/u/6954224?v=4" width="64" height="64" alt="Nikhilesh Payyavuala" style="border-radius:50%" /></a><br />
+      <strong>Nikhilesh Payyavuala</strong><br />
+      <a href="https://github.com/nikhilesh-payyavuala">GitHub</a> · <a href="https://www.linkedin.com/in/npayyavu/">LinkedIn</a> · <a href="https://x.com/npayyavuala">X</a>
+    </td>
+  </tr>
+</table>
 
 ---
 
