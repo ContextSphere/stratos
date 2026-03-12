@@ -88,8 +88,7 @@ export function registerThreadIpc(): void {
     IPC_CHANNELS.THREADS_CREATE_WORKTREE,
     async (_event, params: { threadId: string; sourceRepoPath: string }) => {
       const { threadId, sourceRepoPath } = params;
-      const shortId = threadId.slice(-7);
-      const branchName = `stratos/${shortId}`;
+      const branchName = `stratos/${threadId}`;
       const worktreeDir = join(homedir(), ".stratos", "worktrees", threadId);
 
       mkdirSync(worktreeDir, { recursive: true });
