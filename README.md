@@ -104,6 +104,18 @@ pnpm add @stratosapp/core
 
 ---
 
+## AI-Native Development
+
+Most of Stratos was built and tested using Claude Code. The codebase isn't just agent-friendly — it's engineered for it.
+
+The repo ships with full [harness engineering](./docs/harness-engineering.md): `CLAUDE.md` defines architecture constraints and layer boundaries, skills provide reusable agent workflows, and MCP configs wire up tools like Chrome DevTools so agents can visually verify their own UI changes. Stratos can even launch a second instance of itself in a worktree, letting an agent build a feature, screenshot the result, and iterate — without human intervention. An agent can clone this repo, understand the architecture, build a feature, and test it — end to end.
+
+That said, AI-native does not mean AI-sloppy. We care deeply about clean architecture, clear boundaries, and long-term maintainability. If an agent produces code that doesn't meet the bar, it gets the same scrutiny as any other PR.
+
+The goal: anyone should be able to point an agent at this repo and build something meaningful on top of it.
+
+---
+
 ## Contributing
 
 We welcome contributions. Open an issue to discuss scope, then send a focused PR.
