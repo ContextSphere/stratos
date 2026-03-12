@@ -1,51 +1,63 @@
-[CI badge](#ci) [License badge](#license) [Version badge](#)
+<p align="center">
+  <img src="packages/desktop/build/icon.png" alt="Stratos" width="128" />
+</p>
 
-# Stratos
+<h1 align="center">Stratos</h1>
 
-> Claude Code. No terminal required.
+<p align="center"><strong>An open-source framework for building agent-powered IDEs.</strong></p>
 
-<img width="1467" height="943" alt="Screenshot 2026-03-07 at 11 13 25 PM" src="https://github.com/user-attachments/assets/259160ca-513a-4cbc-85e5-af393aa55b36" />
+Stratos gives you everything you need to create a personalized, visual interface for managing AI agents — for yourself, your team, or your product. Whether you live in a terminal or have never opened one, Stratos makes working with agents seamless.
 
-A desktop GUI for the most powerful AI coding agents.
+It ships with a fully functional desktop app out of the box, and its modular architecture means you can extend, embed, or rebuild any layer. Stratos is also fully vibe-codable — it can build new features for itself. An app that builds itself.
 
-Run Claude Code and Codex through a visual, multi-threaded interface, whether you're a developer or just want AI to help you build things.
-
----
-
-## Download
-
-[macOS .dmg](#) | [Build from source](#quick-start-developers)
+**Supported providers:** Claude Code, Codex. More coming (OpenCode, etc.).
 
 ---
 
 ## Why Stratos
 
-Claude Code is one of the most capable coding agents available.
+AI agents are powerful, but the interfaces around them are either locked inside terminals or locked inside someone else's product. Stratos takes a different approach:
 
-But it lives entirely in your terminal, which makes it hard to use, hard to review, and hard to trust for anyone who isn't already comfortable with the command line.
-
-Stratos gives you:
-
-- **Visibility**: watch tool calls, file changes, and thinking in real time
-- **Control**: approve, plan, or let agents run freely (`Plan` / `Default` / `AcceptEdits` / `Bypass` modes)
-- **Threads**: manage multiple agent sessions across projects without losing context
-- **No terminal required**: a point-and-click interface for the people who need it most
+- **For everyone, not just developers.** A clean, intuitive interface that makes AI agents accessible to anyone who wants to get work done.
+- **Framework, not just an app.** A layered architecture with a provider-agnostic core, a portable React UI, and a reference desktop shell. Use the pieces you need.
+- **Multi-agent, multi-provider.** Run Claude Code and Codex side by side. Switch providers without rewriting your UI.
+- **Full visibility.** Watch tool calls, file changes, diffs, and reasoning in real time. Approve, plan, or let agents run autonomously.
+- **An app that builds itself.** Stratos includes full harness engineering support — use one instance to vibe-code new features into another. Anyone can customize their own experience.
 
 ---
 
-## Features
+## Architecture
 
-- Multi-thread agent sessions with folder organization
-- Real-time streaming: tokens, tool calls, reasoning, file changes
-- Permission modes: `Plan`, `Default`, `AcceptEdits`, `Bypass`
-- File explorer + diff preview integrated into chat
-- Claude Code and Codex providers
-- Cost and token tracking
-- Worktree isolation for parallel development
+Stratos is a monorepo with three packages. Each layer has strict boundaries so you can use them independently.
+
+```
+┌─────────────────────────────────────────────┐
+│  @stratosapp/ui                             │
+│  React components · hooks · bridge system   │
+│  Zero Electron dependency — works anywhere  │
+├─────────────────────────────────────────────┤
+│  @stratosapp/core                           │
+│  Provider abstraction · storage · traces    │
+│  Pure TypeScript — no React, no DOM         │
+├─────────────────────────────────────────────┤
+│  @stratosapp/desktop                        │
+│  Electron shell · IPC bridge · packaging    │
+└─────────────────────────────────────────────┘
+```
+
+| Package                   | What it does                                               | Use it to...                                                 |
+| ------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ |
+| **`@stratosapp/ui`**      | Chat view, file explorer, diff viewer, permission controls | Embed agent UI in any React app (web, Next.js, etc.)         |
+| **`@stratosapp/core`**    | Provider interface, storage adapters, trace store          | Add new agent providers, build headless agent tooling        |
+| **`@stratosapp/desktop`** | Electron app wiring core + UI via IPC bridge               | Run the full desktop experience, or fork as a starting point |
 
 ---
 
-## Quick Start (Developers)
+## Get Started
+
+### Use the app
+
+Download the [macOS .dmg](#) or build from source:
 
 ```bash
 pnpm install
@@ -53,87 +65,53 @@ pnpm build
 pnpm --filter @stratosapp/desktop dev
 ```
 
-## Build On It (Embedders/Builders)
-
-- `@stratosapp/core`: provider abstraction, storage (pure TypeScript, no React)
-- `@stratosapp/ui`: React components, zero Electron dependency
-- `@stratosapp/desktop`: Electron reference app
-
-## Harness Engineering
-
-Stratos supports a self-development loop where one instance can drive and verify another:
-
-- Run a control instance in one worktree
-- Run a target instance in another worktree
-- Use isolated state and deterministic dev ports for repeatable checks
-
-This makes it practical to evolve Stratos with Stratos.
-
-## Repository Structure
-
-```text
-packages/
-  core/     # @stratosapp/core
-  ui/       # @stratosapp/ui
-  desktop/  # @stratosapp/desktop
-docs/       # design notes, implementation status, plans
-```
-
-## Prerequisites
-
-- Node.js 22+
-- pnpm 9 (`pnpm@9.15.4` in CI)
-- macOS for packaged desktop builds (`pnpm build:mac`)
-
-## Common Commands
+### Build on it
 
 ```bash
-pnpm dev          # run development tasks
-pnpm build        # build all packages
-pnpm test         # run tests
-pnpm typecheck    # type-check all packages
-pnpm lint         # lint all packages
-pnpm build:mac    # build desktop macOS artifact
+# Use the UI layer in your own React app
+pnpm add @stratosapp/ui
+
+# Use the core layer for headless agent orchestration
+pnpm add @stratosapp/core
 ```
 
-## Contributing
+### Prerequisites
 
-Short version: open an issue, discuss scope, send a focused PR.
+- Node.js 22+
+- pnpm 9+
 
-Detailed guide: [CONTRIBUTING.md](./CONTRIBUTING.md).
+---
+
+## Features
+
+<img width="1467" height="943" alt="Stratos desktop app" src="https://github.com/user-attachments/assets/259160ca-513a-4cbc-85e5-af393aa55b36" />
+
+- Multi-thread agent sessions with folder organization
+- Real-time streaming of tokens, tool calls, reasoning, and file changes
+- Integrated file explorer and diff preview
+- Cost and token tracking per session
+- Worktree isolation for parallel development
+- Provider-agnostic — swap agents without changing UI code
+
+---
 
 ## Roadmap
 
-### Near Term
+- **More providers** — OpenCode support and a plugin interface for third-party agents
+- **Multi-agent orchestration** — coordinate multiple agents across tasks
+- **Extension surface** — let the community build and share integrations
+- **Cross-platform** — Windows and Linux desktop builds
 
-- Stabilize end-to-end chat streaming integration
-- Expand desktop test coverage
-- Improve slash command discovery
-- Prepare first tagged alpha release
+---
 
-### Bigger Items
+## Contributing
 
-- OpenCode provider support and parity with existing providers
-- Deeper provider interoperability and model capability mapping
-- Plugin/extension surface for third-party integrations
-- Better multi-agent orchestration workflows
+We welcome contributions. Open an issue to discuss scope, then send a focused PR.
 
-## CI
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
 
-GitHub Actions CI runs on pushes and pull requests:
-
-- lint
-- typecheck
-- test
-
-Workflow file: `.github/workflows/ci.yml`.
-
-## Documentation
-
-- `docs/DESIGN.md` - OSS architecture direction
-- `docs/IMPLEMENTATION-STATUS.md` - implementation status and TODOs
-- `docs/codex-provider.md` - Codex provider design notes
+---
 
 ## License
 
-Apache-2.0. See `LICENSE`.
+Apache-2.0. See [LICENSE](./LICENSE).
