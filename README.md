@@ -92,7 +92,12 @@ pnpm add @stratosapp/core
 
 ## Features
 
-<img width="1467" height="943" alt="Stratos desktop app" src="https://github.com/user-attachments/assets/259160ca-513a-4cbc-85e5-af393aa55b36" />
+<img width="1352" height="868" alt="Screenshot 2026-03-11 at 8 12 21 PM" src="https://github.com/user-attachments/assets/13431258-67d9-4a76-86e8-6eb11c0d45af" />
+
+<img width="1352" height="873" alt="Screenshot 2026-03-11 at 8 46 56 PM" src="https://github.com/user-attachments/assets/60673f45-7454-4126-9d34-011effde4afc" />
+
+
+
 
 - Multi-thread agent sessions with folder organization
 - Real-time streaming of tokens, tool calls, reasoning, and file changes
