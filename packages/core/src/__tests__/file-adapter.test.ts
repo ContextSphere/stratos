@@ -21,7 +21,7 @@ describe("FileStorageAdapter", () => {
   describe("createThread", () => {
     it("creates a thread with default title", () => {
       const thread = adapter.createThread();
-      expect(thread.id).toMatch(/^thread_/);
+      expect(thread.id).toMatch(/^[a-z]+-[a-z]+$/);
       expect(thread.title).toBe("New chat");
       expect(thread.createdAt).toBeTypeOf("number");
       expect(thread.updatedAt).toBeTypeOf("number");

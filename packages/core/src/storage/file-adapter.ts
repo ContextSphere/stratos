@@ -10,6 +10,7 @@ import {
 import type { Thread, Folder, StoredMessage } from "../types/thread";
 import type { StorageAdapter } from "./types";
 import { clearTraceFile } from "./trace.store";
+import { generateReadableId } from "../utils/readable-id";
 
 const DEFAULT_BASE_DIR = join(homedir(), ".stratos");
 
@@ -79,7 +80,10 @@ export class FileStorageAdapter implements StorageAdapter {
     cwd?: string,
     provider?: string,
   ): Thread {
-    const id = `thread_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const existingIds = new Set(
+      this.loadThreadsFile().threads.map((t) => t.id),
+    );
+    const id = generateReadableId(existingIds);
     const now = Date.now();
     const thread: Thread = {
       id,
