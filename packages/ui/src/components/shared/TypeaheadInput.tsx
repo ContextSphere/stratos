@@ -129,7 +129,9 @@ export function TypeaheadInput({
   return (
     <div ref={containerRef} className="relative w-full">
       {label && (
-        <label className="block text-xs text-gray-500 mb-1.5">{label}</label>
+        <label className="block text-xs text-[var(--text-muted)] mb-1.5">
+          {label}
+        </label>
       )}
       <div className="relative">
         <input
@@ -142,7 +144,7 @@ export function TypeaheadInput({
           }}
           placeholder={placeholder}
           disabled={disabled}
-          className="w-full bg-[var(--bg-overlay)] border border-[var(--border-mid)] rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors pr-8"
+          className="w-full bg-[var(--bg-overlay)] border border-[var(--border-mid)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus:outline-none focus:border-blue-500 transition-colors pr-8"
         />
         {loading && (
           <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
@@ -182,13 +184,13 @@ export function TypeaheadInput({
               onMouseEnter={() => setActiveIndex(index)}
               className={`w-full text-left px-3 py-2.5 transition-colors ${
                 index === activeIndex
-                  ? "bg-blue-600/20 text-gray-100"
-                  : "text-gray-300 hover:bg-[var(--bg-surface)]"
+                  ? "bg-blue-600/20 text-[var(--text-primary)]"
+                  : "text-[var(--text-primary)] hover:bg-[var(--bg-overlay)]"
               }`}
             >
               <div className="text-sm truncate">{option.label}</div>
               {option.sublabel && (
-                <div className="text-xs text-gray-500 truncate mt-0.5">
+                <div className="text-xs text-[var(--text-muted)] truncate mt-0.5">
                   {option.sublabel}
                 </div>
               )}

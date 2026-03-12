@@ -64,7 +64,7 @@ function FolderIcon({ expanded }: { expanded?: boolean }) {
 function FileIcon() {
   return (
     <svg
-      className="w-4 h-4 text-gray-500 flex-shrink-0"
+      className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0"
       fill="none"
       stroke="currentColor"
       strokeWidth={1.5}
@@ -82,7 +82,7 @@ function FileIcon() {
 function Chevron({ expanded }: { expanded: boolean }) {
   return (
     <svg
-      className={`w-3 h-3 text-gray-600 flex-shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+      className={`w-3 h-3 text-[var(--text-muted)] flex-shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
       fill="none"
       stroke="currentColor"
       strokeWidth={2}
@@ -250,7 +250,7 @@ export function FileExplorer({
         <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--border)] flex-shrink-0">
           <button
             onClick={handleBack}
-            className="p-1 rounded hover:bg-[var(--border)] text-gray-400 hover:text-gray-200 transition-colors"
+            className="p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
             title="Back to file tree"
           >
             <svg
@@ -268,7 +268,7 @@ export function FileExplorer({
             </svg>
           </button>
           <span
-            className="text-xs text-gray-400 truncate"
+            className="text-xs text-[var(--text-secondary)] truncate"
             title={openFile.path}
           >
             {relativePath}
@@ -276,11 +276,11 @@ export function FileExplorer({
         </div>
         <div className="flex-1 min-h-0">
           {openFile.isBinary ? (
-            <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+            <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
               Binary file — cannot display
             </div>
           ) : openFile.tooLarge ? (
-            <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+            <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
               File too large to display (&gt;1MB)
             </div>
           ) : (
@@ -328,13 +328,13 @@ export function FileExplorer({
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="flex items-center justify-center h-32 text-gray-500 text-sm">
+          <div className="flex items-center justify-center h-32 text-[var(--text-muted)] text-sm">
             Loading...
           </div>
         ) : error ? (
           <div className="px-3 py-4 text-red-400 text-sm">{error}</div>
         ) : tree.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-gray-500 text-sm">
+          <div className="flex items-center justify-center h-32 text-[var(--text-muted)] text-sm">
             Empty directory
           </div>
         ) : (
@@ -366,7 +366,7 @@ function TreeView({
       {nodes.map((node) => (
         <div key={node.path}>
           <button
-            className="w-full flex items-center gap-1.5 px-2 py-1 text-sm text-gray-300 hover:bg-[var(--bg-surface)] transition-colors text-left"
+            className="w-full flex items-center gap-1.5 px-2 py-1 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors text-left"
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
             onClick={() => {
               if (node.entry.type === "directory") {
@@ -389,7 +389,7 @@ function TreeView({
             )}
             <span className="truncate">{node.entry.name}</span>
             {node.entry.type === "file" && (
-              <span className="ml-auto text-xs text-gray-600 flex-shrink-0">
+              <span className="ml-auto text-xs text-[var(--text-muted)] flex-shrink-0">
                 {formatSize(node.entry.size)}
               </span>
             )}

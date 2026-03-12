@@ -92,11 +92,13 @@ export function ConnectGitHubDialog({
             <Card variant="nested" className="mb-4">
               {username && (
                 <>
-                  <div className="text-xs text-gray-500 mb-1">Account</div>
-                  <div className="text-sm text-gray-300 mb-3">
+                  <div className="text-xs text-[var(--text-muted)] mb-1">
+                    Account
+                  </div>
+                  <div className="text-sm text-[var(--text-primary)] mb-3">
                     @{username}
                     {displayName && (
-                      <span className="text-gray-500 ml-1">
+                      <span className="text-[var(--text-muted)] ml-1">
                         ({displayName})
                       </span>
                     )}
@@ -105,10 +107,10 @@ export function ConnectGitHubDialog({
               )}
               {organizations.length > 0 && (
                 <>
-                  <div className="text-xs text-gray-500 mb-1">
+                  <div className="text-xs text-[var(--text-muted)] mb-1">
                     Organizations
                   </div>
-                  <div className="text-sm text-gray-300">
+                  <div className="text-sm text-[var(--text-primary)]">
                     {organizations.join(", ")}
                   </div>
                 </>
@@ -116,11 +118,11 @@ export function ConnectGitHubDialog({
             </Card>
 
             <div className="mb-4 p-3 bg-[var(--bg-surface)] rounded-lg">
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-[var(--text-secondary)]">
                 The AI assistant can use{" "}
-                <code className="text-gray-300">gh</code> to manage repos, pull
-                requests, issues, releases, Actions runs, and call the GitHub
-                API directly.
+                <code className="text-[var(--text-primary)]">gh</code> to manage
+                repos, pull requests, issues, releases, Actions runs, and call
+                the GitHub API directly.
               </p>
             </div>
 
@@ -147,13 +149,13 @@ export function ConnectGitHubDialog({
             </div>
 
             <div className="mb-4 p-3 bg-[var(--bg-surface)] rounded-lg">
-              <p className="text-xs text-gray-500 mb-2">
+              <p className="text-xs text-[var(--text-muted)] mb-2">
                 Install via Homebrew:
               </p>
-              <code className="text-xs text-gray-300 bg-[var(--bg-main)] px-2 py-1 rounded block">
+              <code className="text-xs text-[var(--text-primary)] bg-[var(--bg-main)] px-2 py-1 rounded block">
                 brew install gh
               </code>
-              <p className="text-xs text-gray-500 mt-3">
+              <p className="text-xs text-[var(--text-muted)] mt-3">
                 Or download from{" "}
                 <a
                   href="https://cli.github.com"
@@ -174,10 +176,10 @@ export function ConnectGitHubDialog({
           </>
         ) : (
           <>
-            <p className="text-xs text-gray-500 mb-5">
+            <p className="text-xs text-[var(--text-secondary)] mb-5">
               Authenticate with GitHub to let the AI assistant manage
               repositories, pull requests, issues, and more using the{" "}
-              <code className="text-gray-400">gh</code> CLI.
+              <code className="text-[var(--text-primary)]">gh</code> CLI.
             </p>
 
             {error && (
@@ -229,7 +231,7 @@ export function ConnectGitHubDialog({
               )}
             </button>
 
-            <p className="text-[10px] text-gray-600 mt-3 text-center">
+            <p className="text-[10px] text-[var(--text-muted)] mt-3 text-center">
               A one-time code will appear in your terminal. Open the link in
               your browser to complete authentication.
             </p>

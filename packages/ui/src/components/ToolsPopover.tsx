@@ -32,7 +32,7 @@ const STATUS_COLORS: Record<string, string> = {
   failed: "bg-red-500/70",
   "needs-auth": "bg-yellow-500/70",
   pending: "bg-yellow-500/70",
-  disabled: "bg-gray-600",
+  disabled: "bg-[var(--text-faint)]",
 };
 
 function shortenPath(configPath: string): string {
@@ -138,7 +138,7 @@ export function ToolsPopover({
   const closeButton = (
     <button
       onClick={onClose}
-      className="p-1 rounded hover:bg-[var(--border)] text-gray-500 hover:text-gray-300 transition-colors"
+      className="p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
       title="Close"
     >
       <svg
@@ -169,15 +169,17 @@ export function ToolsPopover({
       >
         {builtInCount > 0 && (
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)]">
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-[var(--text-secondary)]">
               Built-in Claude Code tools
             </span>
-            <span className="text-xs text-gray-600">{builtInCount}</span>
+            <span className="text-xs text-[var(--text-muted)]">
+              {builtInCount}
+            </span>
           </div>
         )}
 
         {servers.length === 0 ? (
-          <div className="px-4 py-6 text-xs text-gray-600 text-center">
+          <div className="px-4 py-6 text-xs text-[var(--text-muted)] text-center">
             No MCP tools connected
           </div>
         ) : (
@@ -206,12 +208,12 @@ export function ToolsPopover({
                         className={`w-1.5 h-1.5 rounded-full ${statusColor} flex-shrink-0`}
                       />
                       <span
-                        className={`text-xs truncate ${isDisabled ? "text-gray-600" : server.status === "needs-auth" ? "text-yellow-500/80" : server.status === "failed" ? "text-red-400/80" : "text-gray-300"}`}
+                        className={`text-xs truncate ${isDisabled ? "text-[var(--text-faint)]" : server.status === "needs-auth" ? "text-yellow-500/80" : server.status === "failed" ? "text-red-400/80" : "text-[var(--text-primary)]"}`}
                       >
                         {server.displayName}
                       </span>
                       {server.scope && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/[0.06] text-gray-500 flex-shrink-0">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--border)] text-[var(--text-muted)] flex-shrink-0">
                           {SCOPE_LABELS[server.scope] ?? server.scope}
                         </span>
                       )}
@@ -234,7 +236,7 @@ export function ToolsPopover({
                               onToggleServer(server.name, isDisabled);
                             }
                           }}
-                          className={`relative w-7 h-4 rounded-full transition-colors cursor-pointer ${isDisabled ? "bg-gray-700" : "bg-emerald-600/50"}`}
+                          className={`relative w-7 h-4 rounded-full transition-colors cursor-pointer ${isDisabled ? "bg-[var(--border-mid)]" : "bg-emerald-600/50"}`}
                           title={
                             isDisabled ? "Enable server" : "Disable server"
                           }
@@ -244,11 +246,11 @@ export function ToolsPopover({
                           />
                         </div>
                       )}
-                      <span className="text-xs text-gray-600">
+                      <span className="text-xs text-[var(--text-muted)]">
                         {server.tools.length}
                       </span>
                       <svg
-                        className={`w-3 h-3 text-gray-600 transition-transform duration-150 ${expandedServer === server.name ? "rotate-90" : ""}`}
+                        className={`w-3 h-3 text-[var(--text-muted)] transition-transform duration-150 ${expandedServer === server.name ? "rotate-90" : ""}`}
                         fill="none"
                         stroke="currentColor"
                         strokeWidth="2"
@@ -268,7 +270,7 @@ export function ToolsPopover({
                       {server.configPath && (
                         <button
                           onClick={() => onOpenConfig?.(server.configPath!)}
-                          className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors mb-1.5 truncate block w-full text-left"
+                          className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors mb-1.5 truncate block w-full text-left"
                           title={`Open ${server.configPath}`}
                         >
                           {shortenPath(server.configPath)}
@@ -292,7 +294,7 @@ export function ToolsPopover({
                           {onReconnectServer && (
                             <button
                               onClick={() => onReconnectServer(server.name)}
-                              className="text-[10px] px-2 py-0.5 rounded bg-white/[0.06] text-gray-400 hover:bg-white/[0.1] transition-colors"
+                              className="text-[10px] px-2 py-0.5 rounded bg-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-mid)] transition-colors"
                             >
                               Retry
                             </button>
@@ -303,7 +305,7 @@ export function ToolsPopover({
                         {server.tools.map((tool) => (
                           <div
                             key={tool}
-                            className="text-xs font-mono text-gray-500 bg-[var(--bg-overlay)] px-2 py-1 rounded truncate"
+                            className="text-xs font-mono text-[var(--text-muted)] bg-[var(--bg-overlay)] px-2 py-1 rounded truncate"
                             title={tool}
                           >
                             {tool}
@@ -332,7 +334,7 @@ export function ToolsPopover({
                   servers.find((s) => s.configPath)?.configPath;
                 if (configPath) onOpenConfig(configPath);
               }}
-              className="text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1.5"
+              className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5"
             >
               <svg
                 className="w-3 h-3"

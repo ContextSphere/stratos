@@ -16,12 +16,14 @@ export function PanelCard({
   return (
     <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl shadow-2xl overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
-        <h3 className="text-sm font-semibold text-gray-300">{title}</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+          {title}
+        </h3>
         {headerAction}
       </div>
       <div className="max-h-96 overflow-y-auto">{children}</div>
       {footer && (
-        <div className="px-4 py-2 border-t border-[var(--border)] text-xs text-gray-600">
+        <div className="px-4 py-2 border-t border-[var(--border)] text-xs text-[var(--text-muted)]">
           {footer}
         </div>
       )}

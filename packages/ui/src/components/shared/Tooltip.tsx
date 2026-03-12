@@ -80,7 +80,7 @@ export function Tooltip({
   const tooltipEl = visible && (
     <div
       ref={tooltipRef}
-      className="fixed z-[9999] px-3 py-2 rounded-lg bg-[var(--border)] border border-white/10 shadow-xl text-sm text-gray-200 whitespace-nowrap flex items-center gap-2"
+      className="fixed z-[9999] px-3 py-2 rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] shadow-xl text-sm text-[var(--text-primary)] whitespace-nowrap flex items-center gap-2"
       style={
         position
           ? { top: position.top, left: position.left }

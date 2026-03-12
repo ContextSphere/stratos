@@ -21,11 +21,13 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="w-full">
         {label && (
-          <label className="block text-xs text-gray-500 mb-1.5">{label}</label>
+          <label className="block text-xs text-[var(--text-muted)] mb-1.5">
+            {label}
+          </label>
         )}
         <input
           ref={ref}
-          className={`w-full bg-[var(--bg-overlay)] border ${error ? "border-red-500" : "border-[var(--border-mid)]"} rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors ${props.type === "password" ? "font-mono" : ""} ${className}`}
+          className={`w-full bg-[var(--bg-overlay)] border ${error ? "border-red-500" : "border-[var(--border-mid)]"} rounded-lg px-3 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus:outline-none focus:border-blue-500 transition-colors ${props.type === "password" ? "font-mono" : ""} ${className}`}
           {...props}
         />
         {error && <p className="text-xs text-red-400 mt-1">{error}</p>}

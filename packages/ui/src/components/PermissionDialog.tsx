@@ -59,7 +59,7 @@ export function PermissionDialog({
               onClick={() =>
                 onRespond(request.requestId, true, request.suggestions)
               }
-              className="px-4 py-2 text-sm rounded-lg bg-[var(--border)] hover:bg-[#444] text-green-400 border border-green-600/30 transition-colors"
+              className="px-4 py-2 text-sm rounded-lg bg-[var(--border)] hover:bg-[var(--border-mid)] text-green-500 border border-green-600/30 transition-colors"
             >
               Always Allow
             </button>

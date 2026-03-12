@@ -99,22 +99,30 @@ export function ConnectCodexDialog({
             <Card variant="nested" className="mb-4">
               {email && (
                 <>
-                  <div className="text-xs text-gray-500 mb-1">Account</div>
-                  <div className="text-sm text-gray-300 mb-3">{email}</div>
+                  <div className="text-xs text-[var(--text-muted)] mb-1">
+                    Account
+                  </div>
+                  <div className="text-sm text-[var(--text-primary)] mb-3">
+                    {email}
+                  </div>
                 </>
               )}
               {planType && (
                 <>
-                  <div className="text-xs text-gray-500 mb-1">Plan</div>
-                  <div className="text-sm text-gray-300 mb-3 capitalize">
+                  <div className="text-xs text-[var(--text-muted)] mb-1">
+                    Plan
+                  </div>
+                  <div className="text-sm text-[var(--text-primary)] mb-3 capitalize">
                     {planType}
                   </div>
                 </>
               )}
               {authModeLabel && (
                 <>
-                  <div className="text-xs text-gray-500 mb-1">Auth mode</div>
-                  <div className="text-sm text-gray-300 capitalize">
+                  <div className="text-xs text-[var(--text-muted)] mb-1">
+                    Auth mode
+                  </div>
+                  <div className="text-sm text-[var(--text-primary)] capitalize">
                     {authModeLabel}
                   </div>
                 </>
@@ -122,7 +130,7 @@ export function ConnectCodexDialog({
             </Card>
 
             <div className="mb-4 p-3 bg-[var(--bg-surface)] rounded-lg">
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-[var(--text-secondary)]">
                 Codex uses your OpenAI account for authentication. Signing out
                 will require re-authentication to continue using Codex.
               </p>
@@ -151,8 +159,10 @@ export function ConnectCodexDialog({
             </div>
 
             <div className="mb-4 p-3 bg-[var(--bg-surface)] rounded-lg">
-              <p className="text-xs text-gray-500 mb-2">Install via npm:</p>
-              <code className="text-xs text-gray-300 bg-[var(--bg-main)] px-2 py-1 rounded block">
+              <p className="text-xs text-[var(--text-muted)] mb-2">
+                Install via npm:
+              </p>
+              <code className="text-xs text-[var(--text-primary)] bg-[var(--bg-main)] px-2 py-1 rounded block">
                 npm install -g @openai/codex
               </code>
             </div>
@@ -165,7 +175,7 @@ export function ConnectCodexDialog({
           </>
         ) : (
           <>
-            <p className="text-xs text-gray-500 mb-5">
+            <p className="text-xs text-[var(--text-secondary)] mb-5">
               Sign in with your ChatGPT account to authenticate. This opens your
               browser to complete the OAuth flow.
             </p>
@@ -219,7 +229,7 @@ export function ConnectCodexDialog({
               )}
             </button>
 
-            <p className="text-[10px] text-gray-600 mt-3 text-center">
+            <p className="text-[10px] text-[var(--text-muted)] mt-3 text-center">
               Your browser will open to complete authentication.
             </p>
           </>

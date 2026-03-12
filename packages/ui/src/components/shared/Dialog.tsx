@@ -76,13 +76,17 @@ export function Dialog({
               </div>
             )}
             <div>
-              <h2 className="text-base font-semibold text-gray-200">{title}</h2>
-              {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                {title}
+              </h2>
+              {subtitle && (
+                <p className="text-xs text-[var(--text-muted)]">{subtitle}</p>
+              )}
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-300 transition-colors p-1"
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors p-1"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -126,7 +130,9 @@ export function DialogSection({
   return (
     <div className="mb-4 last:mb-0">
       {title && (
-        <h3 className="text-sm font-medium text-gray-300 mb-2">{title}</h3>
+        <h3 className="text-sm font-medium text-[var(--text-primary)] mb-2">
+          {title}
+        </h3>
       )}
       {children}
     </div>
