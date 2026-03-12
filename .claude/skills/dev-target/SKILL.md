@@ -1,4 +1,7 @@
-# Skill: dev-target
+---
+name: dev-target
+description: Use when building and testing Stratos features using a second Stratos instance as a dev target. Trigger when the user wants to set up a dual-instance workflow, connect to a feature worktree, or visually verify changes in an isolated Stratos instance.
+---
 
 Build and test Stratos features using a second Stratos instance.
 

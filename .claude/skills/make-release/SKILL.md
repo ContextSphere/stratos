@@ -1,4 +1,7 @@
-# Skill: make-release
+---
+name: make-release
+description: Use when creating a Stratos release — bumping the version, committing, tagging, and pushing. Trigger when the user asks to release, cut a version, tag a build, or publish a new version of Stratos.
+---
 
 Create a Stratos release by bumping the repo version, committing it, and creating the matching Git tag with a leading `v`.
 
