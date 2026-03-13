@@ -152,11 +152,7 @@ export function registerFilesIpc(): void {
     },
   );
 
-  // cwd parameter is a guard: only stop if we're watching that exact cwd.
-  // Prevents a race where an old cwd's cleanup stops a newly-started watcher
-  // for a different cwd.
-  ipcMain.handle(IPC_CHANNELS.FILES_WATCH_STOP, (_event, cwd: string): void => {
-    if (activeCwd !== cwd) return;
+  ipcMain.handle(IPC_CHANNELS.FILES_WATCH_STOP, (): void => {
     if (activeWatcher) {
       activeWatcher.close();
       activeWatcher = null;

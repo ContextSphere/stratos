@@ -165,29 +165,19 @@ describe("files watcher IPC", () => {
   it("FILES_WATCH_STOP closes the active watcher", async () => {
     const wc = makeWebContents();
     await invoke("files:watch-start", wc, "/my/project");
-    await invoke("files:watch-stop", wc, "/my/project");
+    await invoke("files:watch-stop", wc);
     expect(mockWatcherClose).toHaveBeenCalled();
   });
 
-  it("FILES_WATCH_STOP with matching cwd closes the watcher", async () => {
+  it("FILES_WATCH_STOP closes the watcher", async () => {
     const wc = makeWebContents();
     await invoke("files:watch-start", wc, "/my/project");
-    await invoke("files:watch-stop", wc, "/my/project");
+    await invoke("files:watch-stop", wc);
     expect(mockWatcherClose).toHaveBeenCalledTimes(1);
-  });
-
-  it("FILES_WATCH_STOP with non-matching cwd is a no-op (guards against race)", async () => {
-    const wc = makeWebContents();
-    await invoke("files:watch-start", wc, "/new/project");
-    // Old cwd tries to stop — should not close the new watcher
-    await invoke("files:watch-stop", wc, "/old/project");
-    expect(mockWatcherClose).not.toHaveBeenCalled();
   });
 
   it("FILES_WATCH_STOP is a no-op when no watcher is active", async () => {
     const wc = makeWebContents();
-    await expect(
-      invoke("files:watch-stop", wc, "/my/project"),
-    ).resolves.toBeUndefined();
+    await expect(invoke("files:watch-stop", wc)).resolves.toBeUndefined();
   });
 });
