@@ -315,6 +315,19 @@ const api = {
       rootPath,
     }),
 
+  filesWatchStart: (cwd: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_WATCH_START, cwd),
+
+  filesWatchStop: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_WATCH_STOP),
+
+  filesOnDirChanged: (callback: (dirPath: string) => void): (() => void) => {
+    const listener = (_event: unknown, dirPath: string) => callback(dirPath);
+    ipcRenderer.on(IPC_CHANNELS.FILES_DIR_CHANGED, listener);
+    return () =>
+      ipcRenderer.removeListener(IPC_CHANNELS.FILES_DIR_CHANGED, listener);
+  },
+
   // MCP servers
   mcpServerStatus: (threadId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.MCP_SERVER_STATUS, threadId),
