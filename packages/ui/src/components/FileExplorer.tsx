@@ -10,6 +10,7 @@ import { useTheme, monacoThemeName } from "../context/ThemeContext";
 import type { DirEntry } from "../bridges/types";
 import { type TreeNode, mergeTreeNodes } from "./tree-utils";
 import { MarkdownPreview } from "./preview/MarkdownPreview";
+import { FileIcon } from "./FileIcon";
 
 export type { TreeNode };
 export { mergeTreeNodes };
@@ -62,24 +63,6 @@ function FolderIcon({ expanded }: { expanded?: boolean }) {
       viewBox="0 0 20 20"
     >
       <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-    </svg>
-  );
-}
-
-function FileIcon() {
-  return (
-    <svg
-      className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-      />
     </svg>
   );
 }
@@ -542,7 +525,7 @@ function TreeView({
             ) : (
               <>
                 <span className="w-3" />
-                <FileIcon />
+                <FileIcon filename={node.entry.name} size={16} />
               </>
             )}
             <span className="truncate">{node.entry.name}</span>
