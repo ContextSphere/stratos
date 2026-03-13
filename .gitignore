@@ -6,4 +6,6 @@ release
 *.tsbuildinfo
 .DS_Store
 docs/plans/
+docs/superpowers/
+.superpowers/
 .worktrees/
