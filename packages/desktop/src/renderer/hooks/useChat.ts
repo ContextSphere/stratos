@@ -433,6 +433,7 @@ export function useChat(
             "AskUserQuestion",
             "EnterPlanMode",
             "ExitPlanMode",
+            "TodoWrite",
           ]);
           if (INTERACTIVE_TOOLS.has(msg.toolName)) break;
           if (msg.toolName === "Skill") {
