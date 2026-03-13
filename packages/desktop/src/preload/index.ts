@@ -315,6 +315,9 @@ const api = {
       rootPath,
     }),
 
+  filesListAll: (cwd: string): Promise<string[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_LIST_ALL, cwd),
+
   filesWatchStart: (cwd: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.FILES_WATCH_START, cwd),
 
