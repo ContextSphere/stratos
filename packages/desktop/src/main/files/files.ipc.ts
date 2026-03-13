@@ -123,7 +123,7 @@ export function registerFilesIpc(): void {
       closeActiveWatcher();
       const watcher = fsWatch(cwd, { recursive: true }, (_, filename) => {
         const changedDir =
-          filename == null ? cwd : join(cwd, dirname(filename as string));
+          filename == null ? cwd : join(cwd, dirname(filename));
         const existing = debounceTimers.get(changedDir);
         if (existing) clearTimeout(existing);
         debounceTimers.set(

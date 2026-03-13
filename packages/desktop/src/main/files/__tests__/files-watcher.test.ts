@@ -1,5 +1,13 @@
 // packages/desktop/src/main/files/__tests__/files-watcher.test.ts
-import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from "vitest";
 import { join, dirname } from "path";
 
 // --- Electron mock ---
@@ -49,6 +57,10 @@ describe("files watcher IPC", () => {
     registerFilesIpc();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("FILES_WATCH_START registers a watcher for the given cwd", async () => {
     const { watch } = await import("fs");
     const handler = handleMocks.get("files:watch-start");
@@ -90,7 +102,6 @@ describe("files watcher IPC", () => {
       "files:dir-changed",
       join("/some/cwd", dirname("src/foo.ts")),
     );
-    vi.useRealTimers();
   });
 
   it("watcher event for root-level file sends cwd as the changed dir", async () => {
@@ -105,7 +116,6 @@ describe("files watcher IPC", () => {
       "files:dir-changed",
       "/some/cwd",
     );
-    vi.useRealTimers();
   });
 
   it("null filename falls back to cwd", async () => {
@@ -120,7 +130,6 @@ describe("files watcher IPC", () => {
       "files:dir-changed",
       "/some/cwd",
     );
-    vi.useRealTimers();
   });
 
   it("does not send if webContents is destroyed", async () => {
@@ -133,7 +142,6 @@ describe("files watcher IPC", () => {
     vi.advanceTimersByTime(150);
 
     expect(mockWebContents.send).not.toHaveBeenCalled();
-    vi.useRealTimers();
   });
 
   it("debounces rapid events for the same directory", async () => {
@@ -147,7 +155,6 @@ describe("files watcher IPC", () => {
     vi.advanceTimersByTime(150);
 
     expect(mockWebContents.send).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
   });
 
   it("FILES_WATCH_STOP closes the watcher", async () => {
