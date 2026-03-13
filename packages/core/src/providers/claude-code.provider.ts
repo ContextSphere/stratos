@@ -7,6 +7,7 @@ import type {
   TokenUsage,
   ModelInfo,
   McpServerInfo,
+  TodoItem,
 } from "./types";
 import { MODE_CONFIGS } from "../types/mode";
 
@@ -575,7 +576,19 @@ export class ClaudeCodeProvider implements AgentProvider {
                 yield { type: "text", content: block.text, isStreaming: false };
               }
             } else if ("name" in block && block.name === "TodoWrite") {
-              yield { type: "todo_update", todos: block.input?.todos ?? [] };
+              const rawTodos = block.input?.todos;
+              let todos: TodoItem[] = [];
+              if (Array.isArray(rawTodos)) {
+                todos = rawTodos;
+              } else if (typeof rawTodos === "string") {
+                try {
+                  const parsed = JSON.parse(rawTodos);
+                  if (Array.isArray(parsed)) todos = parsed;
+                } catch {
+                  // unparseable string — leave todos empty
+                }
+              }
+              yield { type: "todo_update", todos };
             } else if ("name" in block && block.name) {
               const toolId = block.id ?? "";
               if (toolId) {
