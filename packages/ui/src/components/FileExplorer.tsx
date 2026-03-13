@@ -8,17 +8,13 @@ import {
 import "../utils/monaco-theme";
 import { useTheme, monacoThemeName } from "../context/ThemeContext";
 import type { DirEntry } from "../bridges/types";
+import { type TreeNode, mergeTreeNodes } from "./tree-utils";
 import { MarkdownPreview } from "./preview/MarkdownPreview";
 
-const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+export type { TreeNode };
+export { mergeTreeNodes };
 
-export interface TreeNode {
-  entry: DirEntry;
-  path: string;
-  children?: TreeNode[];
-  loaded: boolean;
-  expanded: boolean;
-}
+const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 
 interface Props {
   cwd: string;
@@ -37,26 +33,6 @@ interface Props {
   watchDirectory?: (cwd: string) => Promise<void>;
   unwatchDirectory?: () => Promise<void>;
   onDirectoryChanged?: (callback: (dirPath: string) => void) => () => void;
-}
-
-export function mergeTreeNodes(
-  existing: TreeNode[],
-  fresh: DirEntry[],
-  parentPath: string,
-): TreeNode[] {
-  const existingByName = new Map(existing.map((n) => [n.entry.name, n]));
-  return fresh.map((entry) => {
-    const prev = existingByName.get(entry.name);
-    if (prev) {
-      return { ...prev, entry }; // update size/type, preserve tree state
-    }
-    return {
-      entry,
-      path: `${parentPath}/${entry.name}`,
-      loaded: false,
-      expanded: false,
-    };
-  });
 }
 
 function formatSize(bytes: number): string {

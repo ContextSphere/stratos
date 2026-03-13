@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mergeTreeNodes } from "../FileExplorer";
-import type { TreeNode } from "../FileExplorer";
+import { mergeTreeNodes } from "../tree-utils";
+import type { TreeNode } from "../tree-utils";
 import type { DirEntry } from "../../bridges/types";
 
 function file(name: string): DirEntry {
