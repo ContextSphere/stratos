@@ -6,6 +6,7 @@ import {
   useRef,
   type ReactElement,
 } from "react";
+import { FileIcon } from "./FileIcon";
 
 interface Props {
   files: string[];
@@ -91,7 +92,7 @@ export function FileMentionMenu({
 
   return (
     <div
-      className="absolute z-50 w-80 max-h-48 overflow-y-auto bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-lg shadow-xl"
+      className="absolute z-50 w-72 max-h-48 overflow-y-auto bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-lg shadow-xl"
       style={{ bottom: position.bottom, left: position.left }}
       ref={listRef}
     >
@@ -114,15 +115,15 @@ export function FileMentionMenu({
                 onSelect(filePath);
               }}
               onMouseEnter={() => setSelectedIndex(i)}
-              className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 ${
+              className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-3 ${
                 i === selectedIndex
                   ? "bg-[var(--border)] text-gray-200"
                   : "text-gray-400 hover:bg-[var(--border)]"
               }`}
             >
               <span className="flex items-center gap-2 min-w-0">
-                <span>📄</span>
-                <span className="font-semibold text-[var(--text-primary)] truncate">
+                <FileIcon filename={filename} size={14} />
+                <span className="font-mono text-[var(--text-primary)] truncate">
                   {filename}
                 </span>
               </span>

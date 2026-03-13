@@ -33,8 +33,10 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@stratosapp/core": "workspace:*",
     "@monaco-editor/react": "^4.7.0",
+    "@stratosapp/core": "workspace:*",
+    "material-icon-theme": "^5.32.0",
+    "react-file-icon": "^1.6.0",
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^4.6.4",
     "react-syntax-highlighter": "^16.1.0",
