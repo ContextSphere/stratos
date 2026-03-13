@@ -27,6 +27,8 @@ export interface InputBarRef {
   focus: () => void;
   prefill: (text: string) => void;
   getText: () => string;
+  getImages: () => ImageAttachment[];
+  prefillDraft: (text: string, images: ImageAttachment[]) => void;
 }
 
 async function readImageFile(file: File): Promise<ImageAttachment> {
@@ -109,8 +111,25 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
         }
       },
       getText: () => getPlainText(),
+      getImages: () => images,
+      prefillDraft: (text: string, imgs: ImageAttachment[]) => {
+        if (editableRef.current) {
+          editableRef.current.textContent = text;
+          setHasContent(text.trim().length > 0 || imgs.length > 0);
+          setImages(imgs);
+          if (text) {
+            editableRef.current.focus();
+            const range = document.createRange();
+            range.selectNodeContents(editableRef.current);
+            range.collapse(false);
+            const sel = window.getSelection();
+            sel?.removeAllRanges();
+            sel?.addRange(range);
+          }
+        }
+      },
     }),
-    [],
+    [images],
   );
 
   const handleSend = useCallback(async () => {

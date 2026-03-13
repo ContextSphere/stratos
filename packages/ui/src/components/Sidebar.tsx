@@ -16,6 +16,7 @@ interface Props {
   runningThreadIds: string[];
   threadNotifications: Map<string, string>;
   pendingPermissionThreadIds?: Set<string>;
+  draftThreadIds?: Set<string>;
 }
 
 export function Sidebar({
@@ -33,6 +34,7 @@ export function Sidebar({
   runningThreadIds,
   threadNotifications,
   pendingPermissionThreadIds,
+  draftThreadIds,
 }: Props): React.ReactElement {
   return (
     <div className="flex-shrink-0 flex flex-col bg-[var(--bg-root)] overflow-hidden w-[232px] min-w-[232px] h-full">
@@ -80,6 +82,7 @@ export function Sidebar({
             runningThreadIds={runningThreadIds}
             threadNotifications={threadNotifications}
             pendingPermissionThreadIds={pendingPermissionThreadIds}
+            draftThreadIds={draftThreadIds}
           />
         </div>
 
