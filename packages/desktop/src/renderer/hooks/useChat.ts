@@ -134,6 +134,12 @@ export function useChat(
   const [permissionRequests, setPermissionRequests] = useState<
     PermissionRequest[]
   >([]);
+  const [pendingQuestionThreadIds, setPendingQuestionThreadIds] = useState<
+    Set<string>
+  >(new Set());
+  // Maps requestId → threadId for AskUserQuestion and plan review, so we can
+  // clear pendingQuestionThreadIds when the user responds.
+  const questionRequestThreadRef = useRef<Map<string, string>>(new Map());
   const [threadNotifications, setThreadNotifications] = useState<
     Map<string, string>
   >(new Map());
@@ -165,12 +171,13 @@ export function useChat(
 
   const pendingPermissionThreadIds = useMemo(
     () =>
-      new Set(
-        permissionRequests
+      new Set([
+        ...permissionRequests
           .map((r) => r.threadId)
           .filter((id): id is string => !!id),
-      ),
-    [permissionRequests],
+        ...pendingQuestionThreadIds,
+      ]),
+    [permissionRequests, pendingQuestionThreadIds],
   );
 
   const prevThreadIdRef = useRef<string | null>(null);
@@ -792,6 +799,10 @@ export function useChat(
       const state = streamingThreadsRef.current.get(threadId);
       if (!state) return;
 
+      // Track this thread as awaiting user input so the sidebar shows "Awaiting"
+      questionRequestThreadRef.current.set(data.requestId, threadId);
+      setPendingQuestionThreadIds((prev) => new Set([...prev, threadId]));
+
       // Close current text bubble, create a separate question message
       state.assistantId = null;
       const id = nextMessageId();
@@ -831,6 +842,10 @@ export function useChat(
       const data = rawData as PlanReviewRequest;
       if (!threadId) return;
       const state = streamingThreadsRef.current.get(threadId);
+
+      // Track this thread as awaiting user input so the sidebar shows "Awaiting"
+      questionRequestThreadRef.current.set(data.requestId, threadId);
+      setPendingQuestionThreadIds((prev) => new Set([...prev, threadId]));
 
       // Close current text bubble, create a separate plan review message
       const id = nextMessageId();
@@ -1102,6 +1117,16 @@ export function useChat(
   const respondQuestion = useCallback(
     (requestId: string, answers: Record<string, string>) => {
       window.api.respondAskUserQuestion(requestId, answers);
+      // Clear the "Awaiting" status for this thread
+      const tid = questionRequestThreadRef.current.get(requestId);
+      questionRequestThreadRef.current.delete(requestId);
+      if (tid) {
+        setPendingQuestionThreadIds((prev) => {
+          const next = new Set(prev);
+          next.delete(tid);
+          return next;
+        });
+      }
       // Mark question as answered (preserves history for reload)
       const markAnswered = (msgs: ChatMessage[]): ChatMessage[] =>
         msgs.map((m) =>
@@ -1127,6 +1152,16 @@ export function useChat(
   const respondPlanReview = useCallback(
     (requestId: string, decision: { type: string; feedback?: string }) => {
       window.api.respondPlanReview(requestId, decision);
+      // Clear the "Awaiting" status for this thread
+      const tid = questionRequestThreadRef.current.get(requestId);
+      questionRequestThreadRef.current.delete(requestId);
+      if (tid) {
+        setPendingQuestionThreadIds((prev) => {
+          const next = new Set(prev);
+          next.delete(tid);
+          return next;
+        });
+      }
       // Clear interactive mode when plan review is decided (via buttons or InputBar)
       setInteractiveMode({ type: "none" });
     },
