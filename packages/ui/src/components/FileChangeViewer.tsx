@@ -80,15 +80,16 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
   const isBinary = isBinaryFile(filePath);
   const language = getLanguageFromPath(filePath);
 
-  // Debounce Monaco rendering to prevent janky animation
+  // Debounce Monaco rendering to prevent janky animation on first expand.
+  // Once rendered, keep the editor mounted and hide via CSS to avoid
+  // a Monaco race condition where TextModel is disposed while DiffEditorWidget
+  // is still active ("TextModel got disposed before DiffEditorWidget model got reset").
   useEffect(() => {
-    if (isExpanded) {
+    if (isExpanded && !shouldRenderMonaco) {
       const timer = setTimeout(() => setShouldRenderMonaco(true), 150);
       return () => clearTimeout(timer);
-    } else {
-      setShouldRenderMonaco(false);
     }
-  }, [isExpanded]);
+  }, [isExpanded, shouldRenderMonaco]);
 
   // Extract content based on tool type
   let oldContent = "";
@@ -249,8 +250,8 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
         </span>
       </button>
 
-      {/* Content - expandable */}
-      {isExpanded && (
+      {/* Non-Monaco content (too large warning or loading placeholder) - safe to mount/unmount */}
+      {isExpanded && (isTooLarge || !shouldRenderMonaco) && (
         <div className="border-t border-[var(--border)]">
           {isTooLarge ? (
             // Too large - show message
@@ -267,112 +268,121 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
                 inline.
               </div>
             </div>
-          ) : shouldRenderMonaco ? (
-            // Render Monaco editor or diff
-            <div className="relative">
-              {unifiedDiff ? (
-                // Unified diff view (Codex-style)
-                <Editor
-                  height={height}
-                  language="diff"
-                  value={displayContent}
-                  theme={monacoThemeName(theme)}
-                  options={{
-                    readOnly: true,
-                    minimap: { enabled: false },
-                    scrollBeyondLastLine: false,
-                    fontSize: 12,
-                    fontFamily: MONO_FONT_FAMILY,
-                    lineNumbers: "off",
-                    renderLineHighlight: "none",
-                    wordWrap: "on",
-                    scrollbar: {
-                      vertical: "auto",
-                      horizontal: "auto",
-                      useShadows: false,
-                    },
-                    contextmenu: false,
-                    links: false,
-                    folding: false,
-                    glyphMargin: false,
-                    lineDecorationsWidth: 0,
-                    lineNumbersMinChars: 0,
-                    renderWhitespace: "none",
-                  }}
-                />
-              ) : toolCall.toolName === "Edit" ? (
-                // Diff view for Edit tool
-                <DiffEditor
-                  height={height}
-                  language={language}
-                  original={oldContent}
-                  modified={newContent}
-                  theme={monacoThemeName(theme)}
-                  options={{
-                    readOnly: true,
-                    renderSideBySide: true,
-                    minimap: { enabled: false },
-                    scrollBeyondLastLine: false,
-                    fontSize: 12,
-                    fontFamily: MONO_FONT_FAMILY,
-                    lineNumbers: "on",
-                    renderLineHighlight: "none",
-                    wordWrap: "on",
-                    scrollbar: {
-                      vertical: "auto",
-                      horizontal: "auto",
-                      useShadows: false,
-                    },
-                    overviewRulerLanes: 0,
-                    hideCursorInOverviewRuler: true,
-                    contextmenu: false,
-                    links: false,
-                    folding: true,
-                    glyphMargin: false,
-                    lineDecorationsWidth: 0,
-                    lineNumbersMinChars: 3,
-                    renderWhitespace: "none",
-                    diffWordWrap: "on",
-                  }}
-                />
-              ) : (
-                // Regular editor for Write/Read tools
-                <Editor
-                  height={height}
-                  language={language}
-                  value={displayContent}
-                  theme={monacoThemeName(theme)}
-                  options={{
-                    readOnly: true,
-                    minimap: { enabled: false },
-                    scrollBeyondLastLine: false,
-                    fontSize: 12,
-                    fontFamily: MONO_FONT_FAMILY,
-                    lineNumbers: "on",
-                    renderLineHighlight: "none",
-                    wordWrap: "on",
-                    scrollbar: {
-                      vertical: "auto",
-                      horizontal: "auto",
-                      useShadows: false,
-                    },
-                    contextmenu: false,
-                    links: false,
-                    folding: true,
-                    glyphMargin: false,
-                    lineDecorationsWidth: 0,
-                    lineNumbersMinChars: 3,
-                    renderWhitespace: "none",
-                  }}
-                />
-              )}
-            </div>
           ) : (
             // Loading placeholder
             <div className="p-4 flex items-center justify-center text-[var(--text-muted)]">
               <div className="animate-pulse">Loading editor...</div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Monaco editors - kept mounted once rendered (hidden via CSS when collapsed).
+          Unmounting Monaco while it's active causes a race condition:
+          "TextModel got disposed before DiffEditorWidget model got reset" */}
+      {shouldRenderMonaco && !isTooLarge && (
+        <div
+          className="border-t border-[var(--border)]"
+          style={{ display: isExpanded ? "block" : "none" }}
+        >
+          <div className="relative">
+            {unifiedDiff ? (
+              // Unified diff view (Codex-style)
+              <Editor
+                height={height}
+                language="diff"
+                value={displayContent}
+                theme={monacoThemeName(theme)}
+                options={{
+                  readOnly: true,
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  fontSize: 12,
+                  fontFamily: MONO_FONT_FAMILY,
+                  lineNumbers: "off",
+                  renderLineHighlight: "none",
+                  wordWrap: "on",
+                  scrollbar: {
+                    vertical: "auto",
+                    horizontal: "auto",
+                    useShadows: false,
+                  },
+                  contextmenu: false,
+                  links: false,
+                  folding: false,
+                  glyphMargin: false,
+                  lineDecorationsWidth: 0,
+                  lineNumbersMinChars: 0,
+                  renderWhitespace: "none",
+                }}
+              />
+            ) : toolCall.toolName === "Edit" ? (
+              // Diff view for Edit tool
+              <DiffEditor
+                height={height}
+                language={language}
+                original={oldContent}
+                modified={newContent}
+                theme={monacoThemeName(theme)}
+                options={{
+                  readOnly: true,
+                  renderSideBySide: true,
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  fontSize: 12,
+                  fontFamily: MONO_FONT_FAMILY,
+                  lineNumbers: "on",
+                  renderLineHighlight: "none",
+                  wordWrap: "on",
+                  scrollbar: {
+                    vertical: "auto",
+                    horizontal: "auto",
+                    useShadows: false,
+                  },
+                  overviewRulerLanes: 0,
+                  hideCursorInOverviewRuler: true,
+                  contextmenu: false,
+                  links: false,
+                  folding: true,
+                  glyphMargin: false,
+                  lineDecorationsWidth: 0,
+                  lineNumbersMinChars: 3,
+                  renderWhitespace: "none",
+                  diffWordWrap: "on",
+                }}
+              />
+            ) : (
+              // Regular editor for Write/Read tools
+              <Editor
+                height={height}
+                language={language}
+                value={displayContent}
+                theme={monacoThemeName(theme)}
+                options={{
+                  readOnly: true,
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  fontSize: 12,
+                  fontFamily: MONO_FONT_FAMILY,
+                  lineNumbers: "on",
+                  renderLineHighlight: "none",
+                  wordWrap: "on",
+                  scrollbar: {
+                    vertical: "auto",
+                    horizontal: "auto",
+                    useShadows: false,
+                  },
+                  contextmenu: false,
+                  links: false,
+                  folding: true,
+                  glyphMargin: false,
+                  lineDecorationsWidth: 0,
+                  lineNumbersMinChars: 3,
+                  renderWhitespace: "none",
+                }}
+              />
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -7,7 +7,7 @@ interface TodoListProps {
 export function TodoList({ todoData }: TodoListProps): React.ReactElement {
   const { todos } = todoData;
 
-  if (!todos || todos.length === 0) return <></>;
+  if (!todos || !Array.isArray(todos) || todos.length === 0) return <></>;
 
   return (
     <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--bg-overlay)] p-3">
