@@ -1,7 +1,14 @@
 import { ipcMain } from "electron";
 import { readdir, readFile, stat, writeFile } from "fs/promises";
-import { join, resolve } from "path";
+import { watch as fsWatch } from "fs";
+import type { FSWatcher } from "fs";
+import { join, resolve, dirname } from "path";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
+
+// Watcher state — one watcher per process
+let activeWatcher: FSWatcher | null = null;
+let activeCwd: string | null = null;
+const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export interface DirEntry {
   name: string;
@@ -100,10 +107,71 @@ export function registerFilesIpc(): void {
       await writeFile(filePath, content, "utf-8");
     },
   );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_WATCH_START,
+    (_event, cwd: string): void => {
+      const webContents = _event.sender;
+      // Close any existing watcher first
+      if (activeWatcher) {
+        activeWatcher.close();
+        activeWatcher = null;
+      }
+      for (const timer of debounceTimers.values()) clearTimeout(timer);
+      debounceTimers.clear();
+      activeCwd = cwd;
+
+
+      const watcher = fsWatch(cwd, { recursive: true }, (_, filename) => {
+        const changedDir =
+          filename == null ? cwd : join(cwd, dirname(filename));
+
+        const existing = debounceTimers.get(changedDir);
+        if (existing) clearTimeout(existing);
+
+        debounceTimers.set(
+          changedDir,
+          setTimeout(() => {
+            debounceTimers.delete(changedDir);
+            if (!webContents.isDestroyed()) {
+              webContents.send(IPC_CHANNELS.FILES_DIR_CHANGED, changedDir);
+            }
+          }, 100),
+        );
+      });
+
+      watcher.on("error", () => {
+        watcher.close();
+        if (activeWatcher === watcher) {
+          activeWatcher = null;
+          activeCwd = null;
+        }
+      });
+
+      activeWatcher = watcher;
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.FILES_WATCH_STOP, (): void => {
+    if (activeWatcher) {
+      activeWatcher.close();
+      activeWatcher = null;
+    }
+    activeCwd = null;
+    for (const timer of debounceTimers.values()) clearTimeout(timer);
+    debounceTimers.clear();
+  });
 }
 
 export function unregisterFilesIpc(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILES_LIST_DIR);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_READ_FILE);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WRITE_FILE);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_WATCH_START);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_WATCH_STOP);
+  if (activeWatcher) {
+    activeWatcher.close();
+    activeWatcher = null;
+  }
+  activeCwd = null;
 }

@@ -103,4 +103,7 @@ export interface FilesBridge {
     rootPath: string,
   ): Promise<{ content: string; isBinary: boolean }>;
   writeFile(filePath: string, content: string, rootPath: string): Promise<void>;
+  watchDirectory?(cwd: string): Promise<void>;
+  unwatchDirectory?(): Promise<void>;
+  onDirectoryChanged?(callback: (dirPath: string) => void): () => void;
 }

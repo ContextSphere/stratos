@@ -93,6 +93,9 @@ export function PreviewPane({
           listDirectory={filesBridge.listDirectory}
           readFile={filesBridge.readFile}
           writeFile={filesBridge.writeFile}
+          watchDirectory={filesBridge.watchDirectory}
+          unwatchDirectory={filesBridge.unwatchDirectory}
+          onDirectoryChanged={filesBridge.onDirectoryChanged}
         />
       ) : preview.type === "artifact-editor" &&
         preview.artifactContent !== undefined &&
