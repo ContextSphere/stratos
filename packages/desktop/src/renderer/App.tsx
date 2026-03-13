@@ -676,6 +676,13 @@ export default function App(): React.ReactElement {
                 interactiveMode={interactiveMode}
                 onInteractiveResponse={handleInteractiveResponse}
                 slashCommands={slashCommands}
+                cwd={activeThread?.cwd}
+                filesBridge={{
+                  listAllFiles: window.api.filesListAll,
+                  watchDirectory: window.api.filesWatchStart,
+                  unwatchDirectory: window.api.filesWatchStop,
+                  onDirectoryChanged: window.api.filesOnDirChanged,
+                }}
               />
 
               {/* Toolbar: provider + model + mode */}

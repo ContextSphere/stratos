@@ -2,7 +2,7 @@ import { ipcMain } from "electron";
 import { readdir, readFile, stat, writeFile } from "fs/promises";
 import { watch as fsWatch } from "fs";
 import type { FSWatcher } from "fs";
-import { join, resolve, dirname } from "path";
+import { join, resolve, dirname, relative } from "path";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
 
 // Watcher state — one watcher per process
@@ -121,7 +121,6 @@ export function registerFilesIpc(): void {
       debounceTimers.clear();
       activeCwd = cwd;
 
-
       const watcher = fsWatch(cwd, { recursive: true }, (_, filename) => {
         const changedDir =
           filename == null ? cwd : join(cwd, dirname(filename));
@@ -161,6 +160,51 @@ export function registerFilesIpc(): void {
     for (const timer of debounceTimers.values()) clearTimeout(timer);
     debounceTimers.clear();
   });
+
+  const SKIP_DIRS = new Set([
+    "node_modules",
+    ".git",
+    ".next",
+    "dist",
+    "build",
+    ".turbo",
+  ]);
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_LIST_ALL,
+    async (_event, cwd: string): Promise<string[]> => {
+      // Basic security: ensure cwd resolves to an absolute path
+      const resolvedCwd = resolve(cwd);
+      if (!resolvedCwd.startsWith("/")) return [];
+
+      const results: string[] = [];
+
+      async function walk(dir: string): Promise<void> {
+        const entries = await readdir(dir, { withFileTypes: true });
+        const subdirs: string[] = [];
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            if (!SKIP_DIRS.has(entry.name)) {
+              subdirs.push(join(dir, entry.name));
+            }
+          } else {
+            results.push(relative(resolvedCwd, join(dir, entry.name)));
+          }
+        }
+        for (const subdir of subdirs) {
+          await walk(subdir);
+        }
+      }
+
+      try {
+        await walk(resolvedCwd);
+      } catch {
+        return [];
+      }
+
+      return results;
+    },
+  );
 }
 
 export function unregisterFilesIpc(): void {
@@ -169,6 +213,7 @@ export function unregisterFilesIpc(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WRITE_FILE);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WATCH_START);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WATCH_STOP);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_LIST_ALL);
   if (activeWatcher) {
     activeWatcher.close();
     activeWatcher = null;

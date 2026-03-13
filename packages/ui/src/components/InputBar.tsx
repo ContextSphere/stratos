@@ -8,6 +8,11 @@ import {
 } from "react";
 import type { ImageAttachment } from "../types";
 import { SlashCommandMenu, type SlashCommandInfo } from "./SlashCommandMenu";
+import { FileMentionMenu } from "./FileMentionMenu";
+import {
+  useFileMentions,
+  type FileMentionsBridge,
+} from "../hooks/useFileMentions";
 
 export type InteractiveMode =
   | { type: "none" }
@@ -21,6 +26,8 @@ interface Props {
   interactiveMode?: InteractiveMode;
   onInteractiveResponse?: (text: string) => void;
   slashCommands?: SlashCommandInfo[];
+  cwd?: string;
+  filesBridge?: FileMentionsBridge;
 }
 
 export interface InputBarRef {
@@ -63,6 +70,8 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
     interactiveMode,
     onInteractiveResponse,
     slashCommands = [],
+    cwd,
+    filesBridge,
   },
   ref,
 ): React.ReactElement {
@@ -71,11 +80,21 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
   const [slashMenu, setSlashMenu] = useState<{ triggerPos: number } | null>(
     null,
   );
+  const [mentionMenu, setMentionMenu] = useState<{
+    triggerPos: number;
+    query: string;
+  } | null>(null);
+  const { files: mentionFiles, loading: mentionLoading } = useFileMentions(
+    cwd,
+    filesBridge,
+  );
   const [hasContent, setHasContent] = useState(false);
   const editableRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
+  const filesBridgeRef = useRef(filesBridge);
+  filesBridgeRef.current = filesBridge;
 
   function getPlainText(): string {
     const el = editableRef.current;
@@ -142,6 +161,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       setHasContent(false);
       setImages([]);
       setSlashMenu(null);
+      setMentionMenu(null);
       return;
     }
 
@@ -152,19 +172,30 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
     setHasContent(false);
     setImages([]);
     setSlashMenu(null);
+    setMentionMenu(null);
 
     await onSend(trimmed, sentImages.length > 0 ? sentImages : undefined);
   }, [images, isStreaming, interactiveMode, onInteractiveResponse, onSend]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (slashMenu) return;
+      const mentionHasResults =
+        mentionMenu !== null &&
+        (mentionLoading ||
+          mentionFiles.some(
+            (f) =>
+              mentionMenu.query === "" ||
+              (f.split("/").pop() ?? f)
+                .toLowerCase()
+                .includes(mentionMenu.query.toLowerCase()),
+          ));
+      if (slashMenu || mentionHasResults) return;
       if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend, slashMenu],
+    [handleSend, slashMenu, mentionMenu, mentionFiles, mentionLoading],
   );
 
   const handleInput = useCallback(() => {
@@ -172,6 +203,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
 
     const textBefore = getTextBeforeCursor();
 
+    // Slash command detection
     if (slashCommands.length > 0) {
       const lastSlashIdx = textBefore.lastIndexOf("/");
       if (
@@ -181,12 +213,29 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
         const afterSlash = textBefore.slice(lastSlashIdx);
         if (!afterSlash.includes(" ") || afterSlash === "/") {
           setSlashMenu({ triggerPos: lastSlashIdx });
+          setMentionMenu(null);
           return;
         }
       }
       setSlashMenu(null);
     }
-  }, [slashCommands]);
+
+    // @ file mention detection
+    if (filesBridgeRef.current?.listAllFiles) {
+      const lastAtIdx = textBefore.lastIndexOf("@");
+      if (
+        lastAtIdx >= 0 &&
+        (lastAtIdx === 0 || /\s/.test(textBefore[lastAtIdx - 1]))
+      ) {
+        const afterAt = textBefore.slice(lastAtIdx + 1); // exclude @
+        if (!afterAt.includes(" ")) {
+          setMentionMenu({ triggerPos: lastAtIdx, query: afterAt });
+          return;
+        }
+      }
+      setMentionMenu(null);
+    }
+  }, [slashCommands]); // filesBridge accessed via ref — only slashCommands is a reactive dep
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     e.preventDefault();
@@ -225,11 +274,11 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       range.setStart(triggerNode, triggerOffset);
       range.setEnd(cursorRange.startContainer, cursorRange.startOffset);
       range.deleteContents();
-      range.insertNode(document.createTextNode(command + " "));
+      const insertedText = document.createTextNode(command + " ");
+      range.insertNode(insertedText);
 
-      const insertedNode = range.startContainer;
       const newRange = document.createRange();
-      newRange.setStart(insertedNode, insertedNode.textContent?.length ?? 0);
+      newRange.setStart(insertedText, insertedText.length);
       newRange.collapse(true);
       selection.removeAllRanges();
       selection.addRange(newRange);
@@ -239,6 +288,53 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       el.focus();
     },
     [slashMenu],
+  );
+
+  const handleMentionSelect = useCallback(
+    (filePath: string) => {
+      if (mentionMenu === null || !editableRef.current) return;
+      const el = editableRef.current;
+
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let charCount = 0;
+      let triggerNode: Text | null = null;
+      let triggerOffset = 0;
+
+      while (walker.nextNode()) {
+        const textNode = walker.currentNode as Text;
+        const len = textNode.length;
+        if (charCount + len >= mentionMenu.triggerPos) {
+          triggerNode = textNode;
+          triggerOffset = mentionMenu.triggerPos - charCount;
+          break;
+        }
+        charCount += len;
+      }
+
+      if (!triggerNode) return;
+
+      const selection = window.getSelection();
+      if (!selection || !selection.rangeCount) return;
+      const cursorRange = selection.getRangeAt(0);
+
+      const range = document.createRange();
+      range.setStart(triggerNode, triggerOffset);
+      range.setEnd(cursorRange.startContainer, cursorRange.startOffset);
+      range.deleteContents();
+      const insertedText = document.createTextNode("@" + filePath + " ");
+      range.insertNode(insertedText);
+
+      const newRange = document.createRange();
+      newRange.setStart(insertedText, insertedText.length);
+      newRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(newRange);
+
+      setMentionMenu(null);
+      setHasContent(getPlainText().trim().length > 0);
+      el.focus();
+    },
+    [mentionMenu],
   );
 
   const handleFileInputChange = useCallback(
@@ -320,6 +416,21 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
           }}
           onSelect={handleSlashSelect}
           onClose={() => setSlashMenu(null)}
+        />
+      )}
+      {mentionMenu !== null && (
+        <FileMentionMenu
+          files={mentionFiles}
+          query={mentionMenu.query}
+          position={{
+            bottom: containerRef.current
+              ? containerRef.current.offsetHeight
+              : 60,
+            left: 16,
+          }}
+          onSelect={handleMentionSelect}
+          onClose={() => setMentionMenu(null)}
+          loading={mentionLoading}
         />
       )}
       <div>

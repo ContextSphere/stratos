@@ -74,6 +74,7 @@ export const IPC_CHANNELS = {
   FILES_WATCH_START: "files:watch-start",
   FILES_WATCH_STOP: "files:watch-stop",
   FILES_DIR_CHANGED: "files:dir-changed",
+  FILES_LIST_ALL: "files:list-all",
 
   // Skills
   SKILLS_LIST: "skills:list",

@@ -22,6 +22,7 @@ export { default as WorktreeToggle } from "./components/WorktreeToggle";
 export { default as ProviderToggle } from "./components/ProviderToggle";
 export { PermissionDialog } from "./components/PermissionDialog";
 export { SlashCommandMenu } from "./components/SlashCommandMenu";
+export { FileMentionMenu } from "./components/FileMentionMenu";
 export { ToolsBadge } from "./components/ToolsBadge";
 export { ToolsPopover } from "./components/ToolsPopover";
 export { TaskPanel } from "./components/TaskPanel";
@@ -69,6 +70,8 @@ export type { AppTheme } from "./context/ThemeContext";
 
 // Hooks
 export { useTodoData } from "./hooks/useTodoData";
+export { useFileMentions } from "./hooks/useFileMentions";
+export type { FileMentionsBridge } from "./hooks/useFileMentions";
 
 // Types
 export type {
