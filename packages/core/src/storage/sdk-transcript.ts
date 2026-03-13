@@ -25,11 +25,13 @@ function getToolResultText(
     .join("\n");
 }
 
-const SKIP_TEXT = new Set([
-  "[Request interrupted by user for tool use]",
-  "[Request interrupted by user]",
-  "No response requested.",
-]);
+const SKIP_TEXT = new Set(["No response requested."]);
+const SKIP_TEXT_PREFIXES = ["[Request interrupted by user"];
+
+function shouldSkip(text: string): boolean {
+  const t = text.trim();
+  return SKIP_TEXT.has(t) || SKIP_TEXT_PREFIXES.some((p) => t.startsWith(p));
+}
 
 /**
  * Loads messages for a session from the Claude Code SDK and maps them to
@@ -100,7 +102,7 @@ export async function sdkMessagesToStored(
 
       const text = textBlocks
         .map((b) => b.text)
-        .filter((t) => !SKIP_TEXT.has(t.trim()))
+        .filter((t) => !shouldSkip(t))
         .join("\n")
         .trim();
 
@@ -148,7 +150,7 @@ export async function sdkMessagesToStored(
                 : block.thinking;
             } else if (block.type === "text") {
               const t = block.text.trim();
-              if (t && !SKIP_TEXT.has(t)) textParts.push(t);
+              if (t && !shouldSkip(t)) textParts.push(t);
             } else if (block.type === "tool_use") {
               toolCalls.push({
                 toolCallId: block.id,
