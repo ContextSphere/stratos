@@ -106,7 +106,9 @@ function fromStoredMessage(m: StoredMessage): ChatMessage {
     role: m.role,
     content: m.content,
     timestamp: m.timestamp,
-    ...(m.toolCalls && { toolCalls: m.toolCalls }),
+    ...(m.toolCalls && {
+      toolCalls: m.toolCalls.filter((tc) => tc.toolName !== "TodoWrite"),
+    }),
     ...(m.taskInfo ? { taskInfo: m.taskInfo as TaskInfo } : {}),
     ...(m.cost != null && { cost: m.cost }),
     ...(m.usage && { usage: m.usage }),
