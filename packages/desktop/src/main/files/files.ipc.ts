@@ -1,7 +1,22 @@
 import { ipcMain } from "electron";
 import { readdir, readFile, stat, writeFile } from "fs/promises";
-import { join, resolve } from "path";
+import { watch as fsWatch } from "fs";
+import type { FSWatcher } from "fs";
+import { join, resolve, dirname } from "path";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
+
+// Watcher state — one watcher per process
+let activeWatcher: FSWatcher | null = null;
+const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function closeActiveWatcher(): void {
+  if (activeWatcher) {
+    activeWatcher.close();
+    activeWatcher = null;
+  }
+  for (const timer of debounceTimers.values()) clearTimeout(timer);
+  debounceTimers.clear();
+}
 
 export interface DirEntry {
   name: string;
@@ -100,10 +115,45 @@ export function registerFilesIpc(): void {
       await writeFile(filePath, content, "utf-8");
     },
   );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_WATCH_START,
+    (_event, cwd: string): void => {
+      const webContents = _event.sender;
+      closeActiveWatcher();
+      const watcher = fsWatch(cwd, { recursive: true }, (_, filename) => {
+        const changedDir =
+          filename == null ? cwd : join(cwd, dirname(filename as string));
+        const existing = debounceTimers.get(changedDir);
+        if (existing) clearTimeout(existing);
+        debounceTimers.set(
+          changedDir,
+          setTimeout(() => {
+            debounceTimers.delete(changedDir);
+            if (!webContents.isDestroyed()) {
+              webContents.send(IPC_CHANNELS.FILES_DIR_CHANGED, changedDir);
+            }
+          }, 100),
+        );
+      });
+      watcher.on("error", () => {
+        watcher.close();
+        if (activeWatcher === watcher) activeWatcher = null;
+      });
+      activeWatcher = watcher;
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.FILES_WATCH_STOP, async (): Promise<void> => {
+    closeActiveWatcher();
+  });
 }
 
 export function unregisterFilesIpc(): void {
+  closeActiveWatcher();
   ipcMain.removeHandler(IPC_CHANNELS.FILES_LIST_DIR);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_READ_FILE);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WRITE_FILE);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_WATCH_START);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_WATCH_STOP);
 }
