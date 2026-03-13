@@ -104,4 +104,7 @@ export const IPC_CHANNELS = {
 
   // UI shortcuts
   OPEN_MODEL_PICKER: "ui:open-model-picker",
+
+  // Diagnostics
+  DIAGNOSTIC_ERROR: "app:diagnostic-error",
 } as const;

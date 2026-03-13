@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { ipcMain, BrowserWindow } from "electron";
 import { execSync } from "child_process";
 import { join } from "path";
 import { mkdirSync } from "fs";
@@ -29,6 +29,30 @@ export function setThreadSessionClearer(fn: (threadId: string) => void): void {
 
 export function setRunningThreadsGetter(fn: () => string[]): void {
   getRunningIdsFn = fn;
+}
+
+/**
+ * Emits a diagnostic error to all renderer windows so a toast is shown.
+ */
+function emitDiagnostic(
+  title: string,
+  message: string,
+  context?: Record<string, unknown>,
+  stack?: string,
+): void {
+  const payload = {
+    title,
+    message,
+    context,
+    stack,
+    severity: "error" as const,
+  };
+  console.error(`[diagnostic] ${title}: ${message}`, context ?? "");
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.DIAGNOSTIC_ERROR, payload);
+    }
+  }
 }
 
 export function registerThreadIpc(): void {
@@ -194,7 +218,23 @@ export function registerThreadIpc(): void {
   ipcMain.handle(
     IPC_CHANNELS.THREADS_LOAD_MESSAGES,
     async (_event, threadId: string) => {
-      return await storage.loadMessages(threadId);
+      try {
+        return await storage.loadMessages(threadId);
+      } catch (err) {
+        const thread = storage.getThread(threadId);
+        emitDiagnostic(
+          "Failed to load thread messages",
+          err instanceof Error ? err.message : String(err),
+          {
+            threadId,
+            sessionId: thread?.sessionId ?? "unknown",
+            provider: thread?.provider ?? "unknown",
+            cwd: thread?.cwd ?? "unknown",
+          },
+          err instanceof Error ? err.stack : undefined,
+        );
+        return [];
+      }
     },
   );
 

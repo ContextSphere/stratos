@@ -18,6 +18,9 @@ import {
   WorktreeToggle,
   ProviderToggle,
   ThemeContext,
+  DiagnosticsProvider,
+  useDiagnostics,
+  DiagnosticToastContainer,
 } from "@stratosapp/ui";
 
 import { Group, Panel, Separator } from "react-resizable-panels";
@@ -34,6 +37,15 @@ import { ConnectCodexDialog } from "./components/ConnectCodexDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 
 export default function App(): React.ReactElement {
+  return (
+    <DiagnosticsProvider>
+      <AppInner />
+    </DiagnosticsProvider>
+  );
+}
+
+function AppInner(): React.ReactElement {
+  const { report, toasts, dismiss } = useDiagnostics();
   const {
     threads,
     activeThreadId,
@@ -471,6 +483,14 @@ export default function App(): React.ReactElement {
     return () => window.removeEventListener("claude:auth-failed", handler);
   }, []);
 
+  // Listen for diagnostic errors from main process
+  useEffect(() => {
+    window.api.onDiagnosticError((data) => {
+      report(data);
+    });
+    return () => window.api.removeAllListeners("app:diagnostic-error");
+  }, [report]);
+
   const toggleSidebar = useCallback(
     () => setSidebarCollapsed((prev) => !prev),
     [],
@@ -817,6 +837,9 @@ export default function App(): React.ReactElement {
           theme={theme}
           onThemeChange={handleThemeChange}
         />
+
+        {/* Diagnostic toasts */}
+        <DiagnosticToastContainer toasts={toasts} onDismiss={dismiss} />
       </div>
     </ThemeContext.Provider>
   );

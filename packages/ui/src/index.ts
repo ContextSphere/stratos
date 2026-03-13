@@ -71,6 +71,8 @@ export type { AppTheme } from "./context/ThemeContext";
 // Hooks
 export { useTodoData } from "./hooks/useTodoData";
 export { useFileMentions } from "./hooks/useFileMentions";
+export { DiagnosticsProvider, useDiagnostics } from "./hooks/useDiagnostics";
+export type { DiagnosticError } from "./hooks/useDiagnostics";
 export type { FileMentionsBridge } from "./hooks/useFileMentions";
 
 // Types

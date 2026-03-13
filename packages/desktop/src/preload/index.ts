@@ -372,6 +372,21 @@ const api = {
     });
   },
 
+  // Diagnostics
+  onDiagnosticError: (
+    callback: (data: {
+      title: string;
+      message: string;
+      context?: Record<string, unknown>;
+      stack?: string;
+      severity?: "error" | "warning" | "info";
+    }) => void,
+  ): void => {
+    ipcRenderer.on(IPC_CHANNELS.DIAGNOSTIC_ERROR, (_event, data) =>
+      callback(data),
+    );
+  },
+
   // Skills
   skills: {
     list: (): Promise<

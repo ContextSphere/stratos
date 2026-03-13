@@ -5,17 +5,23 @@
  * See docs/DESIGN.md for the full design system documentation.
  */
 
-export { Button } from './Button'
-export type { ButtonProps } from './Button'
+export { Button } from "./Button";
+export type { ButtonProps } from "./Button";
 
-export { Input } from './Input'
-export type { InputProps } from './Input'
+export { Input } from "./Input";
+export type { InputProps } from "./Input";
 
-export { Dialog, DialogBody, DialogSection } from './Dialog'
-export type { DialogProps } from './Dialog'
+export { Dialog, DialogBody, DialogSection } from "./Dialog";
+export type { DialogProps } from "./Dialog";
 
-export { Card } from './Card'
-export type { CardProps } from './Card'
+export { Card } from "./Card";
+export type { CardProps } from "./Card";
 
-export { StatusIndicator, LoadingSpinner, TypingIndicator } from './StatusIndicator'
-export type { StatusIndicatorProps } from './StatusIndicator'
+export {
+  StatusIndicator,
+  LoadingSpinner,
+  TypingIndicator,
+} from "./StatusIndicator";
+export type { StatusIndicatorProps } from "./StatusIndicator";
+
+export { DiagnosticToast, DiagnosticToastContainer } from "./DiagnosticToast";
