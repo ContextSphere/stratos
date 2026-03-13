@@ -29,7 +29,12 @@ export function useTodoData(messages: ChatMessage[]) {
   useEffect(() => {
     const lastTodoMessage = [...messages]
       .reverse()
-      .find((m) => m.todoData && m.todoData.todos?.length > 0);
+      .find(
+        (m) =>
+          m.todoData &&
+          Array.isArray(m.todoData.todos) &&
+          m.todoData.todos.length > 0,
+      );
 
     if (!lastTodoMessage?.todoData) {
       setLatestTodoData(null);
