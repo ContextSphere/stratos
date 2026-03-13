@@ -91,6 +91,8 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
+  const filesBridgeRef = useRef(filesBridge);
+  filesBridgeRef.current = filesBridge;
 
   function getPlainText(): string {
     const el = editableRef.current;
@@ -158,13 +160,23 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (slashMenu || mentionMenu) return;
+      const mentionHasResults =
+        mentionMenu !== null &&
+        (mentionLoading ||
+          mentionFiles.some(
+            (f) =>
+              mentionMenu.query === "" ||
+              (f.split("/").pop() ?? f)
+                .toLowerCase()
+                .includes(mentionMenu.query.toLowerCase()),
+          ));
+      if (slashMenu || mentionHasResults) return;
       if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend, slashMenu, mentionMenu],
+    [handleSend, slashMenu, mentionMenu, mentionFiles, mentionLoading],
   );
 
   const handleInput = useCallback(() => {
@@ -190,7 +202,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
     }
 
     // @ file mention detection
-    if (filesBridge?.listAllFiles) {
+    if (filesBridgeRef.current?.listAllFiles) {
       const lastAtIdx = textBefore.lastIndexOf("@");
       if (
         lastAtIdx >= 0 &&
@@ -204,8 +216,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       }
       setMentionMenu(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slashCommands]); // filesBridge intentionally omitted — it's an inline object that changes every render; the gate check (filesBridge?.listAllFiles) is safe as a one-time guard since cwd won't change without a re-mount
+  }, [slashCommands]); // filesBridge accessed via ref — only slashCommands is a reactive dep
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     e.preventDefault();
@@ -244,11 +255,11 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       range.setStart(triggerNode, triggerOffset);
       range.setEnd(cursorRange.startContainer, cursorRange.startOffset);
       range.deleteContents();
-      range.insertNode(document.createTextNode(command + " "));
+      const insertedText = document.createTextNode(command + " ");
+      range.insertNode(insertedText);
 
-      const insertedNode = range.startContainer;
       const newRange = document.createRange();
-      newRange.setStart(insertedNode, insertedNode.textContent?.length ?? 0);
+      newRange.setStart(insertedText, insertedText.length);
       newRange.collapse(true);
       selection.removeAllRanges();
       selection.addRange(newRange);
@@ -291,11 +302,11 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       range.setStart(triggerNode, triggerOffset);
       range.setEnd(cursorRange.startContainer, cursorRange.startOffset);
       range.deleteContents();
-      range.insertNode(document.createTextNode("@" + filePath + " "));
+      const insertedText = document.createTextNode("@" + filePath + " ");
+      range.insertNode(insertedText);
 
-      const insertedNode = range.startContainer;
       const newRange = document.createRange();
-      newRange.setStart(insertedNode, insertedNode.textContent?.length ?? 0);
+      newRange.setStart(insertedText, insertedText.length);
       newRange.collapse(true);
       selection.removeAllRanges();
       selection.addRange(newRange);
