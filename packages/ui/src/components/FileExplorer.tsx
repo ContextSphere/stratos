@@ -12,7 +12,7 @@ import { MarkdownPreview } from "./preview/MarkdownPreview";
 
 const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 
-interface TreeNode {
+export interface TreeNode {
   entry: DirEntry;
   path: string;
   children?: TreeNode[];
@@ -34,6 +34,29 @@ interface Props {
     content: string,
     rootPath: string,
   ) => Promise<void>;
+  watchDirectory?: (cwd: string) => Promise<void>;
+  unwatchDirectory?: () => Promise<void>;
+  onDirectoryChanged?: (callback: (dirPath: string) => void) => () => void;
+}
+
+export function mergeTreeNodes(
+  existing: TreeNode[],
+  fresh: DirEntry[],
+  parentPath: string,
+): TreeNode[] {
+  const existingByName = new Map(existing.map((n) => [n.entry.name, n]));
+  return fresh.map((entry) => {
+    const prev = existingByName.get(entry.name);
+    if (prev) {
+      return { ...prev, entry }; // update size/type, preserve tree state
+    }
+    return {
+      entry,
+      path: `${parentPath}/${entry.name}`,
+      loaded: false,
+      expanded: false,
+    };
+  });
 }
 
 function formatSize(bytes: number): string {
@@ -106,6 +129,9 @@ export function FileExplorer({
   listDirectory,
   readFile,
   writeFile,
+  watchDirectory,
+  unwatchDirectory,
+  onDirectoryChanged,
 }: Props): React.ReactElement {
   useMonacoFontReady();
   const theme = useTheme();
@@ -157,6 +183,78 @@ export function FileExplorer({
       ignored = true;
     };
   }, [cwd, listDirectory]);
+
+  const treeRef = useRef<TreeNode[]>(tree);
+  useEffect(() => {
+    treeRef.current = tree;
+  }, [tree]);
+
+  useEffect(() => {
+    if (!watchDirectory || !unwatchDirectory || !onDirectoryChanged) return;
+
+    const handleDirChanged = async (changedDirPath: string) => {
+      const currentTree = treeRef.current;
+
+      // Root case: entries live directly in `tree`, not as children of a node
+      if (changedDirPath === cwd) {
+        try {
+          const fresh = await listDirectory(cwd, cwd);
+          setTree((prev) => mergeTreeNodes(prev, fresh, cwd));
+        } catch {
+          // keep stale on error
+        }
+        return;
+      }
+
+      // Subtree case: walk and refresh any loaded node whose path matches
+      const refreshInTree = async (nodes: TreeNode[]): Promise<TreeNode[]> => {
+        const result: TreeNode[] = [];
+        for (const node of nodes) {
+          if (node.path === changedDirPath && node.loaded) {
+            try {
+              const fresh = await listDirectory(changedDirPath, cwd);
+              result.push({
+                ...node,
+                children: mergeTreeNodes(
+                  node.children ?? [],
+                  fresh,
+                  changedDirPath,
+                ),
+              });
+            } catch {
+              result.push(node); // keep stale on error
+            }
+          } else if (node.children) {
+            result.push({
+              ...node,
+              children: await refreshInTree(node.children),
+            });
+          } else {
+            result.push(node);
+          }
+        }
+        return result;
+      };
+
+      const updated = await refreshInTree(currentTree);
+      setTree(updated);
+    };
+
+    // Register listener BEFORE starting watcher — events can arrive before invoke resolves
+    const cleanup = onDirectoryChanged(handleDirChanged);
+    void watchDirectory(cwd);
+
+    return () => {
+      cleanup(); // remove listener first to close the stale-event window
+      void unwatchDirectory();
+    };
+  }, [
+    cwd,
+    watchDirectory,
+    unwatchDirectory,
+    onDirectoryChanged,
+    listDirectory,
+  ]);
 
   const toggleFolder = useCallback(
     async (nodePath: string) => {
