@@ -8,13 +8,18 @@ import type { Thread, Folder, StoredMessage } from "../types/thread";
 export interface StorageAdapter {
   listThreads(): Thread[];
   getThread(threadId: string): Thread | null;
-  createThread(title?: string, model?: string, cwd?: string, provider?: string): Thread;
+  createThread(
+    title?: string,
+    model?: string,
+    cwd?: string,
+    provider?: string,
+  ): Thread;
   updateThread(threadId: string, updates: Partial<Thread>): Thread | null;
   deleteThread(threadId: string): boolean;
   getActiveThreadId(): string | null;
   setActiveThreadId(threadId: string | null): void;
   clearPersistedSessionId(threadId: string): void;
-  loadMessages(threadId: string): StoredMessage[];
+  loadMessages(threadId: string): Promise<StoredMessage[]>;
   saveMessages(threadId: string, messages: StoredMessage[]): void;
 
   // Folders

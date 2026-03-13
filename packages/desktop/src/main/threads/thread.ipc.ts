@@ -194,7 +194,7 @@ export function registerThreadIpc(): void {
   ipcMain.handle(
     IPC_CHANNELS.THREADS_LOAD_MESSAGES,
     async (_event, threadId: string) => {
-      return storage.loadMessages(threadId);
+      return await storage.loadMessages(threadId);
     },
   );
 

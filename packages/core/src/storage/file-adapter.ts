@@ -11,6 +11,7 @@ import type { Thread, Folder, StoredMessage } from "../types/thread";
 import type { StorageAdapter } from "./types";
 import { clearTraceFile } from "./trace.store";
 import { generateReadableId } from "../utils/readable-id";
+import { sdkMessagesToStored } from "./sdk-transcript";
 
 const DEFAULT_BASE_DIR = join(homedir(), ".stratos");
 
@@ -154,29 +155,18 @@ export class FileStorageAdapter implements StorageAdapter {
     this.saveThreadsFile(data);
   }
 
-  loadMessages(threadId: string): StoredMessage[] {
-    const path = this.getMessagesPath(threadId);
-    if (!existsSync(path)) return [];
+  async loadMessages(threadId: string): Promise<StoredMessage[]> {
+    const thread = this.getThread(threadId);
+    if (!thread?.sessionId) return [];
     try {
-      const raw = readFileSync(path, "utf-8");
-      return JSON.parse(raw) as StoredMessage[];
+      return await sdkMessagesToStored(thread.sessionId, thread.createdAt);
     } catch {
       return [];
     }
   }
 
-  saveMessages(threadId: string, messages: StoredMessage[]): void {
-    const dir = join(this.getThreadsDir(), "messages");
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    writeFileSync(
-      this.getMessagesPath(threadId),
-      JSON.stringify(messages, null, 2),
-      "utf-8",
-    );
-    this.updateThread(threadId, {});
-  }
+  // No-op: messages are persisted by the Claude Code SDK, not Stratos.
+  saveMessages(_threadId: string, _messages: StoredMessage[]): void {}
 
   listFolders(): Folder[] {
     const data = this.loadThreadsFile();

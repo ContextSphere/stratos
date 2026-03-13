@@ -128,67 +128,22 @@ describe("FileStorageAdapter", () => {
   });
 
   describe("saveMessages / loadMessages", () => {
-    it("returns empty array for thread with no messages", () => {
-      const thread = adapter.createThread();
-      expect(adapter.loadMessages(thread.id)).toEqual([]);
-    });
-
-    it("persists and loads messages", () => {
+    it("saveMessages is a no-op", () => {
       const thread = adapter.createThread();
       const msgs: StoredMessage[] = [
         { id: "m1", role: "user", content: "Hello", timestamp: Date.now() },
-        { id: "m2", role: "assistant", content: "Hi", timestamp: Date.now() },
       ];
-      adapter.saveMessages(thread.id, msgs);
-      const loaded = adapter.loadMessages(thread.id);
-      expect(loaded).toHaveLength(2);
-      expect(loaded[0].content).toBe("Hello");
-      expect(loaded[1].content).toBe("Hi");
+      // Should not throw and return undefined
+      expect(adapter.saveMessages(thread.id, msgs)).toBeUndefined();
     });
 
-    it("overwrites messages on second save", () => {
+    it("loadMessages returns empty array for thread with no sessionId", async () => {
       const thread = adapter.createThread();
-      const first: StoredMessage[] = [
-        { id: "m1", role: "user", content: "First", timestamp: Date.now() },
-      ];
-      const second: StoredMessage[] = [
-        {
-          id: "m2",
-          role: "assistant",
-          content: "Second",
-          timestamp: Date.now(),
-        },
-      ];
-      adapter.saveMessages(thread.id, first);
-      adapter.saveMessages(thread.id, second);
-      const loaded = adapter.loadMessages(thread.id);
-      expect(loaded).toHaveLength(1);
-      expect(loaded[0].content).toBe("Second");
+      expect(await adapter.loadMessages(thread.id)).toEqual([]);
     });
 
-    it("saveMessages bumps thread updatedAt", () => {
-      const thread = adapter.createThread();
-      const before = thread.updatedAt;
-      // Ensure clock advances
-      const msgs: StoredMessage[] = [
-        { id: "m1", role: "user", content: "hi", timestamp: Date.now() },
-      ];
-      adapter.saveMessages(thread.id, msgs);
-      const updated = adapter.getThread(thread.id);
-      expect(updated!.updatedAt).toBeGreaterThanOrEqual(before);
-    });
-
-    it("deleteThread removes associated messages file", () => {
-      const thread = adapter.createThread();
-      const msgs: StoredMessage[] = [
-        { id: "m1", role: "user", content: "hello", timestamp: Date.now() },
-      ];
-      adapter.saveMessages(thread.id, msgs);
-      expect(adapter.loadMessages(thread.id)).toHaveLength(1);
-
-      adapter.deleteThread(thread.id);
-      // After deletion, loading messages should return empty
-      expect(adapter.loadMessages(thread.id)).toEqual([]);
+    it("loadMessages returns empty array for unknown threadId", async () => {
+      expect(await adapter.loadMessages("nonexistent")).toEqual([]);
     });
   });
 
