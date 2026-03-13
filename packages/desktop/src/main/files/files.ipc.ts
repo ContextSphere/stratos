@@ -7,16 +7,8 @@ import { IPC_CHANNELS } from "../../common/ipc-channels";
 
 // Watcher state — one watcher per process
 let activeWatcher: FSWatcher | null = null;
+let activeCwd: string | null = null;
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-function closeActiveWatcher(): void {
-  if (activeWatcher) {
-    activeWatcher.close();
-    activeWatcher = null;
-  }
-  for (const timer of debounceTimers.values()) clearTimeout(timer);
-  debounceTimers.clear();
-}
 
 export interface DirEntry {
   name: string;
@@ -120,12 +112,23 @@ export function registerFilesIpc(): void {
     IPC_CHANNELS.FILES_WATCH_START,
     (_event, cwd: string): void => {
       const webContents = _event.sender;
-      closeActiveWatcher();
+      // Close any existing watcher first
+      if (activeWatcher) {
+        activeWatcher.close();
+        activeWatcher = null;
+      }
+      for (const timer of debounceTimers.values()) clearTimeout(timer);
+      debounceTimers.clear();
+      activeCwd = cwd;
+
+
       const watcher = fsWatch(cwd, { recursive: true }, (_, filename) => {
         const changedDir =
           filename == null ? cwd : join(cwd, dirname(filename));
+
         const existing = debounceTimers.get(changedDir);
         if (existing) clearTimeout(existing);
+
         debounceTimers.set(
           changedDir,
           setTimeout(() => {
@@ -136,24 +139,43 @@ export function registerFilesIpc(): void {
           }, 100),
         );
       });
+
       watcher.on("error", () => {
         watcher.close();
-        if (activeWatcher === watcher) activeWatcher = null;
+        if (activeWatcher === watcher) {
+          activeWatcher = null;
+          activeCwd = null;
+        }
       });
+
       activeWatcher = watcher;
     },
   );
 
-  ipcMain.handle(IPC_CHANNELS.FILES_WATCH_STOP, async (): Promise<void> => {
-    closeActiveWatcher();
+  // cwd parameter is a guard: only stop if we're watching that exact cwd.
+  // Prevents a race where an old cwd's cleanup stops a newly-started watcher
+  // for a different cwd.
+  ipcMain.handle(IPC_CHANNELS.FILES_WATCH_STOP, (_event, cwd: string): void => {
+    if (activeCwd !== cwd) return;
+    if (activeWatcher) {
+      activeWatcher.close();
+      activeWatcher = null;
+    }
+    activeCwd = null;
+    for (const timer of debounceTimers.values()) clearTimeout(timer);
+    debounceTimers.clear();
   });
 }
 
 export function unregisterFilesIpc(): void {
-  closeActiveWatcher();
   ipcMain.removeHandler(IPC_CHANNELS.FILES_LIST_DIR);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_READ_FILE);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WRITE_FILE);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WATCH_START);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WATCH_STOP);
+  if (activeWatcher) {
+    activeWatcher.close();
+    activeWatcher = null;
+  }
+  activeCwd = null;
 }
