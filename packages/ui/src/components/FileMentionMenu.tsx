@@ -2,6 +2,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   useRef,
   type ReactElement,
 } from "react";
@@ -26,14 +27,18 @@ export function FileMentionMenu({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const filtered = query
-    ? files
-        .filter((f) => {
-          const filename = f.split("/").pop() ?? f;
-          return filename.toLowerCase().includes(query.toLowerCase());
-        })
-        .slice(0, 6)
-    : files.slice(0, 6);
+  const filtered = useMemo(
+    () =>
+      (query
+        ? files.filter((f) =>
+            (f.split("/").pop() ?? f)
+              .toLowerCase()
+              .includes(query.toLowerCase()),
+          )
+        : files
+      ).slice(0, 6),
+    [files, query],
+  );
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -59,10 +64,12 @@ export function FileMentionMenu({
           setSelectedIndex((i) => (i - 1 + filtered.length) % filtered.length);
           break;
         case "Enter":
-        case "Tab":
+        case "Tab": {
           e.preventDefault();
-          onSelect(filtered[selectedIndex]);
+          const item = filtered[selectedIndex];
+          if (item !== undefined) onSelect(item);
           break;
+        }
         case "Escape":
           e.preventDefault();
           onClose();
