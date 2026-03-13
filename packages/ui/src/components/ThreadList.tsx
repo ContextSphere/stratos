@@ -56,6 +56,7 @@ interface Props {
   runningThreadIds: string[];
   threadNotifications: Map<string, string>;
   pendingPermissionThreadIds?: Set<string>;
+  draftThreadIds?: Set<string>;
 }
 
 function FolderMenu({
@@ -98,6 +99,7 @@ function ThreadRow({
   thread,
   isActive,
   status,
+  hasDraft,
   confirmDelete,
   onThreadClick,
   onDeleteThread,
@@ -106,6 +108,7 @@ function ThreadRow({
   thread: Thread;
   isActive: boolean;
   status: StatusPill | null;
+  hasDraft: boolean;
   confirmDelete: string | null;
   onThreadClick: (id: string) => void;
   onDeleteThread: (id: string) => void;
@@ -131,6 +134,22 @@ function ThreadRow({
             {status.label}
           </span>
         </div>
+      )}
+      {hasDraft && !status && (
+        <svg
+          className="w-3 h-3 flex-shrink-0 text-[var(--text-muted)]"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          viewBox="0 0 24 24"
+          aria-label="Draft"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M15.232 5.232l3.536 3.536M9 13l6.5-6.5a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z"
+          />
+        </svg>
       )}
       <span className="flex-1 truncate">{thread.title}</span>
       {isDeleting ? (
@@ -195,6 +214,7 @@ export function ThreadList({
   runningThreadIds,
   threadNotifications,
   pendingPermissionThreadIds,
+  draftThreadIds,
 }: Props): React.ReactElement {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [menuOpenFolderId, setMenuOpenFolderId] = useState<string | null>(null);
@@ -384,6 +404,7 @@ export function ThreadList({
                             thread={thread}
                             isActive={isActive}
                             status={status}
+                            hasDraft={draftThreadIds?.has(thread.id) ?? false}
                             confirmDelete={confirmDelete}
                             onThreadClick={onThreadClick}
                             onDeleteThread={onDeleteThread}

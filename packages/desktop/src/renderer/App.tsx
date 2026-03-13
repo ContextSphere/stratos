@@ -107,8 +107,11 @@ export default function App(): React.ReactElement {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const inputRef = useRef<InputBarRef | null>(null);
-  const draftsRef = useRef<Map<string, string>>(new Map());
+  const draftsRef = useRef<
+    Map<string, { text: string; images: ImageAttachment[] }>
+  >(new Map());
   const prevActiveThreadIdRef = useRef<string | null>(null);
+  const [draftThreadIds, setDraftThreadIds] = useState<Set<string>>(new Set());
 
   // Fetch home directory
   useEffect(() => {
@@ -130,26 +133,45 @@ export default function App(): React.ReactElement {
     await window.api.settings.update({ theme: t });
   }, []);
 
-  // Save/restore draft input text when switching threads
-  useEffect(() => {
-    const prev = prevActiveThreadIdRef.current;
-    if (prev && prev !== activeThreadId) {
-      const text = inputRef.current?.getText() ?? "";
-      if (text) draftsRef.current.set(prev, text);
-      else draftsRef.current.delete(prev);
+  // Helper: save the current InputBar draft for a given threadId
+  const saveDraft = useCallback((threadId: string) => {
+    const text = inputRef.current?.getText() ?? "";
+    const images = inputRef.current?.getImages() ?? [];
+    if (text || images.length > 0) {
+      draftsRef.current.set(threadId, { text, images });
+      setDraftThreadIds((prev) => new Set([...prev, threadId]));
+    } else {
+      draftsRef.current.delete(threadId);
+      setDraftThreadIds((prev) => {
+        const next = new Set(prev);
+        next.delete(threadId);
+        return next;
+      });
     }
+  }, []);
+
+  // Restore draft when activeThreadId changes
+  useEffect(() => {
     prevActiveThreadIdRef.current = activeThreadId;
     if (activeThreadId) {
-      inputRef.current?.prefill(draftsRef.current.get(activeThreadId) ?? "");
+      const draft = draftsRef.current.get(activeThreadId);
+      inputRef.current?.prefillDraft(draft?.text ?? "", draft?.images ?? []);
     }
   }, [activeThreadId]);
 
   const handleThreadClick = useCallback(
     async (threadId: string) => {
+      // Save current draft BEFORE switching (inputRef still points to the current InputBar)
+      if (
+        prevActiveThreadIdRef.current &&
+        prevActiveThreadIdRef.current !== threadId
+      ) {
+        saveDraft(prevActiveThreadIdRef.current);
+      }
       closePreview();
       await setActiveThreadId(threadId);
     },
-    [setActiveThreadId, closePreview],
+    [setActiveThreadId, closePreview, saveDraft],
   );
 
   const handleAddFolder = useCallback(async () => {
@@ -196,6 +218,11 @@ export default function App(): React.ReactElement {
   const handleDeleteThread = useCallback(
     async (id: string) => {
       draftsRef.current.delete(id);
+      setDraftThreadIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       await deleteThread(id);
     },
     [deleteThread],
@@ -244,6 +271,13 @@ export default function App(): React.ReactElement {
       }
 
       await sendMessage(prompt, threadId, images);
+      // Clear draft for this thread since it was sent
+      draftsRef.current.delete(threadId);
+      setDraftThreadIds((prev) => {
+        const next = new Set(prev);
+        next.delete(threadId);
+        return next;
+      });
     },
     [
       activeThreadId,
@@ -467,14 +501,11 @@ export default function App(): React.ReactElement {
             runningThreadIds={runningThreadIds}
             threadNotifications={threadNotifications}
             pendingPermissionThreadIds={pendingPermissionThreadIds}
+            draftThreadIds={draftThreadIds}
           />
         </div>
 
-        <Group
-          key={preview.isOpen ? "split" : "full"}
-          orientation="horizontal"
-          className="flex-1 min-h-0"
-        >
+        <Group orientation="horizontal" className="flex-1 min-h-0">
           <Panel defaultSize={preview.isOpen ? 70 : 100} minSize={30}>
             <div className="flex flex-col h-full bg-[var(--bg-main)] rounded-l-xl overflow-hidden">
               {sidebarCollapsed && (
@@ -638,7 +669,6 @@ export default function App(): React.ReactElement {
 
               {/* Input */}
               <InputBar
-                key={activeThreadId}
                 ref={inputRef}
                 onSend={handleSend}
                 onInterrupt={interrupt}
