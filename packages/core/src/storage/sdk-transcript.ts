@@ -53,7 +53,7 @@ export async function sdkMessagesToStored(
   for (const msg of sdkMessages) {
     if (msg.type !== "user") continue;
     const m = msg.message as { role: string; content: ContentBlock[] } | null;
-    if (!m?.content) continue;
+    if (!m?.content || !Array.isArray(m.content)) continue;
     for (const block of m.content) {
       if (block.type === "tool_result") {
         toolResults.set(block.tool_use_id, getToolResultText(block.content));
@@ -72,7 +72,7 @@ export async function sdkMessagesToStored(
 
     if (msg.type === "user") {
       const m = msg.message as { role: string; content: ContentBlock[] } | null;
-      if (!m?.content) {
+      if (!m?.content || !Array.isArray(m.content)) {
         i++;
         continue;
       }
@@ -139,7 +139,7 @@ export async function sdkMessagesToStored(
           content: ContentBlock[];
           stop_reason?: string;
         } | null;
-        if (m?.content) {
+        if (m?.content && Array.isArray(m.content)) {
           for (const block of m.content) {
             if (block.type === "thinking") {
               thinking = thinking
