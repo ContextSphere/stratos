@@ -92,6 +92,7 @@ export function PreviewPane({
           targetLine={preview.targetLine}
           listDirectory={filesBridge.listDirectory}
           readFile={filesBridge.readFile}
+          writeFile={filesBridge.writeFile}
         />
       ) : preview.type === "artifact-editor" &&
         preview.artifactContent !== undefined &&

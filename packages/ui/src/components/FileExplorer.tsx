@@ -8,6 +8,7 @@ import {
 import "../utils/monaco-theme";
 import { useTheme, monacoThemeName } from "../context/ThemeContext";
 import type { DirEntry } from "../bridges/types";
+import { MarkdownPreview } from "./preview/MarkdownPreview";
 
 const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 
@@ -28,6 +29,11 @@ interface Props {
     filePath: string,
     rootPath: string,
   ) => Promise<{ content: string; isBinary: boolean }>;
+  writeFile?: (
+    filePath: string,
+    content: string,
+    rootPath: string,
+  ) => Promise<void>;
 }
 
 function formatSize(bytes: number): string {
@@ -99,6 +105,7 @@ export function FileExplorer({
   targetLine,
   listDirectory,
   readFile,
+  writeFile,
 }: Props): React.ReactElement {
   useMonacoFontReady();
   const theme = useTheme();
@@ -113,6 +120,12 @@ export function FileExplorer({
   const [error, setError] = useState<string | null>(null);
   const [cursorTargetLine, setCursorTargetLine] = useState<number | null>(null);
   const [autoOpenedTarget, setAutoOpenedTarget] = useState<string | null>(null);
+  const [mdMode, setMdMode] = useState<"preview" | "edit">("preview");
+  const [editContent, setEditContent] = useState<string>("");
+  const [saveStatus, setSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "unsaved"
+  >("idle");
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<{
     revealLineInCenter: (lineNumber: number) => void;
     setPosition: (position: { lineNumber: number; column: number }) => void;
@@ -189,12 +202,18 @@ export function FileExplorer({
           isBinary: false,
           tooLarge: true,
         });
+        setEditContent("");
+        setMdMode("preview");
+        setSaveStatus("idle");
         setCursorTargetLine(line ?? null);
         return;
       }
       try {
         const result = await readFile(filePath, cwd);
         setOpenFile({ path: filePath, ...result, tooLarge: false });
+        setEditContent(result.content);
+        setMdMode("preview");
+        setSaveStatus("idle");
         setCursorTargetLine(line ?? null);
       } catch (err) {
         setOpenFile({
@@ -212,6 +231,34 @@ export function FileExplorer({
   const handleBack = useCallback(() => {
     setOpenFile(null);
     setCursorTargetLine(null);
+  }, []);
+
+  const handleEditorChange = useCallback(
+    (value: string | undefined) => {
+      if (value === undefined) return;
+      setEditContent(value);
+      setSaveStatus("unsaved");
+
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(async () => {
+        if (!writeFile || !openFile) return;
+        setSaveStatus("saving");
+        try {
+          await writeFile(openFile.path, value, cwd);
+          setSaveStatus("saved");
+          setTimeout(() => setSaveStatus("idle"), 2000);
+        } catch {
+          setSaveStatus("unsaved");
+        }
+      }, 1000);
+    },
+    [writeFile, openFile, cwd],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -244,6 +291,7 @@ export function FileExplorer({
     const relativePath = openFile.path.startsWith(cwd)
       ? openFile.path.slice(cwd.length + 1)
       : openFile.path;
+    const isMarkdown = openFile.path.endsWith(".md");
 
     return (
       <div className="flex flex-col h-full">
@@ -268,11 +316,44 @@ export function FileExplorer({
             </svg>
           </button>
           <span
-            className="text-xs text-[var(--text-secondary)] truncate"
+            className="text-xs text-[var(--text-secondary)] truncate flex-1"
             title={openFile.path}
           >
             {relativePath}
           </span>
+          {isMarkdown && !openFile.isBinary && !openFile.tooLarge && (
+            <div className="flex rounded-md overflow-hidden border border-[var(--border-mid)]">
+              <button
+                onClick={() => setMdMode("preview")}
+                className={`px-2.5 py-1 text-xs transition-colors ${
+                  mdMode === "preview"
+                    ? "bg-[var(--bg-overlay)] text-[var(--text-primary)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                }`}
+              >
+                Preview
+              </button>
+              <button
+                onClick={() => setMdMode("edit")}
+                className={`px-2.5 py-1 text-xs transition-colors ${
+                  mdMode === "edit"
+                    ? "bg-[var(--bg-overlay)] text-[var(--text-primary)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                }`}
+              >
+                Edit
+              </button>
+            </div>
+          )}
+          {saveStatus === "saving" && (
+            <span className="text-xs text-gray-500">Saving...</span>
+          )}
+          {saveStatus === "saved" && (
+            <span className="text-xs text-green-500">Saved</span>
+          )}
+          {saveStatus === "unsaved" && (
+            <span className="text-xs text-yellow-500">Unsaved</span>
+          )}
         </div>
         <div className="flex-1 min-h-0">
           {openFile.isBinary ? (
@@ -283,11 +364,14 @@ export function FileExplorer({
             <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
               File too large to display (&gt;1MB)
             </div>
+          ) : isMarkdown && mdMode === "preview" ? (
+            <MarkdownPreview content={editContent} />
           ) : (
             <Editor
-              value={openFile.content}
+              value={editContent}
               language={getLanguageFromPath(openFile.path)}
               theme={monacoThemeName(theme)}
+              onChange={isMarkdown ? handleEditorChange : undefined}
               onMount={(editor) => {
                 editorRef.current = editor;
                 if (cursorTargetLine && cursorTargetLine > 0) {
@@ -299,7 +383,7 @@ export function FileExplorer({
                 }
               }}
               options={{
-                readOnly: true,
+                readOnly: !isMarkdown,
                 minimap: { enabled: false },
                 scrollBeyondLastLine: false,
                 fontSize: 12,

@@ -1,5 +1,5 @@
 import { ipcMain } from "electron";
-import { readdir, readFile, stat } from "fs/promises";
+import { readdir, readFile, stat, writeFile } from "fs/promises";
 import { join, resolve } from "path";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
 
@@ -83,9 +83,27 @@ export function registerFilesIpc(): void {
       return { content: buffer.toString("utf-8"), isBinary: false };
     },
   );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_WRITE_FILE,
+    async (
+      _event,
+      {
+        filePath,
+        content,
+        rootPath,
+      }: { filePath: string; content: string; rootPath: string },
+    ): Promise<void> => {
+      if (!isPathWithin(filePath, rootPath)) {
+        throw new Error("Path outside allowed directory");
+      }
+      await writeFile(filePath, content, "utf-8");
+    },
+  );
 }
 
 export function unregisterFilesIpc(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILES_LIST_DIR);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_READ_FILE);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_WRITE_FILE);
 }

@@ -70,6 +70,7 @@ export const IPC_CHANNELS = {
   // File explorer
   FILES_LIST_DIR: "files:list-dir",
   FILES_READ_FILE: "files:read-file",
+  FILES_WRITE_FILE: "files:write-file",
 
   // Skills
   SKILLS_LIST: "skills:list",

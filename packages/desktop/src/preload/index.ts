@@ -304,6 +304,17 @@ const api = {
   ): Promise<{ content: string; isBinary: boolean }> =>
     ipcRenderer.invoke(IPC_CHANNELS.FILES_READ_FILE, filePath, rootPath),
 
+  filesWriteFile: (
+    filePath: string,
+    content: string,
+    rootPath: string,
+  ): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_WRITE_FILE, {
+      filePath,
+      content,
+      rootPath,
+    }),
+
   // MCP servers
   mcpServerStatus: (threadId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.MCP_SERVER_STATUS, threadId),

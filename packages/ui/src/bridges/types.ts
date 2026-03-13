@@ -102,4 +102,5 @@ export interface FilesBridge {
     filePath: string,
     rootPath: string,
   ): Promise<{ content: string; isBinary: boolean }>;
+  writeFile(filePath: string, content: string, rootPath: string): Promise<void>;
 }

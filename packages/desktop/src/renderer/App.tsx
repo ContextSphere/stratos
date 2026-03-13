@@ -710,6 +710,7 @@ export default function App(): React.ReactElement {
                   filesBridge={{
                     listDirectory: window.api.filesListDir,
                     readFile: window.api.filesReadFile,
+                    writeFile: window.api.filesWriteFile,
                   }}
                 />
               </Panel>
