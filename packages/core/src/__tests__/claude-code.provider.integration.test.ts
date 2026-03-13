@@ -221,6 +221,35 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
     expect(msgs).toContainEqual({ type: "todo_update", todos });
   });
 
+  it("emits todo_update when TodoWrite todos is a JSON string (model bug)", async () => {
+    const todos = [
+      { content: "Fix bug", status: "pending", activeForm: "Fixing bug" },
+    ];
+    mockQuery.mockReturnValue(
+      makeStream([
+        {
+          type: "assistant",
+          message: {
+            content: [
+              {
+                type: "tool_use",
+                name: "TodoWrite",
+                id: "todo-2",
+                input: { todos: JSON.stringify(todos) },
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    const provider = new ClaudeCodeProvider();
+    await provider.initialize({});
+    const msgs = await collectMessages(provider);
+
+    expect(msgs).toContainEqual({ type: "todo_update", todos });
+  });
+
   it("emits result on success", async () => {
     mockQuery.mockReturnValue(
       makeStream([
