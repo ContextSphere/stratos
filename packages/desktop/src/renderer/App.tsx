@@ -711,6 +711,9 @@ export default function App(): React.ReactElement {
                     listDirectory: window.api.filesListDir,
                     readFile: window.api.filesReadFile,
                     writeFile: window.api.filesWriteFile,
+                    watchDirectory: window.api.filesWatchStart,
+                    unwatchDirectory: window.api.filesWatchStop,
+                    onDirectoryChanged: window.api.filesOnDirChanged,
                   }}
                 />
               </Panel>
