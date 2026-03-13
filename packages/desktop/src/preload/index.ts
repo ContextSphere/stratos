@@ -322,7 +322,7 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.FILES_WATCH_STOP),
 
   filesOnDirChanged: (callback: (dirPath: string) => void): (() => void) => {
-    const listener = (_event: unknown, dirPath: string) => callback(dirPath);
+    const listener = (_event, dirPath: string) => callback(dirPath);
     ipcRenderer.on(IPC_CHANNELS.FILES_DIR_CHANGED, listener);
     return () =>
       ipcRenderer.removeListener(IPC_CHANNELS.FILES_DIR_CHANGED, listener);
