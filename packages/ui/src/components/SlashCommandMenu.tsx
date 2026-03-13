@@ -53,10 +53,12 @@ export function SlashCommandMenu({
         case "Enter":
         case "Tab":
           e.preventDefault();
+          e.stopPropagation();
           onSelect(filtered[selectedIndex].name);
           break;
         case "Escape":
           e.preventDefault();
+          e.stopPropagation();
           onClose();
           break;
       }

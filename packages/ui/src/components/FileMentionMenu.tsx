@@ -66,12 +66,14 @@ export function FileMentionMenu({
         case "Enter":
         case "Tab": {
           e.preventDefault();
+          e.stopPropagation();
           const item = filtered[selectedIndex];
           if (item !== undefined) onSelect(item);
           break;
         }
         case "Escape":
           e.preventDefault();
+          e.stopPropagation();
           onClose();
           break;
       }
