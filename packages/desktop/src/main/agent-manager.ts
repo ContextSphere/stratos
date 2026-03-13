@@ -92,6 +92,8 @@ export class AgentManager {
   private window: BrowserWindow;
   private sessions = new Map<string, ThreadSession>();
   private activeStreams = new Set<string>();
+  private modelsCache = new Map<string, { models: unknown[]; ts: number }>();
+  private static readonly MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
   private storage = new FileStorageAdapter();
   private pendingPermissions = new Map<
     string,
@@ -187,12 +189,18 @@ export class AgentManager {
     ipcMain.handle(
       IPC_CHANNELS.GET_AVAILABLE_MODELS,
       async (_event, providerName?: string) => {
-        const provider = createProvider(
-          (providerName ?? "claude-code") as ProviderType,
-        );
+        const key = providerName ?? "claude-code";
+        const cached = this.modelsCache.get(key);
+        if (
+          cached &&
+          Date.now() - cached.ts < AgentManager.MODEL_CACHE_TTL_MS
+        ) {
+          return cached.models;
+        }
+        const provider = createProvider(key as ProviderType);
         const settings = loadSettings();
         const cliPath =
-          (providerName ?? "claude-code") === "claude-code"
+          key === "claude-code"
             ? await resolveClaudePathOrUndefined(
                 settings.cliPath as string | undefined,
               )
@@ -201,7 +209,9 @@ export class AgentManager {
           cliPath,
         });
         try {
-          return await provider.getAvailableModels();
+          const models = await provider.getAvailableModels();
+          this.modelsCache.set(key, { models, ts: Date.now() });
+          return models;
         } finally {
           await provider.dispose();
         }
