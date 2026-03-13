@@ -27,6 +27,7 @@ function getToolResultText(
 
 const SKIP_TEXT = new Set([
   "[Request interrupted by user for tool use]",
+  "[Request interrupted by user]",
   "No response requested.",
 ]);
 
