@@ -19,6 +19,8 @@ pnpm --filter @stratosapp/ui test                  # UI component tests only
 pnpm --filter @stratosapp/desktop test             # Desktop unit + integration tests only
 ```
 
+> **Always add unit tests for changes in `@stratosapp/core`**, especially anything touching the SDK integration (e.g. `sdk-transcript.ts`, providers, storage adapters).
+
 **CI runs automatically** on every push via GitHub Actions (`.github/workflows/ci.yml`):
 
 - `lint` — ESLint across all packages

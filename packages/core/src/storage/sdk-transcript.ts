@@ -188,7 +188,11 @@ export async function sdkMessagesToStored(
       const todoWrite = toolCalls.find((tc) => tc.toolName === "TodoWrite");
       if (todoWrite) {
         const inp = todoWrite.input as { todos?: unknown };
-        storedMsg.todoData = inp.todos ?? todoWrite.input;
+        // Always store as { todos: [...] } — inp.todos is the array when the
+        // tool input is { todos: [...] }, so we must wrap it.
+        storedMsg.todoData = Array.isArray(inp.todos)
+          ? { todos: inp.todos }
+          : todoWrite.input;
       }
 
       result.push(storedMsg);

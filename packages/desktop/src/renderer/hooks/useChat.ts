@@ -89,6 +89,17 @@ function toStoredMessage(m: ChatMessage): StoredMessage {
   };
 }
 
+function sanitizeTodoData(raw: unknown): TodoData | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  // Shape: { todos: [...] }
+  if (Array.isArray(obj.todos))
+    return { todos: obj.todos as TodoData["todos"] };
+  // Shape: raw array stored directly (legacy bug)
+  if (Array.isArray(raw)) return { todos: raw as TodoData["todos"] };
+  return undefined;
+}
+
 function fromStoredMessage(m: StoredMessage): ChatMessage {
   return {
     id: m.id,
@@ -109,7 +120,9 @@ function fromStoredMessage(m: StoredMessage): ChatMessage {
     ...(m.planReviewData
       ? { planReviewData: m.planReviewData as PlanReviewRequest }
       : {}),
-    ...(m.todoData ? { todoData: m.todoData as TodoData } : {}),
+    ...(sanitizeTodoData(m.todoData)
+      ? { todoData: sanitizeTodoData(m.todoData)! }
+      : {}),
     ...(m.worktreeProgress
       ? { worktreeProgress: m.worktreeProgress as WorktreeProgressData }
       : {}),
