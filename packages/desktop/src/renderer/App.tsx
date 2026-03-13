@@ -32,6 +32,7 @@ import { ConnectGitHubDialog } from "./components/ConnectGitHubDialog";
 import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
 import { ConnectCodexDialog } from "./components/ConnectCodexDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { NewThreadDialog } from "./components/NewThreadDialog";
 
 export default function App(): React.ReactElement {
   const {
@@ -106,6 +107,7 @@ export default function App(): React.ReactElement {
   const [homeDir, setHomeDir] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [showNewThreadDialog, setShowNewThreadDialog] = useState(false);
   const inputRef = useRef<InputBarRef | null>(null);
   const draftsRef = useRef<Map<string, string>>(new Map());
   const prevActiveThreadIdRef = useRef<string | null>(null);
@@ -192,6 +194,44 @@ export default function App(): React.ReactElement {
     },
     [folders, createThread, setActiveThreadId, refreshThreads, pendingProvider],
   );
+
+  const handleNewThreadFromFolder = useCallback(
+    async (folder: (typeof folders)[0]) => {
+      setShowNewThreadDialog(false);
+      const thread = await createThread(
+        "New chat",
+        undefined,
+        folder.path,
+        pendingProvider,
+      );
+      if (folder.isGitRepo) {
+        await window.api.threadsUpdate(thread.id, {
+          isGitRepo: true,
+          worktreeMode: "local",
+        });
+        await refreshThreads();
+      }
+      await setActiveThreadId(thread.id);
+      inputRef.current?.focus();
+    },
+    [createThread, setActiveThreadId, refreshThreads, pendingProvider],
+  );
+
+  const handleNewThreadBrowse = useCallback(async () => {
+    setShowNewThreadDialog(false);
+    const result = await window.api.selectDirectory();
+    if (result.canceled || !result.path) return;
+    let folder = folders.find((f) => f.path === result.path);
+    if (!folder) {
+      folder = await addFolder(result.path);
+      const isGit = await window.api.checkIsGitRepo(result.path);
+      if (isGit) {
+        await updateFolder(folder.id, { isGitRepo: true });
+        folder = { ...folder, isGitRepo: true };
+      }
+    }
+    await handleNewThreadFromFolder(folder);
+  }, [folders, addFolder, updateFolder, handleNewThreadFromFolder]);
 
   const handleDeleteThread = useCallback(
     async (id: string) => {
@@ -412,12 +452,40 @@ export default function App(): React.ReactElement {
     return () => window.api.removeAllListeners("chat:thread-activate");
   }, [handleThreadClick]);
 
-  // Cmd+B to toggle sidebar
+  // Cmd+B to toggle file explorer
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "b") {
+        e.preventDefault();
+        handleToggleFileExplorer();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [handleToggleFileExplorer]);
+
+  // Cmd+Shift+B to toggle sidebar
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "b"
+      ) {
         e.preventDefault();
         setSidebarCollapsed((prev) => !prev);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
+
+  // Cmd+N to open new thread dialog
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "n") {
+        e.preventDefault();
+        setShowNewThreadDialog(true);
       }
     };
     document.addEventListener("keydown", handler);
@@ -771,6 +839,15 @@ export default function App(): React.ReactElement {
           onClose={() => setShowGitHubDialog(false)}
           onConnect={github.connect}
           onDisconnect={github.disconnect}
+        />
+
+        {/* New thread dialog */}
+        <NewThreadDialog
+          isOpen={showNewThreadDialog}
+          onClose={() => setShowNewThreadDialog(false)}
+          folders={folders}
+          onSelectFolder={handleNewThreadFromFolder}
+          onBrowse={handleNewThreadBrowse}
         />
 
         {/* Settings dialog */}
