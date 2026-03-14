@@ -121,6 +121,7 @@ function AppInner(): React.ReactElement {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showBottomTerminal, setShowBottomTerminal] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(280);
+  const terminalContainerRef = useRef<HTMLDivElement>(null);
   const terminalDragRef = useRef<{
     startY: number;
     startHeight: number;
@@ -432,14 +433,22 @@ function AppInner(): React.ReactElement {
       const onMouseMove = (ev: MouseEvent) => {
         if (!terminalDragRef.current) return;
         const delta = terminalDragRef.current.startY - ev.clientY;
-        setTerminalHeight(
-          Math.max(
-            80,
-            Math.min(800, terminalDragRef.current.startHeight + delta),
-          ),
+        const newHeight = Math.max(
+          80,
+          Math.min(800, terminalDragRef.current.startHeight + delta),
         );
+        // Update DOM directly — no React re-render during drag
+        if (terminalContainerRef.current) {
+          terminalContainerRef.current.style.height = `${newHeight}px`;
+        }
+        terminalDragRef.current.startHeight = newHeight;
+        terminalDragRef.current.startY = ev.clientY;
       };
       const onMouseUp = () => {
+        if (terminalContainerRef.current) {
+          const h = parseInt(terminalContainerRef.current.style.height, 10);
+          if (!isNaN(h)) setTerminalHeight(h);
+        }
         terminalDragRef.current = null;
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
@@ -900,6 +909,7 @@ function AppInner(): React.ReactElement {
                     className="h-1.5 flex-shrink-0 bg-[var(--bg-surface)] hover:bg-blue-600 transition-colors cursor-row-resize"
                   />
                   <div
+                    ref={terminalContainerRef}
                     className="flex flex-col flex-shrink-0"
                     style={{ height: terminalHeight }}
                   >
