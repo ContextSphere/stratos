@@ -15,7 +15,7 @@ export function QuestionSequence({
   disabled,
   initiallyAnswered,
 }: QuestionSequenceProps): React.ReactElement {
-  const questions = questionData.input.questions;
+  const questions = questionData.input?.questions ?? [];
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [completed, setCompleted] = useState(!!initiallyAnswered);
@@ -66,7 +66,7 @@ export function QuestionSequence({
         ))}
 
       {/* Active question */}
-      {!completed && (
+      {!completed && questions.length > 0 && (
         <>
           {showProgress && (
             <p className="text-xs text-gray-500 px-1">
