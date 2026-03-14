@@ -1,7 +1,8 @@
 import { BrowserWindow, ipcMain, Notification, shell } from "electron";
 import type { McpElicitationRequest } from "@stratosapp/core";
 import { execSync } from "child_process";
-import { mkdirSync } from "fs";
+import { mkdirSync, watch, promises as fsPromises } from "fs";
+import type { FSWatcher } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { IPC_CHANNELS } from "../common/ipc-channels";
@@ -144,6 +145,7 @@ export class AgentManager {
   private questionCounter = 0;
   private planReviewCounter = 0;
   private lastPlanMarkdown: { content: string; title: string } | null = null;
+  private previewFileWatchers = new Map<string, FSWatcher>();
   private cachedSlashCommands: { name: string; description?: string }[] = [];
 
   constructor(window: BrowserWindow) {
@@ -701,17 +703,9 @@ export class AgentManager {
           msg.input.file_path.endsWith(".md") &&
           typeof msg.input?.content === "string"
         ) {
-          const filePath = msg.input.file_path as string;
-          const content = msg.input.content as string;
-          const fileName = filePath.split("/").pop() ?? filePath;
-          this.lastPlanMarkdown = { content, title: fileName };
-          this.sendToRenderer(
-            IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
-            {
-              content,
-              title: fileName,
-              filePath,
-            },
+          this.openPreviewFile(
+            msg.input.file_path as string,
+            msg.input.content as string,
             threadId,
           );
         }
@@ -958,7 +952,52 @@ export class AgentManager {
     }
   }
 
+  private openPreviewFile(
+    filePath: string,
+    content: string,
+    threadId: string,
+  ): void {
+    const fileName = filePath.split("/").pop() ?? filePath;
+    this.lastPlanMarkdown = { content, title: fileName };
+    this.sendToRenderer(
+      IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
+      { content, title: fileName, filePath },
+      threadId,
+    );
+    this.watchPreviewFile(filePath, threadId);
+  }
+
+  private watchPreviewFile(filePath: string, threadId: string): void {
+    // Replace any existing watcher for this thread
+    this.previewFileWatchers.get(threadId)?.close();
+
+    let debounce: NodeJS.Timeout | null = null;
+    const watcher = watch(filePath, { persistent: false }, () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(async () => {
+        try {
+          const content = await fsPromises.readFile(filePath, "utf-8");
+          const fileName = filePath.split("/").pop() ?? filePath;
+          this.lastPlanMarkdown = { content, title: fileName };
+          this.sendToRenderer(
+            IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
+            { content, title: fileName, filePath },
+            threadId,
+          );
+        } catch {
+          // file deleted or unreadable — ignore
+        }
+      }, 150);
+    });
+
+    watcher.on("error", () => watcher.close());
+    this.previewFileWatchers.set(threadId, watcher);
+  }
+
   clearSession(threadId: string): void {
+    this.previewFileWatchers.get(threadId)?.close();
+    this.previewFileWatchers.delete(threadId);
+
     const session = this.sessions.get(threadId);
     if (session) {
       session.provider.dispose().catch(() => {});
