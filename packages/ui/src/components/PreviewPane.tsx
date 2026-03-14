@@ -3,6 +3,7 @@ import type { FilesBridge } from "../bridges/types";
 import { MarkdownPreview } from "./preview/MarkdownPreview";
 import { ArtifactEditorPreview } from "./preview/ArtifactEditorPreview";
 import { FileExplorer } from "./FileExplorer";
+import { TerminalPane } from "./TerminalPane";
 
 interface Props {
   preview: PreviewState;
@@ -15,6 +16,7 @@ const TYPE_LABELS: Record<string, string> = {
   markdown: "Markdown",
   "artifact-editor": "Editor",
   "file-explorer": "Files",
+  terminal: "Terminal",
 };
 
 export function PreviewPane({
@@ -106,6 +108,8 @@ export function PreviewPane({
         />
       ) : preview.type === "markdown" && preview.markdownContent ? (
         <MarkdownPreview content={preview.markdownContent} />
+      ) : preview.type === "terminal" ? (
+        <TerminalPane cwd={preview.cwd ?? ""} />
       ) : preview.url ? (
         <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
           External URL preview not available

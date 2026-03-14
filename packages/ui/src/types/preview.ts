@@ -2,7 +2,8 @@ export type PreviewType =
   | "url"
   | "markdown"
   | "artifact-editor"
-  | "file-explorer";
+  | "file-explorer"
+  | "terminal";
 
 export interface PreviewState {
   isOpen: boolean;

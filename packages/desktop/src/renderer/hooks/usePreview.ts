@@ -55,6 +55,15 @@ export function usePreview() {
     [],
   );
 
+  const openTerminal = useCallback((cwd: string) => {
+    setPreview({
+      isOpen: true,
+      type: "terminal",
+      title: "Terminal",
+      cwd,
+    });
+  }, []);
+
   const close = useCallback(() => {
     setPreview(INITIAL_STATE);
   }, []);
@@ -72,6 +81,7 @@ export function usePreview() {
     openMarkdown,
     openArtifactEditor,
     openFileExplorer,
+    openTerminal,
     close,
   };
 }

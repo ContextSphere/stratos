@@ -27,6 +27,7 @@ export { ToolsBadge } from "./components/ToolsBadge";
 export { ToolsPopover } from "./components/ToolsPopover";
 export { TaskPanel } from "./components/TaskPanel";
 export { PreviewPane } from "./components/PreviewPane";
+export { TerminalPane } from "./components/TerminalPane";
 export { Sidebar } from "./components/Sidebar";
 export { ThreadList } from "./components/ThreadList";
 

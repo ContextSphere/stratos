@@ -107,4 +107,11 @@ export const IPC_CHANNELS = {
 
   // Diagnostics
   DIAGNOSTIC_ERROR: "app:diagnostic-error",
+
+  // Terminal
+  TERMINAL_CREATE: "terminal:create",
+  TERMINAL_WRITE: "terminal:write",
+  TERMINAL_RESIZE: "terminal:resize",
+  TERMINAL_DESTROY: "terminal:destroy",
+  TERMINAL_DATA: "terminal:data",
 } as const;

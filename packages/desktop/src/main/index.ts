@@ -52,6 +52,10 @@ import {
   setSlashCommandsGetter,
 } from "./skills/skills.ipc";
 import { registerFilesIpc, unregisterFilesIpc } from "./files/files.ipc";
+import {
+  registerTerminalIpc,
+  unregisterTerminalIpc,
+} from "./terminal/terminal-manager";
 import { statSync } from "fs";
 import { getWorktreeInfo } from "@stratosapp/core";
 import { generateDockIcon } from "./dock-icon";
@@ -193,6 +197,7 @@ if (!gotLock) {
     setSlashCommandsGetter(() => agentManager?.getSlashCommands() ?? []);
     registerSkillsIpc();
     registerFilesIpc();
+    registerTerminalIpc(mainWindow.webContents);
   }
 
   app.on("web-contents-created", (_event, contents) => {
@@ -226,6 +231,7 @@ if (!gotLock) {
     unregisterSettingsIpc();
     unregisterSkillsIpc();
     unregisterFilesIpc();
+    unregisterTerminalIpc();
     if (process.platform !== "darwin") app.quit();
   });
 }

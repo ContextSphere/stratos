@@ -19,6 +19,7 @@ asarUnpack:
   - "node_modules/@openai/codex-sdk/**"
   - "node_modules/@openai/codex-darwin-arm64/**"
   - "node_modules/@openai/codex-darwin-x64/**"
+  - "node_modules/node-pty/**"
 
 mac:
   category: public.app-category.developer-tools

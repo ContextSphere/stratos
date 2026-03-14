@@ -21,6 +21,7 @@ import {
   DiagnosticsProvider,
   useDiagnostics,
   DiagnosticToastContainer,
+  TerminalPane,
 } from "@stratosapp/ui";
 
 import { Group, Panel, Separator } from "react-resizable-panels";
@@ -118,6 +119,7 @@ function AppInner(): React.ReactElement {
   >("claude-code");
   const [homeDir, setHomeDir] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showBottomTerminal, setShowBottomTerminal] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [showNewThreadDialog, setShowNewThreadDialog] = useState(false);
   const inputRef = useRef<InputBarRef | null>(null);
@@ -410,6 +412,12 @@ function AppInner(): React.ReactElement {
     }
   }, [preview, closePreview, openFileExplorer, activeThread]);
 
+  const handleToggleTerminal = useCallback(() => {
+    if (activeThread?.cwd) {
+      setShowBottomTerminal((prev) => !prev);
+    }
+  }, [activeThread]);
+
   const handleLinkClick = useCallback(
     (href: string) => {
       const value = href.trim();
@@ -538,6 +546,18 @@ function AppInner(): React.ReactElement {
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
+  // Cmd+J to toggle bottom terminal
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "j") {
+        e.preventDefault();
+        handleToggleTerminal();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [handleToggleTerminal]);
+
   // Cmd+P to open model picker (via main process menu)
   useEffect(() => {
     window.api.onOpenModelPicker(() => setModelPickerOpen((v) => !v));
@@ -595,234 +615,289 @@ function AppInner(): React.ReactElement {
 
         <Group orientation="horizontal" className="flex-1 min-h-0">
           <Panel defaultSize={preview.isOpen ? 70 : 100} minSize={30}>
-            <div className="flex flex-col h-full bg-[var(--bg-main)] rounded-l-xl overflow-hidden">
-              {sidebarCollapsed && (
-                <div className="drag-region h-7 flex-shrink-0" />
-              )}
-
-              {/* Top bar */}
-              <div
-                className={`drag-region flex-shrink-0 flex items-end justify-between px-4 pb-1.5 ${sidebarCollapsed ? "" : "h-11"}`}
-              >
-                <div className="flex items-center">
+            <Group orientation="vertical" className="h-full">
+              <Panel defaultSize={showBottomTerminal ? 65 : 100} minSize={30}>
+                <div className="flex flex-col h-full bg-[var(--bg-main)] rounded-l-xl overflow-hidden">
                   {sidebarCollapsed && (
-                    <button
-                      onClick={toggleSidebar}
-                      className="no-drag p-1 rounded-md text-[var(--text-control)] hover:text-[var(--text-primary)] hover:bg-[var(--border)] transition-colors"
-                      title="Expand sidebar"
-                    >
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M13 5l7 7-7 7M5 5l7 7-7 7"
-                        />
-                      </svg>
-                    </button>
+                    <div className="drag-region h-7 flex-shrink-0" />
                   )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShowClaudeDialog(true)}
-                    className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                    title={
-                      claude.isConnected ? "Claude connected" : "Connect Claude"
-                    }
-                  >
-                    <div
-                      className={`w-1.5 h-1.5 rounded-full ${claude.isConnected ? "bg-green-500" : "bg-gray-600"}`}
-                    />
-                    <span
-                      className={
-                        claude.isConnected
-                          ? "text-[var(--text-control)]"
-                          : "text-[var(--text-muted)]"
-                      }
-                    >
-                      Claude
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => setShowCodexDialog(true)}
-                    className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                    title={
-                      codex.isConnected ? "Codex connected" : "Connect Codex"
-                    }
-                  >
-                    <div
-                      className={`w-1.5 h-1.5 rounded-full ${codex.isConnected ? "bg-green-500" : "bg-gray-600"}`}
-                    />
-                    <span
-                      className={
-                        codex.isConnected
-                          ? "text-[var(--text-control)]"
-                          : "text-[var(--text-muted)]"
-                      }
-                    >
-                      Codex
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => setShowGitHubDialog(true)}
-                    className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                    title={
-                      github.isConnected ? "GitHub connected" : "Connect GitHub"
-                    }
-                  >
-                    <div
-                      className={`w-1.5 h-1.5 rounded-full ${github.isConnected ? "bg-green-500" : "bg-gray-600"}`}
-                    />
-                    <span
-                      className={
-                        github.isConnected
-                          ? "text-[var(--text-control)]"
-                          : "text-[var(--text-muted)]"
-                      }
-                    >
-                      GitHub
-                    </span>
-                  </button>
-                </div>
-              </div>
 
-              {/* Chat info bar */}
-              <ChatInfoBar
-                primaryCwd={activeThread?.cwd}
-                sessionStats={sessionStats}
-                homeDir={homeDir}
-                sessionTools={sessionTools ?? undefined}
-                todoData={latestTodoData}
-                onToggleTaskPanel={() => setShowTaskPanel((s) => !s)}
-                worktreeMode={activeThread?.worktreeMode}
-                isGitRepo={activeThread?.isGitRepo}
-                hasMessages={messages.length > 0}
-                onWorktreeModeChange={handleWorktreeModeChange}
-                onToggleFileExplorer={handleToggleFileExplorer}
-                mcpServers={mcpServers ?? undefined}
-                onToggleMcpServer={
-                  activeThreadId
-                    ? async (serverName: string, enabled: boolean) => {
-                        try {
-                          await window.api.mcpToggleServer(
-                            activeThreadId,
-                            serverName,
-                            enabled,
-                          );
-                        } catch (err) {
-                          console.error("[MCP] toggle failed:", err);
+                  {/* Top bar */}
+                  <div
+                    className={`drag-region flex-shrink-0 flex items-end justify-between px-4 pb-1.5 ${sidebarCollapsed ? "" : "h-11"}`}
+                  >
+                    <div className="flex items-center">
+                      {sidebarCollapsed && (
+                        <button
+                          onClick={toggleSidebar}
+                          className="no-drag p-1 rounded-md text-[var(--text-control)] hover:text-[var(--text-primary)] hover:bg-[var(--border)] transition-colors"
+                          title="Expand sidebar"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M13 5l7 7-7 7M5 5l7 7-7 7"
+                            />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setShowClaudeDialog(true)}
+                        className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                        title={
+                          claude.isConnected
+                            ? "Claude connected"
+                            : "Connect Claude"
                         }
-                      }
-                    : undefined
-                }
-                onOpenMcpConfig={(configPath: string) =>
-                  window.api.mcpOpenConfig(configPath)
-                }
-                onReconnectMcpServer={
-                  activeThreadId
-                    ? (serverName: string) => {
-                        window.api
-                          .mcpReconnectServer(activeThreadId, serverName)
-                          .catch((err: unknown) =>
-                            console.error("[MCP] reconnect failed:", err),
-                          );
-                      }
-                    : undefined
-                }
-              />
-
-              {/* Chat messages */}
-              <ChatView
-                provider={
-                  ((activeThread?.provider as "claude-code" | "codex") ??
-                    pendingProvider) as "claude-code" | "codex"
-                }
-                messages={messages}
-                isStreaming={isStreaming}
-                onLinkClick={handleLinkClick}
-                onSendMessage={(prompt) => handleSend(prompt)}
-                onQuestionAnswer={respondQuestion}
-                onPlanReviewDecision={respondPlanReview}
-                onViewPlan={openMarkdown}
-                onUpdateTaskExpanded={updateTaskExpanded}
-                todoData={latestTodoData}
-                showTaskPanel={showTaskPanel}
-                onToggleTaskPanel={() => setShowTaskPanel((s) => !s)}
-              />
-
-              {/* Input */}
-              <InputBar
-                ref={inputRef}
-                onSend={handleSend}
-                onInterrupt={interrupt}
-                isStreaming={isStreaming}
-                interactiveMode={interactiveMode}
-                onInteractiveResponse={handleInteractiveResponse}
-                slashCommands={slashCommands}
-                cwd={activeThread?.cwd}
-                filesBridge={{
-                  listAllFiles: window.api.filesListAll,
-                  watchDirectory: window.api.filesWatchStart,
-                  unwatchDirectory: window.api.filesWatchStop,
-                  onDirectoryChanged: window.api.filesOnDirChanged,
-                }}
-              />
-
-              {/* Toolbar: provider + model + mode */}
-              <div className="flex-shrink-0 bg-[var(--bg-main)] px-4 pb-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ProviderToggle
-                      provider={
-                        (activeThread?.provider as "claude-code" | "codex") ??
-                        pendingProvider
-                      }
-                      onProviderChange={handleProviderChange}
-                      disabled={isStreaming || messages.length > 0}
-                    />
-                    <span className="text-xs text-[var(--text-muted)]">|</span>
-                    <ModelSelector
-                      selectedModel={activeThread?.model}
-                      onModelChange={handleModelChange}
-                      thinkingEffort={activeThread?.thinkingEffort}
-                      onThinkingEffortChange={handleThinkingEffortChange}
-                      onFetchModels={() =>
-                        window.api.getAvailableModels(
-                          (activeThread?.provider as string) ?? pendingProvider,
-                        )
-                      }
-                      isOpen={modelPickerOpen}
-                      onOpenChange={setModelPickerOpen}
-                    />
+                      >
+                        <div
+                          className={`w-1.5 h-1.5 rounded-full ${claude.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                        />
+                        <span
+                          className={
+                            claude.isConnected
+                              ? "text-[var(--text-control)]"
+                              : "text-[var(--text-muted)]"
+                          }
+                        >
+                          Claude
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setShowCodexDialog(true)}
+                        className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                        title={
+                          codex.isConnected
+                            ? "Codex connected"
+                            : "Connect Codex"
+                        }
+                      >
+                        <div
+                          className={`w-1.5 h-1.5 rounded-full ${codex.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                        />
+                        <span
+                          className={
+                            codex.isConnected
+                              ? "text-[var(--text-control)]"
+                              : "text-[var(--text-muted)]"
+                          }
+                        >
+                          Codex
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setShowGitHubDialog(true)}
+                        className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                        title={
+                          github.isConnected
+                            ? "GitHub connected"
+                            : "Connect GitHub"
+                        }
+                      >
+                        <div
+                          className={`w-1.5 h-1.5 rounded-full ${github.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                        />
+                        <span
+                          className={
+                            github.isConnected
+                              ? "text-[var(--text-control)]"
+                              : "text-[var(--text-muted)]"
+                          }
+                        >
+                          GitHub
+                        </span>
+                      </button>
+                    </div>
                   </div>
-                  <ModeToggle
+
+                  {/* Chat info bar */}
+                  <ChatInfoBar
+                    primaryCwd={activeThread?.cwd}
+                    sessionStats={sessionStats}
+                    homeDir={homeDir}
+                    sessionTools={sessionTools ?? undefined}
+                    todoData={latestTodoData}
+                    onToggleTaskPanel={() => setShowTaskPanel((s) => !s)}
+                    worktreeMode={activeThread?.worktreeMode}
+                    isGitRepo={activeThread?.isGitRepo}
+                    hasMessages={messages.length > 0}
+                    onWorktreeModeChange={handleWorktreeModeChange}
+                    onToggleFileExplorer={handleToggleFileExplorer}
+                    onToggleTerminal={handleToggleTerminal}
+                    mcpServers={mcpServers ?? undefined}
+                    onToggleMcpServer={
+                      activeThreadId
+                        ? async (serverName: string, enabled: boolean) => {
+                            try {
+                              await window.api.mcpToggleServer(
+                                activeThreadId,
+                                serverName,
+                                enabled,
+                              );
+                            } catch (err) {
+                              console.error("[MCP] toggle failed:", err);
+                            }
+                          }
+                        : undefined
+                    }
+                    onOpenMcpConfig={(configPath: string) =>
+                      window.api.mcpOpenConfig(configPath)
+                    }
+                    onReconnectMcpServer={
+                      activeThreadId
+                        ? (serverName: string) => {
+                            window.api
+                              .mcpReconnectServer(activeThreadId, serverName)
+                              .catch((err: unknown) =>
+                                console.error("[MCP] reconnect failed:", err),
+                              );
+                          }
+                        : undefined
+                    }
+                  />
+
+                  {/* Chat messages */}
+                  <ChatView
                     provider={
                       ((activeThread?.provider as "claude-code" | "codex") ??
                         pendingProvider) as "claude-code" | "codex"
                     }
-                    mode={
-                      activeThread?.mode
-                        ? normalizeMode(
-                            activeThread.mode,
-                            ((activeThread?.provider as
-                              | "claude-code"
-                              | "codex") ?? pendingProvider) as
-                              | "claude-code"
-                              | "codex",
-                          )
-                        : pendingMode
-                    }
-                    onModeChange={handleModeChange}
-                    disabled={isStreaming}
+                    messages={messages}
+                    isStreaming={isStreaming}
+                    onLinkClick={handleLinkClick}
+                    onSendMessage={(prompt) => handleSend(prompt)}
+                    onQuestionAnswer={respondQuestion}
+                    onPlanReviewDecision={respondPlanReview}
+                    onViewPlan={openMarkdown}
+                    onUpdateTaskExpanded={updateTaskExpanded}
+                    todoData={latestTodoData}
+                    showTaskPanel={showTaskPanel}
+                    onToggleTaskPanel={() => setShowTaskPanel((s) => !s)}
                   />
+
+                  {/* Input */}
+                  <InputBar
+                    ref={inputRef}
+                    onSend={handleSend}
+                    onInterrupt={interrupt}
+                    isStreaming={isStreaming}
+                    interactiveMode={interactiveMode}
+                    onInteractiveResponse={handleInteractiveResponse}
+                    slashCommands={slashCommands}
+                    cwd={activeThread?.cwd}
+                    filesBridge={{
+                      listAllFiles: window.api.filesListAll,
+                      watchDirectory: window.api.filesWatchStart,
+                      unwatchDirectory: window.api.filesWatchStop,
+                      onDirectoryChanged: window.api.filesOnDirChanged,
+                    }}
+                  />
+
+                  {/* Toolbar: provider + model + mode */}
+                  <div className="flex-shrink-0 bg-[var(--bg-main)] px-4 pb-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ProviderToggle
+                          provider={
+                            (activeThread?.provider as
+                              | "claude-code"
+                              | "codex") ?? pendingProvider
+                          }
+                          onProviderChange={handleProviderChange}
+                          disabled={isStreaming || messages.length > 0}
+                        />
+                        <span className="text-xs text-[var(--text-muted)]">
+                          |
+                        </span>
+                        <ModelSelector
+                          selectedModel={activeThread?.model}
+                          onModelChange={handleModelChange}
+                          thinkingEffort={activeThread?.thinkingEffort}
+                          onThinkingEffortChange={handleThinkingEffortChange}
+                          onFetchModels={() =>
+                            window.api.getAvailableModels(
+                              (activeThread?.provider as string) ??
+                                pendingProvider,
+                            )
+                          }
+                          isOpen={modelPickerOpen}
+                          onOpenChange={setModelPickerOpen}
+                        />
+                      </div>
+                      <ModeToggle
+                        provider={
+                          ((activeThread?.provider as
+                            | "claude-code"
+                            | "codex") ?? pendingProvider) as
+                            | "claude-code"
+                            | "codex"
+                        }
+                        mode={
+                          activeThread?.mode
+                            ? normalizeMode(
+                                activeThread.mode,
+                                ((activeThread?.provider as
+                                  | "claude-code"
+                                  | "codex") ?? pendingProvider) as
+                                  | "claude-code"
+                                  | "codex",
+                              )
+                            : pendingMode
+                        }
+                        onModeChange={handleModeChange}
+                        disabled={isStreaming}
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              </Panel>
+
+              {activeThread?.cwd && (
+                <div
+                  style={{ display: showBottomTerminal ? "contents" : "none" }}
+                >
+                  <Separator className="h-1.5 bg-[var(--bg-surface)] hover:bg-blue-600 transition-colors cursor-row-resize" />
+                  <Panel defaultSize={35} minSize={10}>
+                    <div className="flex flex-col h-full bg-[#0d0d0d]">
+                      <div className="flex items-center justify-between px-3 py-1 bg-[var(--bg-surface)] border-t border-[var(--border)] flex-shrink-0">
+                        <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                          Terminal
+                        </span>
+                        <button
+                          onClick={() => setShowBottomTerminal(false)}
+                          className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                          title="Close terminal (⌘J)"
+                        >
+                          <svg
+                            className="w-3.5 h-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                      <TerminalPane cwd={activeThread.cwd} />
+                    </div>
+                  </Panel>
+                </div>
+              )}
+            </Group>
           </Panel>
 
           {preview.isOpen && (

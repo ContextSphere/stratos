@@ -372,6 +372,34 @@ const api = {
     });
   },
 
+  // Terminal
+  terminalCreate: (cwd: string): Promise<string> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_CREATE, cwd),
+
+  terminalWrite: (id: string, data: string): void => {
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_WRITE, id, data);
+  },
+
+  terminalResize: (id: string, cols: number, rows: number): void => {
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, id, cols, rows);
+  },
+
+  terminalDestroy: (id: string): void => {
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_DESTROY, id);
+  },
+
+  onTerminalData: (
+    callback: (id: string, data: string) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: { id: string; data: string },
+    ) => callback(payload.id, payload.data);
+    ipcRenderer.on(IPC_CHANNELS.TERMINAL_DATA, listener);
+    return () =>
+      ipcRenderer.removeListener(IPC_CHANNELS.TERMINAL_DATA, listener);
+  },
+
   // Diagnostics
   onDiagnosticError: (
     callback: (data: {
