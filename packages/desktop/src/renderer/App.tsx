@@ -120,6 +120,11 @@ function AppInner(): React.ReactElement {
   const [homeDir, setHomeDir] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showBottomTerminal, setShowBottomTerminal] = useState(false);
+  const [terminalHeight, setTerminalHeight] = useState(280);
+  const terminalDragRef = useRef<{
+    startY: number;
+    startHeight: number;
+  } | null>(null);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [showNewThreadDialog, setShowNewThreadDialog] = useState(false);
   const inputRef = useRef<InputBarRef | null>(null);
@@ -413,10 +418,37 @@ function AppInner(): React.ReactElement {
   }, [preview, closePreview, openFileExplorer, activeThread]);
 
   const handleToggleTerminal = useCallback(() => {
-    if (activeThread?.cwd) {
-      setShowBottomTerminal((prev) => !prev);
-    }
+    if (!activeThread?.cwd) return;
+    setShowBottomTerminal((prev) => !prev);
   }, [activeThread]);
+
+  const handleTerminalResizeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      terminalDragRef.current = {
+        startY: e.clientY,
+        startHeight: terminalHeight,
+      };
+      const onMouseMove = (ev: MouseEvent) => {
+        if (!terminalDragRef.current) return;
+        const delta = terminalDragRef.current.startY - ev.clientY;
+        setTerminalHeight(
+          Math.max(
+            80,
+            Math.min(800, terminalDragRef.current.startHeight + delta),
+          ),
+        );
+      };
+      const onMouseUp = () => {
+        terminalDragRef.current = null;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    },
+    [terminalHeight],
+  );
 
   const handleLinkClick = useCallback(
     (href: string) => {
@@ -615,8 +647,8 @@ function AppInner(): React.ReactElement {
 
         <Group orientation="horizontal" className="flex-1 min-h-0">
           <Panel defaultSize={preview.isOpen ? 70 : 100} minSize={30}>
-            <Group orientation="vertical" className="h-full">
-              <Panel defaultSize={showBottomTerminal ? 65 : 100} minSize={30}>
+            <div className="flex flex-col h-full">
+              <div className="flex-1 min-h-0">
                 <div className="flex flex-col h-full bg-[var(--bg-main)] rounded-l-xl overflow-hidden">
                   {sidebarCollapsed && (
                     <div className="drag-region h-7 flex-shrink-0" />
@@ -859,45 +891,47 @@ function AppInner(): React.ReactElement {
                     </div>
                   </div>
                 </div>
-              </Panel>
+              </div>
 
-              {activeThread?.cwd && (
-                <div
-                  style={{ display: showBottomTerminal ? "contents" : "none" }}
-                >
-                  <Separator className="h-1.5 bg-[var(--bg-surface)] hover:bg-blue-600 transition-colors cursor-row-resize" />
-                  <Panel defaultSize={35} minSize={10}>
-                    <div className="flex flex-col h-full bg-[#0d0d0d]">
-                      <div className="flex items-center justify-between px-3 py-1 bg-[var(--bg-surface)] border-t border-[var(--border)] flex-shrink-0">
-                        <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
-                          Terminal
-                        </span>
-                        <button
-                          onClick={() => setShowBottomTerminal(false)}
-                          className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                          title="Close terminal (⌘J)"
+              {showBottomTerminal && activeThread?.cwd && (
+                <>
+                  <div
+                    onMouseDown={handleTerminalResizeMouseDown}
+                    className="h-1.5 flex-shrink-0 bg-[var(--bg-surface)] hover:bg-blue-600 transition-colors cursor-row-resize"
+                  />
+                  <div
+                    className="flex flex-col flex-shrink-0"
+                    style={{ height: terminalHeight }}
+                  >
+                    <div className="flex items-center justify-between px-3 py-1 bg-[var(--bg-surface)] border-t border-[var(--border)] flex-shrink-0">
+                      <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                        Terminal
+                      </span>
+                      <button
+                        onClick={handleToggleTerminal}
+                        className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                        title="Close terminal (⌘J)"
+                      >
+                        <svg
+                          className="w-3.5 h-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
                         >
-                          <svg
-                            className="w-3.5 h-3.5"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M6 18L18 6M6 6l12 12"
-                            />
-                          </svg>
-                        </button>
-                      </div>
-                      <TerminalPane cwd={activeThread.cwd} />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
                     </div>
-                  </Panel>
-                </div>
+                    <TerminalPane cwd={activeThread.cwd} />
+                  </div>
+                </>
               )}
-            </Group>
+            </div>
           </Panel>
 
           {preview.isOpen && (
