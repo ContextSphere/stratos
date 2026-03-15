@@ -39,6 +39,10 @@ import {
 } from "./integrations/claude.ipc";
 import { registerCodexIpc, unregisterCodexIpc } from "./integrations/codex.ipc";
 import {
+  registerOpenCodeIpc,
+  unregisterOpenCodeIpc,
+} from "./integrations/opencode.ipc";
+import {
   registerDirectoryIpc,
   unregisterDirectoryIpc,
 } from "./settings/directory.ipc";
@@ -192,6 +196,7 @@ if (!gotLock) {
     registerGitHubIpc(mainWindow);
     registerClaudeIpc(mainWindow);
     registerCodexIpc(mainWindow);
+    registerOpenCodeIpc(mainWindow);
     registerDirectoryIpc(mainWindow);
     registerSettingsIpc(mainWindow);
     setSlashCommandsGetter(() => agentManager?.getSlashCommands() ?? []);
@@ -227,6 +232,7 @@ if (!gotLock) {
     unregisterGitHubIpc();
     unregisterClaudeIpc();
     unregisterCodexIpc();
+    unregisterOpenCodeIpc();
     unregisterDirectoryIpc();
     unregisterSettingsIpc();
     unregisterSkillsIpc();

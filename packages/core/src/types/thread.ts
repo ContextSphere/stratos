@@ -11,7 +11,7 @@ export function normalizeMode(
   provider?: ProviderType,
 ): AgentMode {
   if (!mode || mode === "execute") return "default";
-  if (provider === "codex") {
+  if (provider === "codex" || provider === "opencode") {
     if (mode === "acceptEdits") return "default";
     if (mode === "bypassPermissions") return "fullAccess";
   }
@@ -52,7 +52,7 @@ export interface ThreadWorktree {
 }
 
 /** Supported provider identifiers */
-export type ProviderType = "claude-code" | "codex";
+export type ProviderType = "claude-code" | "codex" | "opencode";
 
 export interface Thread {
   id: string;

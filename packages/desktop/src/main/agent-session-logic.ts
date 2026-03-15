@@ -70,8 +70,11 @@ export function resolveToolBehavior(
   // AskUserQuestion always shows the question dialog
   if (toolName === "AskUserQuestion") return "ask_user";
 
-  // Codex full access mirrors the Codex app's "Full access" mode.
-  if (provider === "codex" && mode === "fullAccess") {
+  // Codex/OpenCode full access mirrors their "Full access" mode.
+  if (
+    (provider === "codex" || provider === "opencode") &&
+    mode === "fullAccess"
+  ) {
     return "always_approve";
   }
 
@@ -79,7 +82,11 @@ export function resolveToolBehavior(
   if (mode === "bypassPermissions") return "always_approve";
 
   // In acceptEdits mode, approve common file/shell tools and MCP tools
-  if (provider !== "codex" && mode === "acceptEdits") {
+  if (
+    provider !== "codex" &&
+    provider !== "opencode" &&
+    mode === "acceptEdits"
+  ) {
     if (
       ACCEPT_EDITS_AUTO_APPROVE.has(toolName) ||
       toolName.startsWith("mcp__")

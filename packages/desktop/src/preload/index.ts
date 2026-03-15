@@ -210,6 +210,16 @@ const api = {
   codexGetConnection: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.CODEX_GET_CONNECTION),
 
+  // OpenCode — connection management
+  opencodeCheckCli: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_CHECK_CLI),
+  opencodeConnect: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_CONNECT),
+  opencodeDisconnect: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_DISCONNECT),
+  opencodeGetConnection: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_GET_CONNECTION),
+
   // Folders
   foldersList: (): Promise<Folder[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.FOLDERS_LIST),

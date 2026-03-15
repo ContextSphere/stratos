@@ -31,10 +31,12 @@ import { useFolders } from "./hooks/useFolders";
 import { useGitHub } from "./hooks/useGitHub";
 import { useClaude } from "./hooks/useClaude";
 import { useCodex } from "./hooks/useCodex";
+import { useOpenCode } from "./hooks/useOpenCode";
 import { usePreview } from "./hooks/usePreview";
 import { ConnectGitHubDialog } from "./components/ConnectGitHubDialog";
 import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
 import { ConnectCodexDialog } from "./components/ConnectCodexDialog";
+import { ConnectOpenCodeDialog } from "./components/ConnectOpenCodeDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { NewThreadDialog } from "./components/NewThreadDialog";
 
@@ -97,6 +99,7 @@ function AppInner(): React.ReactElement {
   const github = useGitHub();
   const claude = useClaude();
   const codex = useCodex();
+  const opencode = useOpenCode();
   const {
     preview,
     openUrl,
@@ -111,11 +114,12 @@ function AppInner(): React.ReactElement {
   const [showClaudeDialog, setShowClaudeDialog] = useState(false);
   const [showGitHubDialog, setShowGitHubDialog] = useState(false);
   const [showCodexDialog, setShowCodexDialog] = useState(false);
+  const [showOpenCodeDialog, setShowOpenCodeDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [pendingMode, setPendingMode] = useState<AgentMode>();
   const [pendingProvider, setPendingProvider] = useState<
-    "claude-code" | "codex"
+    "claude-code" | "codex" | "opencode" | "opencode"
   >("claude-code");
   const [homeDir, setHomeDir] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -386,7 +390,7 @@ function AppInner(): React.ReactElement {
   );
 
   const handleProviderChange = useCallback(
-    async (provider: "claude-code" | "codex") => {
+    async (provider: "claude-code" | "codex" | "opencode") => {
       if (!activeThreadId) {
         setPendingProvider(provider);
         setPendingMode((prev) => (prev ? normalizeMode(prev, provider) : prev));
@@ -524,7 +528,10 @@ function AppInner(): React.ReactElement {
         if (isStreaming) return;
         const currentProvider = ((activeThread?.provider as
           | "claude-code"
-          | "codex") ?? pendingProvider) as "claude-code" | "codex";
+          | "codex") ?? pendingProvider) as
+          | "claude-code"
+          | "codex"
+          | "opencode";
         const currentMode = activeThread?.mode
           ? normalizeMode(activeThread.mode, currentProvider)
           : (pendingMode ?? "default");
@@ -736,6 +743,28 @@ function AppInner(): React.ReactElement {
                         </span>
                       </button>
                       <button
+                        onClick={() => setShowOpenCodeDialog(true)}
+                        className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                        title={
+                          opencode.isConnected
+                            ? "OpenCode connected"
+                            : "Connect OpenCode"
+                        }
+                      >
+                        <div
+                          className={`w-1.5 h-1.5 rounded-full ${opencode.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                        />
+                        <span
+                          className={
+                            opencode.isConnected
+                              ? "text-[var(--text-control)]"
+                              : "text-[var(--text-muted)]"
+                          }
+                        >
+                          OpenCode
+                        </span>
+                      </button>
+                      <button
                         onClick={() => setShowGitHubDialog(true)}
                         className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
                         title={
@@ -809,8 +838,13 @@ function AppInner(): React.ReactElement {
                   {/* Chat messages */}
                   <ChatView
                     provider={
-                      ((activeThread?.provider as "claude-code" | "codex") ??
-                        pendingProvider) as "claude-code" | "codex"
+                      ((activeThread?.provider as
+                        | "claude-code"
+                        | "codex"
+                        | "opencode") ?? pendingProvider) as
+                        | "claude-code"
+                        | "codex"
+                        | "opencode"
                     }
                     messages={messages}
                     isStreaming={isStreaming}
@@ -1000,6 +1034,20 @@ function AppInner(): React.ReactElement {
           onClose={() => setShowCodexDialog(false)}
           onConnect={codex.connect}
           onDisconnect={codex.disconnect}
+        />
+
+        {/* OpenCode connect dialog */}
+        <ConnectOpenCodeDialog
+          isOpen={showOpenCodeDialog}
+          isConnected={opencode.isConnected}
+          cliInstalled={opencode.cliInstalled}
+          version={opencode.version}
+          serverRunning={opencode.serverRunning}
+          loading={opencode.loading}
+          error={opencode.error}
+          onClose={() => setShowOpenCodeDialog(false)}
+          onConnect={opencode.connect}
+          onDisconnect={opencode.disconnect}
         />
 
         {/* GitHub connect dialog */}

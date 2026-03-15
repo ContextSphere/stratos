@@ -33,6 +33,11 @@ export type {
 export { READ_ONLY_TOOLS } from "./providers/types";
 export { ClaudeCodeProvider } from "./providers/claude-code.provider";
 export { CodexProvider } from "./providers/codex.provider";
+export { OpenCodeProvider } from "./providers/opencode.provider";
+export {
+  isOpenCodeInstalled,
+  getOpenCodeVersion,
+} from "./providers/opencode.provider";
 export { createProvider, getAvailableProviders } from "./providers/index";
 
 // Storage

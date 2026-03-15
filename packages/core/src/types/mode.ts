@@ -50,6 +50,7 @@ export const MODE_CONFIGS: Record<AgentMode, ModeConfig> = {
 const PROVIDER_AGENT_MODES: Record<ProviderType, AgentMode[]> = {
   "claude-code": ["plan", "default", "acceptEdits", "bypassPermissions"],
   codex: ["plan", "default", "fullAccess"],
+  opencode: ["plan", "default", "fullAccess"],
 };
 
 const PROVIDER_MODE_CONFIG_OVERRIDES: Partial<
@@ -60,6 +61,13 @@ const PROVIDER_MODE_CONFIG_OVERRIDES: Partial<
       label: "Default permissions",
       description:
         "Lets Codex edit and run commands in the workspace. Prompts before network or actions outside that scope.",
+    },
+  },
+  opencode: {
+    default: {
+      label: "Default permissions",
+      description:
+        "OpenCode manages permissions through its built-in agents. Prompts for sensitive operations.",
     },
   },
 };

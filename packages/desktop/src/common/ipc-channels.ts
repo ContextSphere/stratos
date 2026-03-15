@@ -56,6 +56,12 @@ export const IPC_CHANNELS = {
   CODEX_DISCONNECT: "integration:codex:disconnect",
   CODEX_GET_CONNECTION: "integration:codex:get-connection",
 
+  // OpenCode — connection management
+  OPENCODE_CHECK_CLI: "integration:opencode:check-cli",
+  OPENCODE_CONNECT: "integration:opencode:connect",
+  OPENCODE_DISCONNECT: "integration:opencode:disconnect",
+  OPENCODE_GET_CONNECTION: "integration:opencode:get-connection",
+
   // Interactive tool events (AskUserQuestion, plan mode)
   ASK_USER_QUESTION: "chat:ask-user-question",
   ASK_USER_RESPONSE: "chat:ask-user-response",
