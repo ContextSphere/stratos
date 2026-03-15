@@ -54,26 +54,6 @@ function getVersion(): Promise<string | null> {
     .catch(() => null);
 }
 
-/**
- * Check if an OpenCode server is running by trying to reach its API.
- * Checks the default port and common alternatives.
- */
-async function checkServerRunning(): Promise<boolean> {
-  const ports = [13749, 4096, 3000];
-  for (const port of ports) {
-    try {
-      const res = await fetch(`http://localhost:${port}/session`, {
-        method: "GET",
-        signal: AbortSignal.timeout(2000),
-      });
-      if (res.ok) return true;
-    } catch {
-      // Try next port
-    }
-  }
-  return false;
-}
-
 async function refreshCachedInfo(): Promise<OpenCodeConnectionInfo> {
   const installed = await checkCliInstalled();
   if (!installed) {
@@ -87,13 +67,14 @@ async function refreshCachedInfo(): Promise<OpenCodeConnectionInfo> {
   }
 
   const version = await getVersion();
-  const serverRunning = await checkServerRunning();
 
+  // The provider auto-spawns the server, so "serverRunning" reflects
+  // whether the CLI is available (the provider manages lifecycle).
   cachedInfo = {
-    connected: serverRunning,
+    connected: cachedInfo.connected,
     cliInstalled: true,
     version,
-    serverRunning,
+    serverRunning: cachedInfo.connected,
   };
 
   return cachedInfo;
@@ -126,20 +107,21 @@ export function registerOpenCodeIpc(_window: BrowserWindow): void {
         return { ok: false, error: "OpenCode CLI is not installed" };
       }
 
-      const serverRunning = await checkServerRunning();
-      if (!serverRunning) {
-        return {
-          ok: false,
-          error:
-            "OpenCode server is not running. Start it with: opencode serve",
-        };
-      }
+      const version = await getVersion();
 
-      const info = await refreshCachedInfo();
+      // Mark as connected — the OpenCode provider will auto-spawn
+      // the server when it initializes for the first message.
+      cachedInfo = {
+        connected: true,
+        cliInstalled: true,
+        version,
+        serverRunning: true,
+      };
+
       return {
         ok: true,
-        version: info.version,
-        serverRunning: info.serverRunning,
+        version: cachedInfo.version,
+        serverRunning: true,
       };
     } catch (err) {
       return {

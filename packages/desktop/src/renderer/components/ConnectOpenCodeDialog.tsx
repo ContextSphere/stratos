@@ -115,9 +115,8 @@ export function ConnectOpenCodeDialog({
 
             <div className="mb-4 p-3 bg-[var(--bg-surface)] rounded-lg">
               <p className="text-xs text-[var(--text-secondary)]">
-                OpenCode connects to a running server instance. Disconnecting
-                will stop Stratos from communicating with the server, but the
-                server will continue running.
+                Stratos manages the OpenCode server automatically. Disconnecting
+                will stop the server and end the current session.
               </p>
             </div>
 
@@ -160,19 +159,17 @@ export function ConnectOpenCodeDialog({
           </>
         ) : (
           <>
-            <p className="text-xs text-[var(--text-secondary)] mb-3">
-              OpenCode requires a running server. Start it in a terminal first:
-            </p>
-
             <div className="mb-4 p-3 bg-[var(--bg-surface)] rounded-lg">
-              <code className="text-xs text-[var(--text-primary)] bg-[var(--bg-main)] px-2 py-1 rounded block">
-                opencode serve
-              </code>
+              <p className="text-xs text-[var(--text-secondary)]">
+                OpenCode CLI is installed. Click Connect to start the server and
+                begin using OpenCode as a provider.
+              </p>
+              {version && (
+                <p className="text-xs text-[var(--text-muted)] mt-2">
+                  Version: {version}
+                </p>
+              )}
             </div>
-
-            <p className="text-xs text-[var(--text-secondary)] mb-5">
-              Then click Connect to verify the server is reachable.
-            </p>
 
             {error && (
               <div className="mb-4 p-3 bg-red-900/20 border border-red-500/20 rounded-lg">
@@ -206,7 +203,7 @@ export function ConnectOpenCodeDialog({
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                     />
                   </svg>
-                  <span className="text-white/60">Connecting...</span>
+                  <span className="text-white/60">Starting server...</span>
                 </span>
               ) : (
                 <>
@@ -230,7 +227,7 @@ export function ConnectOpenCodeDialog({
             </button>
 
             <p className="text-[10px] text-[var(--text-muted)] mt-3 text-center">
-              Stratos will connect to the OpenCode server running on localhost.
+              Stratos will start and manage the OpenCode server automatically.
             </p>
           </>
         )}

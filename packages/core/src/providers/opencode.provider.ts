@@ -5,16 +5,19 @@ import type {
   ProviderConfig,
   ModelInfo,
   McpServerInfo,
+  TodoItem,
 } from "./types";
 
-import { execSync } from "child_process";
+import { spawn, execSync, type ChildProcess } from "child_process";
 
 /**
- * Default port for the OpenCode server.
- * Users start it via `opencode serve` (defaults to auto-assigned port).
- * We try to read the port from the OpenCode config or fall back to 13749.
+ * Default port for auto-spawned OpenCode server.
+ * Matches the SDK default from `createOpencodeServer()`.
  */
-const DEFAULT_PORT = 13749;
+const DEFAULT_PORT = 4096;
+
+/** Timeout (ms) waiting for the server process to print its URL */
+const SERVER_START_TIMEOUT = 15_000;
 
 /** SSE event types emitted by the OpenCode server */
 interface OpenCodeSSEEvent {
@@ -27,47 +30,39 @@ interface OpenCodeSSEEvent {
  * OpenCode provider implementation.
  *
  * Communicates with a running OpenCode server via REST API + SSE.
- * The user must start the server with `opencode serve` before using this provider.
+ * Follows the same pattern as the official `@opencode-ai/sdk`:
+ *
+ * 1. `initialize()` spawns `opencode serve` as a managed child process
+ * 2. `sendMessage()` uses `promptAsync` (fire-and-forget) + SSE event stream
+ * 3. `dispose()` kills the managed server process
  *
  * Architecture:
  * - Sessions map 1:1 to Stratos threads
- * - Messages sent via POST /session/{id}/chat
+ * - Messages sent via POST /session/{id}/prompt_async (non-blocking)
  * - Real-time events received via GET /event (SSE)
  * - Tool calls and permissions are handled by OpenCode's built-in agents
  */
 export class OpenCodeProvider implements AgentProvider {
   readonly name = "opencode";
   private config: ProviderConfig = {};
-  private baseUrl = `http://localhost:${DEFAULT_PORT}`;
+  private baseUrl = `http://127.0.0.1:${DEFAULT_PORT}`;
   private sessionId?: string;
   private abortController?: AbortController;
+  private serverProcess?: ChildProcess;
   private disposed = false;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
 
-    // Try to detect the running OpenCode server port
-    const port = await this.detectServerPort();
-    if (port) {
-      this.baseUrl = `http://localhost:${port}`;
+    // Try to connect to an existing server first (user may have one running)
+    const existingUrl = await this.findRunningServer();
+    if (existingUrl) {
+      this.baseUrl = existingUrl;
+      return;
     }
 
-    // Verify the server is reachable
-    try {
-      const res = await fetch(`${this.baseUrl}/session`, {
-        method: "GET",
-        signal: AbortSignal.timeout(3000),
-      });
-      if (!res.ok) {
-        throw new Error(`OpenCode server returned ${res.status}`);
-      }
-    } catch (err) {
-      throw new Error(
-        `Cannot connect to OpenCode server at ${this.baseUrl}. ` +
-          `Start it with: opencode serve\n` +
-          `Original error: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    // No server running — spawn one (same pattern as SDK's createOpencodeServer)
+    await this.spawnServer();
   }
 
   async *sendMessage(params: SendMessageParams): AsyncGenerator<AgentMessage> {
@@ -125,14 +120,11 @@ export class OpenCodeProvider implements AgentProvider {
         },
       });
 
-      // Send the chat message
-      const model = params.model ?? this.config.model;
+      // Build the prompt request body
       const parts: { type: string; text?: string }[] = [];
-
-      // Add text content
       parts.push({ type: "text", text: params.prompt });
 
-      // Add images if provided
+      // Add images as file parts (data URL format)
       if (params.images?.length) {
         for (const img of params.images) {
           parts.push({
@@ -142,13 +134,17 @@ export class OpenCodeProvider implements AgentProvider {
         }
       }
 
+      // Build model field in OpenCode format: { providerID, modelID }
+      const model = params.model ?? this.config.model;
       const chatBody: Record<string, unknown> = {
         parts,
-        ...(model ? { modelID: model } : {}),
+        ...(model ? { model: this.parseModelSpec(model) } : {}),
       };
 
+      // Use promptAsync (POST /session/{id}/prompt_async) for non-blocking send.
+      // This returns 204 immediately; actual responses arrive via SSE events.
       const chatRes = await fetch(
-        `${this.baseUrl}/session/${this.sessionId}/message`,
+        `${this.baseUrl}/session/${this.sessionId}/prompt_async`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -159,7 +155,7 @@ export class OpenCodeProvider implements AgentProvider {
 
       if (!chatRes.ok) {
         const errText = await chatRes.text().catch(() => "Unknown error");
-        yield { type: "error", message: `OpenCode chat failed: ${errText}` };
+        yield { type: "error", message: `OpenCode prompt failed: ${errText}` };
         return;
       }
 
@@ -193,6 +189,17 @@ export class OpenCodeProvider implements AgentProvider {
   }
 
   async interrupt(): Promise<void> {
+    if (this.sessionId) {
+      // Tell the server to abort the session
+      try {
+        await fetch(`${this.baseUrl}/session/${this.sessionId}/abort`, {
+          method: "POST",
+          signal: AbortSignal.timeout(3000),
+        });
+      } catch {
+        // Best-effort
+      }
+    }
     this.abortController?.abort();
   }
 
@@ -201,8 +208,20 @@ export class OpenCodeProvider implements AgentProvider {
   }
 
   async getAvailableModels(): Promise<ModelInfo[]> {
-    // OpenCode supports many providers/models through its config.
-    // Return a curated list of commonly available models.
+    // Try to query the server for configured providers/models
+    try {
+      const res = await fetch(`${this.baseUrl}/config/providers`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        const providers = await res.json();
+        return this.parseProviderModels(providers);
+      }
+    } catch {
+      // Fall back to static list
+    }
+
+    // Fallback: common models that OpenCode supports
     return [
       {
         value: "claude-sonnet-4-20250514",
@@ -238,10 +257,45 @@ export class OpenCodeProvider implements AgentProvider {
   async discoverSlashCommands(): Promise<
     { name: string; description?: string }[]
   > {
+    try {
+      const res = await fetch(`${this.baseUrl}/command`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        const commands = (await res.json()) as {
+          name: string;
+          description?: string;
+        }[];
+        return commands;
+      }
+    } catch {
+      // Ignore
+    }
     return [];
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/mcp`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        const servers = (await res.json()) as {
+          name: string;
+          status: string;
+        }[];
+        return servers.map((s) => ({
+          name: s.name,
+          status:
+            s.status === "connected"
+              ? ("connected" as const)
+              : ("failed" as const),
+          tools: [],
+        }));
+      }
+    } catch {
+      // Ignore
+    }
     return [];
   }
 
@@ -249,55 +303,118 @@ export class OpenCodeProvider implements AgentProvider {
     this.disposed = true;
     this.abortController?.abort();
     this.sessionId = undefined;
+
+    // Kill the managed server process
+    if (this.serverProcess) {
+      this.serverProcess.kill();
+      this.serverProcess = undefined;
+    }
   }
 
-  // ── Private helpers ──────────────────────────────────────────────────────
+  // ── Server lifecycle ────────────────────────────────────────────────────
 
-  private async detectServerPort(): Promise<number | null> {
-    // Try to read the OpenCode server port from its state file.
-    // OpenCode stores runtime info in ~/.config/opencode/ or similar.
-    try {
-      const fs = await import("fs");
-      const path = await import("path");
-      const os = await import("os");
-
-      // Check common OpenCode state file locations
-      const candidates = [
-        path.join(os.homedir(), ".config", "opencode", "server.json"),
-        path.join(os.homedir(), ".opencode", "server.json"),
-      ];
-
-      for (const candidate of candidates) {
-        try {
-          const content = fs.readFileSync(candidate, "utf-8");
-          const state = JSON.parse(content);
-          if (state.port && typeof state.port === "number") {
-            return state.port;
-          }
-        } catch {
-          // Try next candidate
-        }
+  /**
+   * Try to find a running OpenCode server by probing common ports.
+   * Returns the server URL if found, null otherwise.
+   */
+  private async findRunningServer(): Promise<string | null> {
+    const ports = [DEFAULT_PORT, 13749, 3000];
+    for (const port of ports) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/session`, {
+          method: "GET",
+          signal: AbortSignal.timeout(2000),
+        });
+        if (res.ok) return `http://127.0.0.1:${port}`;
+      } catch {
+        // Try next port
       }
-    } catch {
-      // Ignore
     }
-
     return null;
   }
+
+  /**
+   * Spawn `opencode serve` as a child process.
+   * Same pattern as the SDK's `createOpencodeServer()`:
+   * - Parse stdout for "opencode server listening on http://..."
+   * - Extract the URL for API calls
+   */
+  private async spawnServer(): Promise<void> {
+    const port = DEFAULT_PORT;
+    const args = ["serve", `--hostname=127.0.0.1`, `--port=${port}`];
+
+    const proc = spawn("opencode", args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        OPENCODE_CONFIG_CONTENT: JSON.stringify({}),
+      },
+    });
+
+    this.serverProcess = proc;
+
+    // Wait for the server to print its listening URL
+    const url = await new Promise<string>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(
+          new Error(
+            `OpenCode server did not start within ${SERVER_START_TIMEOUT}ms`,
+          ),
+        );
+      }, SERVER_START_TIMEOUT);
+
+      let output = "";
+
+      proc.stdout?.on("data", (chunk: Buffer) => {
+        output += chunk.toString();
+        const lines = output.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("opencode server listening")) {
+            const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
+            if (match) {
+              clearTimeout(timeout);
+              resolve(match[1]!);
+              return;
+            }
+          }
+        }
+      });
+
+      proc.stderr?.on("data", (chunk: Buffer) => {
+        output += chunk.toString();
+      });
+
+      proc.on("exit", (code) => {
+        clearTimeout(timeout);
+        let msg = `OpenCode server exited with code ${code}`;
+        if (output.trim()) msg += `\nOutput: ${output}`;
+        reject(new Error(msg));
+      });
+
+      proc.on("error", (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    });
+
+    this.baseUrl = url;
+  }
+
+  // ── Session management ──────────────────────────────────────────────────
 
   private async createSession(
     params: SendMessageParams,
   ): Promise<{ id: string }> {
     const cwd = params.cwd ?? this.config.cwd ?? process.env.HOME;
 
-    const body: Record<string, unknown> = {
-      path: cwd,
-    };
+    // OpenCode uses `directory` as a query parameter, not body field
+    const url = new URL(`${this.baseUrl}/session`);
+    if (cwd) url.searchParams.set("directory", cwd);
 
-    const res = await fetch(`${this.baseUrl}/session`, {
+    const res = await fetch(url.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({}),
     });
 
     if (!res.ok) {
@@ -309,6 +426,73 @@ export class OpenCodeProvider implements AgentProvider {
 
     return (await res.json()) as { id: string };
   }
+
+  // ── Model parsing ──────────────────────────────────────────────────────
+
+  /**
+   * Parse a model string into OpenCode's { providerID, modelID } format.
+   * Handles formats like "claude-sonnet-4-20250514" or "opencode/big-pickle".
+   */
+  private parseModelSpec(model: string): {
+    providerID: string;
+    modelID: string;
+  } {
+    // If it contains a slash, treat as "provider/model"
+    if (model.includes("/")) {
+      const [providerID, modelID] = model.split("/", 2);
+      return { providerID: providerID!, modelID: modelID! };
+    }
+
+    // Infer provider from model name
+    if (model.startsWith("claude-")) {
+      return { providerID: "anthropic", modelID: model };
+    }
+    if (
+      model.startsWith("gpt-") ||
+      model.startsWith("o1") ||
+      model.startsWith("o3") ||
+      model.startsWith("o4")
+    ) {
+      return { providerID: "openai", modelID: model };
+    }
+    if (model.startsWith("gemini-")) {
+      return { providerID: "google", modelID: model };
+    }
+
+    // Default: let OpenCode figure it out
+    return { providerID: "opencode", modelID: model };
+  }
+
+  /**
+   * Parse the /config/providers response into ModelInfo[].
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private parseProviderModels(providers: any): ModelInfo[] {
+    const models: ModelInfo[] = [];
+    if (!providers || typeof providers !== "object") return models;
+
+    // The response may be an object keyed by provider ID
+    for (const [providerID, providerData] of Object.entries(providers)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = providerData as any;
+      if (data?.models && typeof data.models === "object") {
+        for (const [modelID, modelData] of Object.entries(data.models)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const md = modelData as any;
+          models.push({
+            value: `${providerID}/${modelID}`,
+            displayName: md.name ?? md.displayName ?? modelID,
+            description: md.description ?? `${providerID} model`,
+            supportsReasoning: md.reasoning === true,
+          });
+        }
+      }
+    }
+
+    return models;
+  }
+
+  // ── SSE event stream ──────────────────────────────────────────────────
 
   /**
    * Start reading the SSE event stream eagerly, pushing messages via callbacks.
@@ -359,12 +543,13 @@ export class OpenCodeProvider implements AgentProvider {
             for (const event of events.parsed) {
               // Filter to events for our session
               const eventSessionId =
-                event.properties.sessionID ?? event.properties.info?.sessionID;
+                event.properties.sessionID ??
+                event.properties.info?.sessionID ??
+                event.properties.part?.sessionID;
               if (eventSessionId && eventSessionId !== sessionId) continue;
 
               const messages = this.mapEventToAgentMessages(
                 event,
-                sessionId,
                 currentContent,
               );
 
@@ -376,7 +561,10 @@ export class OpenCodeProvider implements AgentProvider {
               }
 
               // Session idle = turn complete
-              if (event.type === "session.idle") {
+              if (
+                event.type === "session.idle" &&
+                event.properties.sessionID === sessionId
+              ) {
                 reader.releaseLock();
                 callbacks.onDone();
                 return;
@@ -403,9 +591,8 @@ export class OpenCodeProvider implements AgentProvider {
   /**
    * Parse SSE text into discrete events.
    *
-   * OpenCode SSE format: each event is a single line `data: {"type":"...","properties":{...}}`
-   * separated by double newlines. The event type is inside the JSON payload, not in
-   * a separate `event:` field.
+   * OpenCode SSE format: `data: {"type":"...","properties":{...}}`
+   * separated by double newlines. The event type is inside the JSON payload.
    */
   private parseSSEBuffer(buffer: string): {
     parsed: OpenCodeSSEEvent[];
@@ -425,7 +612,6 @@ export class OpenCodeProvider implements AgentProvider {
         } else if (line.startsWith("data:")) {
           data += line.slice(5);
         }
-        // Ignore event: lines — OpenCode embeds the type in the JSON payload
       }
 
       if (data) {
@@ -447,97 +633,119 @@ export class OpenCodeProvider implements AgentProvider {
   /**
    * Map an OpenCode SSE event to Stratos AgentMessage types.
    *
-   * Actual OpenCode event types observed:
-   * - server.connected          — initial connection ack
-   * - message.updated           — message metadata (user or assistant)
-   * - message.part.updated      — content part (text, thinking, tool_use, tool_result)
-   * - session.updated           — session metadata changes
-   * - session.status            — busy/idle status
-   * - session.error             — error from LLM or tool
-   * - session.idle              — turn complete
-   * - session.diff              — file diffs
+   * Event types from the OpenCode SDK (types.gen.ts):
+   * - message.part.updated  — part content (text, reasoning, tool, step, etc.) + optional delta
+   * - message.updated       — message metadata (errors, tokens, completion)
+   * - session.idle          — turn complete
+   * - session.error         — error from LLM or tool
+   * - permission.updated    — tool permission request
+   * - todo.updated          — task list changes
+   *
+   * Ignored: server.connected, session.updated, session.status,
+   *          session.diff, file.edited, file.watcher.updated, etc.
    */
   private mapEventToAgentMessages(
     event: OpenCodeSSEEvent,
-    _sessionId: string,
     currentContent: string,
   ): AgentMessage[] {
     const messages: AgentMessage[] = [];
     const props = event.properties;
 
     switch (event.type) {
-      // Content part updates (text, thinking, tool calls, tool results)
+      // ── Content parts ──────────────────────────────────────────────
       case "message.part.updated": {
         const part = props.part;
+        const delta = props.delta;
         if (!part) break;
 
         switch (part.type) {
           case "text":
-            if (part.text) {
+            if (delta !== undefined) {
+              // Incremental streaming delta — append to current content
+              messages.push({
+                type: "text",
+                content: part.text ?? "",
+                isStreaming: true,
+              });
+            } else if (part.text) {
               messages.push({
                 type: "text",
                 content: part.text,
-                isStreaming: true,
+                isStreaming: !part.time?.end,
               });
             }
             break;
 
-          case "thinking":
-            if (part.text || part.thinking) {
+          case "reasoning":
+            if (part.text) {
               messages.push({
                 type: "thinking",
-                content: part.text ?? part.thinking ?? "",
-                isStreaming: true,
+                content: part.text,
+                isStreaming: !part.time?.end,
               });
             }
             break;
 
-          case "tool-invocation":
-          case "tool_use": {
-            const toolName =
-              part.toolInvocation?.toolName ??
-              part.name ??
-              part.tool ??
-              "unknown";
-            const toolCallId =
-              part.toolInvocation?.toolCallId ??
-              part.id ??
-              `oc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-            const state = part.toolInvocation?.state;
+          case "tool": {
+            // ToolPart: { callID, tool, state: ToolState }
+            const toolName = part.tool ?? "unknown";
+            const toolCallId = part.callID ?? part.id ?? "";
+            const state = part.state;
 
-            if (state === "call" || state === "partial-call" || !state) {
+            if (!state) break;
+
+            if (state.status === "pending" || state.status === "running") {
               messages.push({
                 type: "tool_use",
                 toolName,
-                input: part.toolInvocation?.args ?? part.input ?? {},
+                input: state.input ?? {},
                 toolCallId,
               });
             }
-            if (state === "result") {
+            if (state.status === "completed") {
+              // Emit tool_use first if we haven't, then the result
+              messages.push({
+                type: "tool_use",
+                toolName,
+                input: state.input ?? {},
+                toolCallId,
+              });
               messages.push({
                 type: "tool_result",
                 toolCallId,
-                output:
-                  typeof part.toolInvocation?.result === "string"
-                    ? part.toolInvocation.result
-                    : JSON.stringify(
-                        part.toolInvocation?.result ?? part.output ?? "",
-                      ),
+                output: state.output ?? "",
+              });
+            }
+            if (state.status === "error") {
+              messages.push({
+                type: "tool_use",
+                toolName,
+                input: state.input ?? {},
+                toolCallId,
+              });
+              messages.push({
+                type: "tool_result",
+                toolCallId,
+                output: `Error: ${state.error ?? "unknown error"}`,
               });
             }
             break;
           }
 
+          // step-start/step-finish: agent step boundaries — ignore for now
           default:
             break;
         }
         break;
       }
 
-      // Message metadata updates (assistant messages may contain error info)
+      // ── Message metadata ───────────────────────────────────────────
       case "message.updated": {
         const info = props.info;
         if (!info) break;
+
+        // Only process assistant messages
+        if (info.role !== "assistant") break;
 
         // If the message has an error, emit it
         if (info.error) {
@@ -549,12 +757,13 @@ export class OpenCodeProvider implements AgentProvider {
           });
         }
 
-        // If message has usage info (on completion), capture it
+        // If message is completed with token usage, emit result
         if (info.tokens && info.time?.completed) {
           const tokens = info.tokens;
           messages.push({
             type: "result",
             content: currentContent,
+            cost: info.cost ?? undefined,
             usage: {
               inputTokens: tokens.input ?? 0,
               outputTokens: tokens.output ?? 0,
@@ -565,7 +774,41 @@ export class OpenCodeProvider implements AgentProvider {
         break;
       }
 
-      // Session idle = turn complete
+      // ── Permission requests ────────────────────────────────────────
+      case "permission.updated": {
+        // OpenCode asks for permission before executing certain tools
+        const title = props.title ?? "Permission required";
+        messages.push({
+          type: "permission_request",
+          toolName: title,
+          input: props.metadata ?? {},
+          requestId: props.id ?? "",
+        });
+        break;
+      }
+
+      // ── Todo updates ───────────────────────────────────────────────
+      case "todo.updated": {
+        const todos: TodoItem[] = (props.todos ?? []).map(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (t: any) => ({
+            content: t.content ?? "",
+            status:
+              t.status === "in_progress"
+                ? "in_progress"
+                : t.status === "completed"
+                  ? "completed"
+                  : "pending",
+            activeForm: t.content ?? "",
+          }),
+        );
+        if (todos.length > 0) {
+          messages.push({ type: "todo_update", todos });
+        }
+        break;
+      }
+
+      // ── Session idle = turn complete ───────────────────────────────
       case "session.idle": {
         messages.push({
           type: "result",
@@ -575,7 +818,7 @@ export class OpenCodeProvider implements AgentProvider {
         break;
       }
 
-      // Session error
+      // ── Session error ──────────────────────────────────────────────
       case "session.error": {
         const errData = props.error?.data ?? props.error ?? props;
         messages.push({
@@ -586,7 +829,7 @@ export class OpenCodeProvider implements AgentProvider {
         break;
       }
 
-      // Ignore: server.connected, session.updated, session.status, session.diff
+      // Ignore all other events
       default:
         break;
     }
