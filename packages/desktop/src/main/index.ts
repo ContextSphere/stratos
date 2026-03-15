@@ -172,7 +172,7 @@ if (!gotLock) {
       mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
     }
 
-    const storage = new FileStorageAdapter(app.getPath("userData"));
+    const storage = new FileStorageAdapter();
     agentManager = new AgentManager(mainWindow, storage);
     agentManager.discoverSlashCommands();
 
