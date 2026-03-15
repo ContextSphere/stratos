@@ -47,19 +47,14 @@ export function useTodoData(messages: ChatMessage[]) {
     const newFingerprint = getTodoFingerprint(newTodoData);
 
     if (newFingerprint !== todoFingerprintRef.current) {
-      // New set of tasks — reset manual toggle and open the panel
+      // New set of tasks — reset manual toggle but don't auto-open
       manuallyToggled.current = false;
       todoFingerprintRef.current = newFingerprint;
       setLatestTodoData(newTodoData);
-      setShowTaskPanel(true);
     } else {
       setLatestTodoData(newTodoData);
-      if (!manuallyToggled.current) {
-        if (areAllTasksCompleted(newTodoData)) {
-          setShowTaskPanel(false);
-        } else {
-          setShowTaskPanel(true);
-        }
+      if (!manuallyToggled.current && areAllTasksCompleted(newTodoData)) {
+        setShowTaskPanel(false);
       }
     }
   }, [messages]);

@@ -803,6 +803,7 @@ function AppInner(): React.ReactElement {
                     homeDir={homeDir}
                     sessionTools={sessionTools ?? undefined}
                     todoData={latestTodoData}
+                    showTaskPanel={showTaskPanel}
                     onToggleTaskPanel={() => setShowTaskPanel((s) => !s)}
                     worktreeMode={activeThread?.worktreeMode}
                     isGitRepo={activeThread?.isGitRepo}
@@ -856,9 +857,6 @@ function AppInner(): React.ReactElement {
                     onPlanReviewDecision={respondPlanReview}
                     onViewPlan={openMarkdown}
                     onUpdateTaskExpanded={updateTaskExpanded}
-                    todoData={latestTodoData}
-                    showTaskPanel={showTaskPanel}
-                    onToggleTaskPanel={() => setShowTaskPanel((s) => !s)}
                   />
 
                   {/* Input */}
