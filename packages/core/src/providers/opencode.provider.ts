@@ -5,7 +5,6 @@ import type {
   ProviderConfig,
   ModelInfo,
   McpServerInfo,
-  TodoItem,
 } from "./types";
 
 import { execSync } from "child_process";
@@ -92,9 +91,39 @@ export class OpenCodeProvider implements AgentProvider {
         slashCommands: [],
       };
 
-      // Start listening for events BEFORE sending the chat message
-      // so we don't miss any events
-      const eventPromise = this.subscribeToEvents(this.sessionId, signal);
+      // Start the SSE connection eagerly BEFORE sending the message.
+      // We use a message queue so events arriving while we await the POST
+      // are buffered and not lost.
+      const queue: AgentMessage[] = [];
+      let resolveWait: (() => void) | null = null;
+      let sseComplete = false;
+      let sseError: Error | null = null;
+
+      // Start SSE reader in background
+      this.readEventStream(this.sessionId, signal, {
+        onMessage: (msg: AgentMessage) => {
+          queue.push(msg);
+          if (resolveWait) {
+            resolveWait();
+            resolveWait = null;
+          }
+        },
+        onDone: () => {
+          sseComplete = true;
+          if (resolveWait) {
+            resolveWait();
+            resolveWait = null;
+          }
+        },
+        onError: (err: Error) => {
+          sseError = err;
+          sseComplete = true;
+          if (resolveWait) {
+            resolveWait();
+            resolveWait = null;
+          }
+        },
+      });
 
       // Send the chat message
       const model = params.model ?? this.config.model;
@@ -119,7 +148,7 @@ export class OpenCodeProvider implements AgentProvider {
       };
 
       const chatRes = await fetch(
-        `${this.baseUrl}/session/${this.sessionId}/chat`,
+        `${this.baseUrl}/session/${this.sessionId}/message`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -134,8 +163,26 @@ export class OpenCodeProvider implements AgentProvider {
         return;
       }
 
-      // Process SSE events
-      yield* eventPromise;
+      // Drain the event queue until session is idle
+      while (!signal.aborted) {
+        while (queue.length > 0) {
+          yield queue.shift()!;
+        }
+
+        if (sseComplete) break;
+
+        // Wait for more events
+        await new Promise<void>((resolve) => {
+          resolveWait = resolve;
+        });
+      }
+
+      if (sseError !== null && !signal.aborted) {
+        yield {
+          type: "error",
+          message: (sseError as Error).message,
+        };
+      }
     } catch (err) {
       if (signal.aborted) return;
       yield {
@@ -264,83 +311,101 @@ export class OpenCodeProvider implements AgentProvider {
   }
 
   /**
-   * Subscribe to OpenCode SSE events for a given session.
-   * Yields AgentMessage types as events arrive.
+   * Start reading the SSE event stream eagerly, pushing messages via callbacks.
+   * This avoids the lazy-evaluation problem of async generators.
    */
-  private async *subscribeToEvents(
+  private readEventStream(
     sessionId: string,
     signal: AbortSignal,
-  ): AsyncGenerator<AgentMessage> {
+    callbacks: {
+      onMessage: (msg: AgentMessage) => void;
+      onDone: () => void;
+      onError: (err: Error) => void;
+    },
+  ): void {
     const url = `${this.baseUrl}/event`;
 
-    const res = await fetch(url, {
+    fetch(url, {
       method: "GET",
       headers: { Accept: "text/event-stream" },
       signal,
-    });
+    })
+      .then(async (res) => {
+        if (!res.ok || !res.body) {
+          callbacks.onMessage({
+            type: "error",
+            message: `Failed to connect to OpenCode event stream: ${res.status}`,
+          });
+          callbacks.onDone();
+          return;
+        }
 
-    if (!res.ok || !res.body) {
-      yield {
-        type: "error",
-        message: `Failed to connect to OpenCode event stream: ${res.status}`,
-      };
-      return;
-    }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let currentContent = "";
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let currentContent = "";
-    let sessionIdle = false;
+        try {
+          // eslint-disable-next-line no-constant-condition
+          while (true) {
+            if (signal.aborted) break;
+            const { done, value } = await reader.read();
+            if (done) break;
 
-    try {
-      while (!signal.aborted && !sessionIdle) {
-        const { done, value } = await reader.read();
-        if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const events = this.parseSSEBuffer(buffer);
+            buffer = events.remaining;
 
-        buffer += decoder.decode(value, { stream: true });
+            for (const event of events.parsed) {
+              // Filter to events for our session
+              const eventSessionId =
+                event.properties.sessionID ?? event.properties.info?.sessionID;
+              if (eventSessionId && eventSessionId !== sessionId) continue;
 
-        // Parse SSE events from buffer
-        const events = this.parseSSEBuffer(buffer);
-        buffer = events.remaining;
+              const messages = this.mapEventToAgentMessages(
+                event,
+                sessionId,
+                currentContent,
+              );
 
-        for (const event of events.parsed) {
-          const messages = this.mapEventToAgentMessages(
-            event,
-            sessionId,
-            currentContent,
-          );
+              for (const msg of messages) {
+                if (msg.type === "text") {
+                  currentContent = msg.content;
+                }
+                callbacks.onMessage(msg);
+              }
 
-          for (const msg of messages) {
-            if (msg.type === "text") {
-              currentContent = msg.content;
-            }
-            yield msg;
-
-            // Check if session is idle (turn completed)
-            if (
-              event.type === "session.idle" ||
-              event.type === "session.complete"
-            ) {
-              sessionIdle = true;
+              // Session idle = turn complete
+              if (event.type === "session.idle") {
+                reader.releaseLock();
+                callbacks.onDone();
+                return;
+              }
             }
           }
+        } finally {
+          reader.releaseLock();
         }
-      }
-    } finally {
-      reader.releaseLock();
-    }
 
-    // Emit final result
-    yield {
-      type: "result",
-      content: currentContent,
-    };
+        callbacks.onDone();
+      })
+      .catch((err) => {
+        if (signal.aborted) {
+          callbacks.onDone();
+        } else {
+          callbacks.onError(
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
+      });
   }
 
   /**
    * Parse SSE text into discrete events.
-   * SSE format: lines prefixed with "data: " separated by double newlines.
+   *
+   * OpenCode SSE format: each event is a single line `data: {"type":"...","properties":{...}}`
+   * separated by double newlines. The event type is inside the JSON payload, not in
+   * a separate `event:` field.
    */
   private parseSSEBuffer(buffer: string): {
     parsed: OpenCodeSSEEvent[];
@@ -352,25 +417,23 @@ export class OpenCodeProvider implements AgentProvider {
 
     for (const part of parts) {
       const lines = part.split("\n");
-      let eventType = "";
       let data = "";
 
       for (const line of lines) {
-        if (line.startsWith("event: ")) {
-          eventType = line.slice(7).trim();
-        } else if (line.startsWith("data: ")) {
+        if (line.startsWith("data: ")) {
           data += line.slice(6);
         } else if (line.startsWith("data:")) {
           data += line.slice(5);
         }
+        // Ignore event: lines — OpenCode embeds the type in the JSON payload
       }
 
       if (data) {
         try {
-          const properties = JSON.parse(data);
+          const payload = JSON.parse(data);
           parsed.push({
-            type: eventType || properties.type || "unknown",
-            properties,
+            type: payload.type || "unknown",
+            properties: payload.properties ?? payload,
           });
         } catch {
           // Skip malformed events
@@ -383,141 +446,147 @@ export class OpenCodeProvider implements AgentProvider {
 
   /**
    * Map an OpenCode SSE event to Stratos AgentMessage types.
+   *
+   * Actual OpenCode event types observed:
+   * - server.connected          — initial connection ack
+   * - message.updated           — message metadata (user or assistant)
+   * - message.part.updated      — content part (text, thinking, tool_use, tool_result)
+   * - session.updated           — session metadata changes
+   * - session.status            — busy/idle status
+   * - session.error             — error from LLM or tool
+   * - session.idle              — turn complete
+   * - session.diff              — file diffs
    */
   private mapEventToAgentMessages(
     event: OpenCodeSSEEvent,
-    sessionId: string,
+    _sessionId: string,
     currentContent: string,
   ): AgentMessage[] {
     const messages: AgentMessage[] = [];
     const props = event.properties;
 
     switch (event.type) {
-      // Text content from the assistant
-      case "message.part.text":
-      case "part.text":
-        if (props.content || props.text) {
-          messages.push({
-            type: "text",
-            content: props.content ?? props.text ?? "",
-            isStreaming: true,
-          });
-        }
-        break;
+      // Content part updates (text, thinking, tool calls, tool results)
+      case "message.part.updated": {
+        const part = props.part;
+        if (!part) break;
 
-      // Thinking/reasoning content
-      case "message.part.thinking":
-      case "part.thinking":
-        if (props.content || props.thinking) {
-          messages.push({
-            type: "thinking",
-            content: props.content ?? props.thinking ?? "",
-            isStreaming: true,
-          });
-        }
-        break;
+        switch (part.type) {
+          case "text":
+            if (part.text) {
+              messages.push({
+                type: "text",
+                content: part.text,
+                isStreaming: true,
+              });
+            }
+            break;
 
-      // Tool invocations
-      case "message.part.tool":
-      case "tool.start":
-      case "part.tool_use": {
-        const toolName =
-          props.name ?? props.toolName ?? props.tool ?? "unknown";
-        const toolCallId =
-          props.id ??
-          props.toolCallId ??
-          `oc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        messages.push({
-          type: "tool_use",
-          toolName,
-          input: props.input ?? props.args ?? {},
-          toolCallId,
-        });
+          case "thinking":
+            if (part.text || part.thinking) {
+              messages.push({
+                type: "thinking",
+                content: part.text ?? part.thinking ?? "",
+                isStreaming: true,
+              });
+            }
+            break;
+
+          case "tool-invocation":
+          case "tool_use": {
+            const toolName =
+              part.toolInvocation?.toolName ??
+              part.name ??
+              part.tool ??
+              "unknown";
+            const toolCallId =
+              part.toolInvocation?.toolCallId ??
+              part.id ??
+              `oc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const state = part.toolInvocation?.state;
+
+            if (state === "call" || state === "partial-call" || !state) {
+              messages.push({
+                type: "tool_use",
+                toolName,
+                input: part.toolInvocation?.args ?? part.input ?? {},
+                toolCallId,
+              });
+            }
+            if (state === "result") {
+              messages.push({
+                type: "tool_result",
+                toolCallId,
+                output:
+                  typeof part.toolInvocation?.result === "string"
+                    ? part.toolInvocation.result
+                    : JSON.stringify(
+                        part.toolInvocation?.result ?? part.output ?? "",
+                      ),
+              });
+            }
+            break;
+          }
+
+          default:
+            break;
+        }
         break;
       }
 
-      // Tool results
-      case "tool.result":
-      case "tool.complete":
-      case "part.tool_result": {
-        const resultId =
-          props.id ?? props.toolCallId ?? props.tool_use_id ?? "";
-        messages.push({
-          type: "tool_result",
-          toolCallId: resultId,
-          output:
-            typeof props.output === "string"
-              ? props.output
-              : JSON.stringify(props.output ?? props.result ?? ""),
-        });
-        break;
-      }
+      // Message metadata updates (assistant messages may contain error info)
+      case "message.updated": {
+        const info = props.info;
+        if (!info) break;
 
-      // Todo/task updates
-      case "message.part.todo":
-      case "todo.update": {
-        const todos: TodoItem[] = (props.todos ?? []).map(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (t: any) => ({
-            content: t.content ?? t.text ?? "",
-            status: t.status ?? "pending",
-            activeForm: t.activeForm ?? t.content ?? "",
-          }),
-        );
-        if (todos.length > 0) {
-          messages.push({ type: "todo_update", todos });
+        // If the message has an error, emit it
+        if (info.error) {
+          const errData = info.error.data ?? info.error;
+          messages.push({
+            type: "error",
+            message:
+              errData.message ?? info.error.name ?? "Unknown OpenCode error",
+          });
+        }
+
+        // If message has usage info (on completion), capture it
+        if (info.tokens && info.time?.completed) {
+          const tokens = info.tokens;
+          messages.push({
+            type: "result",
+            content: currentContent,
+            usage: {
+              inputTokens: tokens.input ?? 0,
+              outputTokens: tokens.output ?? 0,
+            },
+            stop_reason: "end_turn",
+          });
         }
         break;
       }
 
       // Session idle = turn complete
-      case "session.idle":
-      case "session.complete": {
-        const usage = props.usage;
+      case "session.idle": {
         messages.push({
           type: "result",
           content: currentContent,
-          ...(usage
-            ? {
-                usage: {
-                  inputTokens: usage.inputTokens ?? usage.input_tokens ?? 0,
-                  outputTokens: usage.outputTokens ?? usage.output_tokens ?? 0,
-                },
-              }
-            : {}),
           stop_reason: "end_turn",
         });
         break;
       }
 
-      // Error events
-      case "session.error":
-      case "error":
+      // Session error
+      case "session.error": {
+        const errData = props.error?.data ?? props.error ?? props;
         messages.push({
           type: "error",
-          message: props.message ?? props.error ?? "Unknown OpenCode error",
+          message:
+            errData.message ?? props.error?.name ?? "Unknown OpenCode error",
         });
-        break;
-
-      // Message complete (non-streaming text finalization)
-      case "message.complete":
-      case "message.updated": {
-        // Extract the final text content from the message parts
-        if (props.parts) {
-          for (const part of props.parts) {
-            if (part.type === "text" && part.text) {
-              messages.push({
-                type: "text",
-                content: part.text,
-                isStreaming: false,
-              });
-            }
-          }
-        }
         break;
       }
 
-      // Ignore other event types (connection, ping, etc.)
+      // Ignore: server.connected, session.updated, session.status, session.diff
       default:
         break;
     }
