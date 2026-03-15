@@ -1,9 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { FileStorageAdapter } from "../storage/file-adapter";
 import type { StoredMessage } from "../types/thread";
+
+vi.mock("../storage/sdk-transcript", () => ({
+  sdkMessagesToStored: vi.fn().mockResolvedValue([]),
+}));
 
 describe("FileStorageAdapter", () => {
   let tmpDir: string;
@@ -144,6 +148,49 @@ describe("FileStorageAdapter", () => {
 
     it("loadMessages returns empty array for unknown threadId", async () => {
       expect(await adapter.loadMessages("nonexistent")).toEqual([]);
+    });
+
+    it("persists and reloads messages for codex threads", async () => {
+      const thread = adapter.createThread("Codex", undefined, "/tmp", "codex");
+      const msgs: StoredMessage[] = [
+        { id: "m1", role: "user", content: "Hello", timestamp: Date.now() },
+      ];
+
+      adapter.saveMessages(thread.id, msgs);
+
+      await expect(adapter.loadMessages(thread.id)).resolves.toEqual(msgs);
+    });
+
+    it("loads disk messages for legacy threads with missing provider", async () => {
+      const thread = adapter.createThread("Legacy");
+      const msgs: StoredMessage[] = [
+        { id: "m1", role: "assistant", content: "Recovered", timestamp: 123 },
+      ];
+
+      adapter.updateThread(thread.id, { provider: "codex" });
+      adapter.saveMessages(thread.id, msgs);
+      adapter.updateThread(thread.id, { provider: undefined, sessionId: undefined });
+
+      await expect(adapter.loadMessages(thread.id)).resolves.toEqual(msgs);
+    });
+
+    it("continues saving disk messages for legacy threads with existing history", async () => {
+      const thread = adapter.createThread("Legacy");
+      const initial: StoredMessage[] = [
+        { id: "m1", role: "assistant", content: "First", timestamp: 100 },
+      ];
+      const updated: StoredMessage[] = [
+        ...initial,
+        { id: "m2", role: "user", content: "Second", timestamp: 200 },
+      ];
+
+      adapter.updateThread(thread.id, { provider: "codex" });
+      adapter.saveMessages(thread.id, initial);
+      adapter.updateThread(thread.id, { provider: undefined });
+
+      adapter.saveMessages(thread.id, updated);
+
+      await expect(adapter.loadMessages(thread.id)).resolves.toEqual(updated);
     });
   });
 

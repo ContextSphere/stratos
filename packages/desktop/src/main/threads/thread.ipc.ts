@@ -17,8 +17,6 @@ import type {
   ProviderType,
 } from "@stratosapp/core";
 
-const storage = new FileStorageAdapter();
-
 // Reference to clearThreadSession — set by main/index.ts
 let clearSessionFn: ((threadId: string) => void) | null = null;
 let getRunningIdsFn: (() => string[]) | null = null;
@@ -55,7 +53,7 @@ function emitDiagnostic(
   }
 }
 
-export function registerThreadIpc(): void {
+export function registerThreadIpc(storage = new FileStorageAdapter()): void {
   ipcMain.handle(IPC_CHANNELS.THREADS_LIST, async () => {
     return storage.listThreads();
   });

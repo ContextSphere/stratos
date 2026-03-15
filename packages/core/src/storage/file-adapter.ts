@@ -44,6 +44,17 @@ export class FileStorageAdapter implements StorageAdapter {
     return join(this.getThreadsDir(), "messages", `${threadId}.json`);
   }
 
+  private loadMessagesFromDisk(threadId: string): StoredMessage[] {
+    const path = this.getMessagesPath(threadId);
+    if (!existsSync(path)) return [];
+    try {
+      const raw = readFileSync(path, "utf-8");
+      return JSON.parse(raw) as StoredMessage[];
+    } catch {
+      return [];
+    }
+  }
+
   private loadThreadsFile(): ThreadsFile {
     const path = this.getThreadsPath();
     if (!existsSync(path)) {
@@ -159,16 +170,16 @@ export class FileStorageAdapter implements StorageAdapter {
     const thread = this.getThread(threadId);
     if (!thread) return [];
 
+    const diskMessages = this.loadMessagesFromDisk(threadId);
+
     // Non-claude-code providers (e.g. codex) persist messages to disk.
+    // Prefer the disk file when it exists so legacy threads with missing
+    // provider metadata can still recover persisted Codex history.
+    if (thread.provider !== "claude-code" && diskMessages.length > 0) {
+      return diskMessages;
+    }
     if (thread.provider && thread.provider !== "claude-code") {
-      const path = this.getMessagesPath(threadId);
-      if (!existsSync(path)) return [];
-      try {
-        const raw = readFileSync(path, "utf-8");
-        return JSON.parse(raw) as StoredMessage[];
-      } catch {
-        return [];
-      }
+      return diskMessages;
     }
 
     if (!thread.sessionId) return [];
@@ -181,8 +192,16 @@ export class FileStorageAdapter implements StorageAdapter {
 
   saveMessages(threadId: string, messages: StoredMessage[]): void {
     const thread = this.getThread(threadId);
+    const hasExistingDiskMessages = existsSync(this.getMessagesPath(threadId));
     // Only persist to disk for non-claude-code providers; claude-code uses SDK as source of truth.
-    if (!thread?.provider || thread.provider === "claude-code") return;
+    if (
+      !thread ||
+      (thread.provider === "claude-code" &&
+        !hasExistingDiskMessages)
+    ) {
+      return;
+    }
+    if (!thread.provider && !hasExistingDiskMessages) return;
 
     const dir = join(this.getThreadsDir(), "messages");
     if (!existsSync(dir)) {

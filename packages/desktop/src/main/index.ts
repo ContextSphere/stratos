@@ -57,7 +57,7 @@ import {
   unregisterTerminalIpc,
 } from "./terminal/terminal-manager";
 import { statSync } from "fs";
-import { getWorktreeInfo } from "@stratosapp/core";
+import { FileStorageAdapter, getWorktreeInfo } from "@stratosapp/core";
 import { generateDockIcon } from "./dock-icon";
 
 // Worktree instance isolation (automatic in dev mode, like ContextSphere)
@@ -172,7 +172,8 @@ if (!gotLock) {
       mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
     }
 
-    agentManager = new AgentManager(mainWindow);
+    const storage = new FileStorageAdapter(app.getPath("userData"));
+    agentManager = new AgentManager(mainWindow, storage);
     agentManager.discoverSlashCommands();
 
     // Wire up thread session clearing
@@ -188,7 +189,7 @@ if (!gotLock) {
       cdpPort,
     }));
 
-    registerThreadIpc();
+    registerThreadIpc(storage);
     registerGitHubIpc(mainWindow);
     registerClaudeIpc(mainWindow);
     registerCodexIpc(mainWindow);

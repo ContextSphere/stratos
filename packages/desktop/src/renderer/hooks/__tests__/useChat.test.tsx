@@ -212,6 +212,25 @@ describe("useChat — thread switching", () => {
     rerender({ threadId: "thread-2" });
     expect(result.current.interactiveMode).toEqual({ type: "none" });
   });
+
+  it("saves current messages before switching away from a thread", async () => {
+    const stored = [
+      { id: "m1", role: "user" as const, content: "persist me", timestamp: 1 },
+    ];
+    mockApi.threadsLoadMessages.mockResolvedValue(stored);
+
+    const { rerender } = renderUseChat("thread-1");
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    mockApi.threadsLoadMessages.mockResolvedValue([]);
+
+    rerender({ threadId: "thread-2" });
+
+    expect(mockApi.threadsSaveMessages).toHaveBeenCalledWith("thread-1", stored);
+  });
 });
 
 describe("useChat — isStreaming", () => {

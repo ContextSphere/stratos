@@ -95,7 +95,7 @@ export class AgentManager {
   private activeStreams = new Set<string>();
   private modelsCache = new Map<string, { models: unknown[]; ts: number }>();
   private static readonly MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-  private storage = new FileStorageAdapter();
+  private storage: FileStorageAdapter;
   private pendingPermissions = new Map<
     string,
     {
@@ -148,8 +148,9 @@ export class AgentManager {
   private previewFileWatchers = new Map<string, FSWatcher>();
   private cachedSlashCommands: { name: string; description?: string }[] = [];
 
-  constructor(window: BrowserWindow) {
+  constructor(window: BrowserWindow, storage?: FileStorageAdapter) {
     this.window = window;
+    this.storage = storage ?? new FileStorageAdapter();
     this.registerIpc();
     this.detectOrphanedThreads().catch((err) => {
       safeLog(console.error, "[agent-manager] orphan detection failed:", err);
