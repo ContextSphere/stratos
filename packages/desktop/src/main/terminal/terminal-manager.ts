@@ -1,6 +1,7 @@
 import { ipcMain, WebContents } from "electron";
 import * as pty from "node-pty";
 import { randomUUID } from "crypto";
+import { existsSync } from "fs";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
 
 interface TerminalEntry {
@@ -14,9 +15,16 @@ export function registerTerminalIpc(webContents: WebContents): void {
   ipcMain.handle(
     IPC_CHANNELS.TERMINAL_CREATE,
     (_event, cwd: string): string => {
+      const candidates = [
+        process.env.SHELL,
+        "/bin/zsh",
+        "/bin/bash",
+        "/bin/sh",
+      ].filter((s): s is string => !!s);
       const shell =
-        process.env.SHELL ||
-        (process.platform === "win32" ? "powershell.exe" : "/bin/zsh");
+        process.platform === "win32"
+          ? "powershell.exe"
+          : candidates.find((s) => existsSync(s)) || "/bin/sh";
       const id = randomUUID();
       const ptyProcess = pty.spawn(shell, [], {
         name: "xterm-256color",

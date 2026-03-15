@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { useTheme } from "../context/ThemeContext";
 
 interface TerminalPaneProps {
   cwd: string;
@@ -20,15 +21,61 @@ function makeTab(counter: number): Tab {
   return { id: `tab-${Date.now()}-${counter}`, title: `Terminal ${counter}` };
 }
 
+const darkTheme = {
+  background: "#0d0d0d",
+  foreground: "#d4d4d4",
+  cursor: "#d4d4d4",
+  black: "#1e1e1e",
+  red: "#f44747",
+  green: "#4ec9b0",
+  yellow: "#dcdcaa",
+  blue: "#569cd6",
+  magenta: "#c586c0",
+  cyan: "#4dc9b0",
+  white: "#d4d4d4",
+  brightBlack: "#808080",
+  brightRed: "#f44747",
+  brightGreen: "#4ec9b0",
+  brightYellow: "#dcdcaa",
+  brightBlue: "#569cd6",
+  brightMagenta: "#c586c0",
+  brightCyan: "#4dc9b0",
+  brightWhite: "#ffffff",
+};
+
+const lightTheme = {
+  background: "#ffffff",
+  foreground: "#1a1a1a",
+  cursor: "#1a1a1a",
+  black: "#1a1a1a",
+  red: "#cd3131",
+  green: "#008000",
+  yellow: "#795e25",
+  blue: "#0451a5",
+  magenta: "#bc05bc",
+  cyan: "#0598bc",
+  white: "#d4d4d4",
+  brightBlack: "#666666",
+  brightRed: "#cd3131",
+  brightGreen: "#008000",
+  brightYellow: "#795e25",
+  brightBlue: "#0451a5",
+  brightMagenta: "#bc05bc",
+  brightCyan: "#0598bc",
+  brightWhite: "#1a1a1a",
+};
+
 // A single xterm instance — hidden via CSS when not active so the PTY stays alive
 interface TerminalInstanceProps {
   cwd: string;
   active: boolean;
+  appTheme: "dark" | "light";
 }
 
 function TerminalInstance({
   cwd,
   active,
+  appTheme,
 }: TerminalInstanceProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -36,31 +83,13 @@ function TerminalInstance({
   const terminalIdRef = useRef<string | null>(null);
   const cleanupDataListenerRef = useRef<(() => void) | null>(null);
 
+  const xtermTheme = appTheme === "light" ? lightTheme : darkTheme;
+
   useEffect(() => {
     if (!containerRef.current) return;
 
     const terminal = new Terminal({
-      theme: {
-        background: "#0d0d0d",
-        foreground: "#d4d4d4",
-        cursor: "#d4d4d4",
-        black: "#1e1e1e",
-        red: "#f44747",
-        green: "#4ec9b0",
-        yellow: "#dcdcaa",
-        blue: "#569cd6",
-        magenta: "#c586c0",
-        cyan: "#4dc9b0",
-        white: "#d4d4d4",
-        brightBlack: "#808080",
-        brightRed: "#f44747",
-        brightGreen: "#4ec9b0",
-        brightYellow: "#dcdcaa",
-        brightBlue: "#569cd6",
-        brightMagenta: "#c586c0",
-        brightCyan: "#4dc9b0",
-        brightWhite: "#ffffff",
-      },
+      theme: xtermTheme,
       fontFamily: '"Menlo", "Monaco", "Courier New", monospace',
       fontSize: 12,
       lineHeight: 1.3,
@@ -111,6 +140,13 @@ function TerminalInstance({
     };
   }, [cwd]);
 
+  // Update theme when app theme changes
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.theme = xtermTheme;
+    }
+  }, [xtermTheme]);
+
   // Re-fit when becoming visible
   useEffect(() => {
     if (active && fitAddonRef.current && terminalRef.current) {
@@ -132,7 +168,7 @@ function TerminalInstance({
       ref={containerRef}
       className="flex-1 min-h-0 p-1"
       style={{
-        background: "#0d0d0d",
+        background: xtermTheme.background,
         display: active ? "flex" : "none",
         flexDirection: "column",
       }}
@@ -141,6 +177,7 @@ function TerminalInstance({
 }
 
 export function TerminalPane({ cwd }: TerminalPaneProps): React.ReactElement {
+  const appTheme = useTheme();
   const counterRef = useRef(1);
   const [tabs, setTabs] = useState<Tab[]>(() => [makeTab(1)]);
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
@@ -170,17 +207,17 @@ export function TerminalPane({ cwd }: TerminalPaneProps): React.ReactElement {
   );
 
   return (
-    <div className="flex flex-col h-full" style={{ background: "#0d0d0d" }}>
+    <div className="flex flex-col h-full bg-[var(--bg-main)]">
       {/* Tab bar */}
-      <div className="flex items-center flex-shrink-0 bg-[#1a1a1a] border-b border-[#2a2a2a] overflow-x-auto">
+      <div className="flex items-center flex-shrink-0 overflow-x-auto bg-[var(--bg-surface)] border-b border-[var(--border)]">
         {tabs.map((tab) => (
           <div
             key={tab.id}
             onClick={() => setActiveTabId(tab.id)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs cursor-pointer flex-shrink-0 border-r border-[#2a2a2a] select-none ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs cursor-pointer flex-shrink-0 border-r border-[var(--border)] select-none ${
               activeTabId === tab.id
-                ? "bg-[#0d0d0d] text-[#d4d4d4]"
-                : "text-[#808080] hover:text-[#d4d4d4] hover:bg-[#141414]"
+                ? "bg-[var(--bg-main)] text-[var(--text-primary)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-overlay)]"
             }`}
           >
             <span>{tab.title}</span>
@@ -208,7 +245,7 @@ export function TerminalPane({ cwd }: TerminalPaneProps): React.ReactElement {
         ))}
         <button
           onClick={addTab}
-          className="px-2.5 py-1.5 text-[#808080] hover:text-[#d4d4d4] hover:bg-[#141414] flex-shrink-0 transition-colors"
+          className="px-2.5 py-1.5 flex-shrink-0 transition-colors text-[var(--text-muted)] hover:text-[var(--text-primary)]"
           title="New terminal tab"
         >
           <svg
@@ -234,6 +271,7 @@ export function TerminalPane({ cwd }: TerminalPaneProps): React.ReactElement {
             key={tab.id}
             cwd={cwd}
             active={tab.id === activeTabId}
+            appTheme={appTheme}
           />
         ))}
       </div>

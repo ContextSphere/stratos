@@ -692,7 +692,7 @@ function AppInner(): React.ReactElement {
 
         <Group orientation="horizontal" className="flex-1 min-h-0">
           <Panel defaultSize={preview.isOpen ? 70 : 100} minSize={30}>
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col h-full overflow-hidden">
               <div className="flex-1 min-h-0">
                 <div className="flex flex-col h-full bg-[var(--bg-main)] rounded-l-xl overflow-hidden">
                   {sidebarCollapsed && (
