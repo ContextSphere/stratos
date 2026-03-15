@@ -157,7 +157,21 @@ export class FileStorageAdapter implements StorageAdapter {
 
   async loadMessages(threadId: string): Promise<StoredMessage[]> {
     const thread = this.getThread(threadId);
-    if (!thread?.sessionId) return [];
+    if (!thread) return [];
+
+    // Non-claude-code providers (e.g. codex) persist messages to disk.
+    if (thread.provider && thread.provider !== "claude-code") {
+      const path = this.getMessagesPath(threadId);
+      if (!existsSync(path)) return [];
+      try {
+        const raw = readFileSync(path, "utf-8");
+        return JSON.parse(raw) as StoredMessage[];
+      } catch {
+        return [];
+      }
+    }
+
+    if (!thread.sessionId) return [];
     try {
       return await sdkMessagesToStored(thread.sessionId, thread.createdAt);
     } catch {
@@ -165,8 +179,21 @@ export class FileStorageAdapter implements StorageAdapter {
     }
   }
 
-  // No-op: messages are persisted by the Claude Code SDK, not Stratos.
-  saveMessages(_threadId: string, _messages: StoredMessage[]): void {}
+  saveMessages(threadId: string, messages: StoredMessage[]): void {
+    const thread = this.getThread(threadId);
+    // Only persist to disk for non-claude-code providers; claude-code uses SDK as source of truth.
+    if (!thread?.provider || thread.provider === "claude-code") return;
+
+    const dir = join(this.getThreadsDir(), "messages");
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(
+      this.getMessagesPath(threadId),
+      JSON.stringify(messages, null, 2),
+      "utf-8",
+    );
+  }
 
   listFolders(): Folder[] {
     const data = this.loadThreadsFile();

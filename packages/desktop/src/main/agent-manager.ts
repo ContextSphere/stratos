@@ -679,6 +679,10 @@ export class AgentManager {
     };
 
     let specificErrorSent = false;
+    const pendingWriteTools = new Map<
+      string,
+      { filePath: string; content: string }
+    >();
 
     try {
       for await (const msg of session.provider.sendMessage(params)) {
@@ -695,7 +699,9 @@ export class AgentManager {
           }
         }
 
-        // Track plan markdown for artifact viewer
+        // Track plan markdown for artifact viewer.
+        // We stage on tool_use (to capture content from the SDK message) but
+        // only open/watch on tool_result — by then the file actually exists on disk.
         if (
           msg.type === "tool_use" &&
           msg.toolName === "Write" &&
@@ -703,11 +709,18 @@ export class AgentManager {
           msg.input.file_path.endsWith(".md") &&
           typeof msg.input?.content === "string"
         ) {
-          this.openPreviewFile(
-            msg.input.file_path as string,
-            msg.input.content as string,
-            threadId,
-          );
+          pendingWriteTools.set(msg.toolCallId, {
+            filePath: msg.input.file_path as string,
+            content: msg.input.content as string,
+          });
+        }
+        if (
+          msg.type === "tool_result" &&
+          pendingWriteTools.has(msg.toolCallId)
+        ) {
+          const pending = pendingWriteTools.get(msg.toolCallId)!;
+          pendingWriteTools.delete(msg.toolCallId);
+          this.openPreviewFile(pending.filePath, pending.content, threadId);
         }
 
         // Track session ID from init message
