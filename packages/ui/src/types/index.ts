@@ -109,5 +109,8 @@ export interface ModelInfo {
   value: string;
   displayName: string;
   description: string;
+  /** SDK field (claude-code provider) */
+  supportsEffort?: boolean;
+  /** Legacy field (codex provider) */
   supportsReasoning?: boolean;
 }
