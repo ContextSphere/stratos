@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { getAgentModes, normalizeMode, type AgentMode } from "./utils/modes";
 import type { ImageAttachment } from "@stratosapp/ui";
 import {
@@ -22,6 +22,8 @@ import {
   useDiagnostics,
   DiagnosticToastContainer,
   TerminalPane,
+  StratosProvider,
+  useStratos,
 } from "@stratosapp/ui";
 
 import { Group, Panel, Separator } from "react-resizable-panels";
@@ -37,16 +39,26 @@ import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
 import { ConnectCodexDialog } from "./components/ConnectCodexDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { NewThreadDialog } from "./components/NewThreadDialog";
+import { createDesktopBridge } from "./bridge";
 
 export default function App(): React.ReactElement {
+  const bridge = useMemo(() => createDesktopBridge(), []);
   return (
-    <DiagnosticsProvider>
-      <AppInner />
-    </DiagnosticsProvider>
+    <StratosProvider value={bridge}>
+      <DiagnosticsProvider>
+        <AppInner />
+      </DiagnosticsProvider>
+    </StratosProvider>
   );
 }
 
 function AppInner(): React.ReactElement {
+  const {
+    settings: settingsBridge,
+    threads: threadsBridge,
+    chat: chatBridge,
+    files: filesBridge,
+  } = useStratos();
   const { report, toasts, dismiss } = useDiagnostics();
   const {
     threads,
@@ -137,23 +149,27 @@ function AppInner(): React.ReactElement {
 
   // Fetch home directory
   useEffect(() => {
-    window.api.getHomeDirectory().then(setHomeDir);
-  }, []);
+    settingsBridge.getHomeDirectory().then(setHomeDir);
+  }, [settingsBridge]);
 
   // Load persisted theme on startup
   useEffect(() => {
-    window.api.settings.get().then((s) => {
+    settingsBridge.getSettings?.().then((s) => {
+      if (!s) return;
       const t = (s.theme as "dark" | "light") ?? "dark";
       setTheme(t);
       document.documentElement.setAttribute("data-theme", t);
     });
-  }, []);
+  }, [settingsBridge]);
 
-  const handleThemeChange = useCallback(async (t: "dark" | "light") => {
-    setTheme(t);
-    document.documentElement.setAttribute("data-theme", t);
-    await window.api.settings.update({ theme: t });
-  }, []);
+  const handleThemeChange = useCallback(
+    async (t: "dark" | "light") => {
+      setTheme(t);
+      document.documentElement.setAttribute("data-theme", t);
+      await settingsBridge.updateSettings?.({ theme: t });
+    },
+    [settingsBridge],
+  );
 
   // Helper: save the current InputBar draft for a given threadId
   const saveDraft = useCallback((threadId: string) => {
@@ -197,15 +213,15 @@ function AppInner(): React.ReactElement {
   );
 
   const handleAddFolder = useCallback(async () => {
-    const result = await window.api.selectDirectory();
+    const result = await settingsBridge.selectDirectory();
     if (result.canceled || !result.path) return;
     const folder = await addFolder(result.path);
     // Detect git repo
-    const isGit = await window.api.checkIsGitRepo(result.path);
+    const isGit = await settingsBridge.checkIsGitRepo?.(result.path);
     if (isGit) {
       await updateFolder(folder.id, { isGitRepo: true });
     }
-  }, [addFolder, updateFolder]);
+  }, [addFolder, updateFolder, settingsBridge]);
 
   const handleToggleFolderCollapsed = useCallback(
     (folderId: string, collapsed: boolean) =>
@@ -225,7 +241,7 @@ function AppInner(): React.ReactElement {
       );
       // Use folder's git repo info
       if (folder.isGitRepo) {
-        await window.api.threadsUpdate(thread.id, {
+        await threadsBridge.update(thread.id, {
           isGitRepo: true,
           worktreeMode: "local",
         });
@@ -234,7 +250,14 @@ function AppInner(): React.ReactElement {
       await setActiveThreadId(thread.id);
       inputRef.current?.focus();
     },
-    [folders, createThread, setActiveThreadId, refreshThreads, pendingProvider],
+    [
+      folders,
+      createThread,
+      setActiveThreadId,
+      refreshThreads,
+      pendingProvider,
+      threadsBridge,
+    ],
   );
 
   const handleNewThreadFromFolder = useCallback(
@@ -247,7 +270,7 @@ function AppInner(): React.ReactElement {
         pendingProvider,
       );
       if (folder.isGitRepo) {
-        await window.api.threadsUpdate(thread.id, {
+        await threadsBridge.update(thread.id, {
           isGitRepo: true,
           worktreeMode: "local",
         });
@@ -256,24 +279,36 @@ function AppInner(): React.ReactElement {
       await setActiveThreadId(thread.id);
       inputRef.current?.focus();
     },
-    [createThread, setActiveThreadId, refreshThreads, pendingProvider],
+    [
+      createThread,
+      setActiveThreadId,
+      refreshThreads,
+      pendingProvider,
+      threadsBridge,
+    ],
   );
 
   const handleNewThreadBrowse = useCallback(async () => {
     setShowNewThreadDialog(false);
-    const result = await window.api.selectDirectory();
+    const result = await settingsBridge.selectDirectory();
     if (result.canceled || !result.path) return;
     let folder = folders.find((f) => f.path === result.path);
     if (!folder) {
       folder = await addFolder(result.path);
-      const isGit = await window.api.checkIsGitRepo(result.path);
+      const isGit = await settingsBridge.checkIsGitRepo?.(result.path);
       if (isGit) {
         await updateFolder(folder.id, { isGitRepo: true });
         folder = { ...folder, isGitRepo: true };
       }
     }
     await handleNewThreadFromFolder(folder);
-  }, [folders, addFolder, updateFolder, handleNewThreadFromFolder]);
+  }, [
+    folders,
+    addFolder,
+    updateFolder,
+    handleNewThreadFromFolder,
+    settingsBridge,
+  ]);
 
   const handleDeleteThread = useCallback(
     async (id: string) => {
@@ -294,14 +329,14 @@ function AppInner(): React.ReactElement {
 
       if (!threadId) {
         // Open folder picker
-        const result = await window.api.selectDirectory();
+        const result = await settingsBridge.selectDirectory();
         if (result.canceled || !result.path) return;
 
         // Add folder if not already registered
         let folder = folders.find((f) => f.path === result.path);
         if (!folder) {
           folder = await addFolder(result.path);
-          const isGit = await window.api.checkIsGitRepo(result.path);
+          const isGit = await settingsBridge.checkIsGitRepo?.(result.path);
           if (isGit) {
             await updateFolder(folder.id, { isGitRepo: true });
           }
@@ -315,7 +350,7 @@ function AppInner(): React.ReactElement {
           pendingProvider,
         );
         if (folder.isGitRepo) {
-          await window.api.threadsUpdate(thread.id, {
+          await threadsBridge.update(thread.id, {
             isGitRepo: true,
             worktreeMode: "local",
           });
@@ -325,7 +360,7 @@ function AppInner(): React.ReactElement {
         threadId = thread.id;
 
         if (pendingMode) {
-          await window.api.threadsUpdate(threadId, { mode: pendingMode });
+          await threadsBridge.update(threadId, { mode: pendingMode });
           await refreshThreads();
         }
       }
@@ -350,27 +385,29 @@ function AppInner(): React.ReactElement {
       refreshThreads,
       pendingProvider,
       pendingMode,
+      settingsBridge,
+      threadsBridge,
     ],
   );
 
   const handleModelChange = useCallback(
     async (model: string) => {
       if (!activeThreadId) return;
-      await window.api.threadsUpdate(activeThreadId, { model });
+      await threadsBridge.update(activeThreadId, { model });
       await refreshThreads();
     },
-    [activeThreadId, refreshThreads],
+    [activeThreadId, refreshThreads, threadsBridge],
   );
 
   const handleThinkingEffortChange = useCallback(
     async (effort: string) => {
       if (!activeThreadId) return;
-      await window.api.threadsUpdate(activeThreadId, {
+      await threadsBridge.update(activeThreadId, {
         thinkingEffort: effort as "low" | "medium" | "high" | "max",
       });
       await refreshThreads();
     },
-    [activeThreadId, refreshThreads],
+    [activeThreadId, refreshThreads, threadsBridge],
   );
 
   const handleModeChange = useCallback(
@@ -379,10 +416,10 @@ function AppInner(): React.ReactElement {
         setPendingMode(mode);
         return;
       }
-      await window.api.threadsUpdate(activeThreadId, { mode });
+      await threadsBridge.update(activeThreadId, { mode });
       await refreshThreads();
     },
-    [activeThreadId, refreshThreads],
+    [activeThreadId, refreshThreads, threadsBridge],
   );
 
   const handleProviderChange = useCallback(
@@ -392,22 +429,22 @@ function AppInner(): React.ReactElement {
         setPendingMode((prev) => (prev ? normalizeMode(prev, provider) : prev));
         return;
       }
-      await window.api.threadsUpdate(activeThreadId, {
+      await threadsBridge.update(activeThreadId, {
         provider,
         mode: normalizeMode(activeThread?.mode, provider),
       });
       await refreshThreads();
     },
-    [activeThread?.mode, activeThreadId, refreshThreads],
+    [activeThread?.mode, activeThreadId, refreshThreads, threadsBridge],
   );
 
   const handleWorktreeModeChange = useCallback(
     async (mode: "local" | "worktree") => {
       if (!activeThreadId) return;
-      await window.api.threadsUpdate(activeThreadId, { worktreeMode: mode });
+      await threadsBridge.update(activeThreadId, { worktreeMode: mode });
       await refreshThreads();
     },
-    [activeThreadId, refreshThreads],
+    [activeThreadId, refreshThreads, threadsBridge],
   );
 
   const handleToggleFileExplorer = useCallback(() => {
@@ -779,7 +816,7 @@ function AppInner(): React.ReactElement {
                       activeThreadId
                         ? async (serverName: string, enabled: boolean) => {
                             try {
-                              await window.api.mcpToggleServer(
+                              await chatBridge.toggleMcpServer?.(
                                 activeThreadId,
                                 serverName,
                                 enabled,
@@ -791,14 +828,14 @@ function AppInner(): React.ReactElement {
                         : undefined
                     }
                     onOpenMcpConfig={(configPath: string) =>
-                      window.api.mcpOpenConfig(configPath)
+                      chatBridge.openMcpConfig?.(configPath)
                     }
                     onReconnectMcpServer={
                       activeThreadId
                         ? (serverName: string) => {
-                            window.api
-                              .mcpReconnectServer(activeThreadId, serverName)
-                              .catch((err: unknown) =>
+                            chatBridge
+                              .reconnectMcpServer?.(activeThreadId, serverName)
+                              ?.catch((err: unknown) =>
                                 console.error("[MCP] reconnect failed:", err),
                               );
                           }
@@ -835,12 +872,7 @@ function AppInner(): React.ReactElement {
                     onInteractiveResponse={handleInteractiveResponse}
                     slashCommands={slashCommands}
                     cwd={activeThread?.cwd}
-                    filesBridge={{
-                      listAllFiles: window.api.filesListAll,
-                      watchDirectory: window.api.filesWatchStart,
-                      unwatchDirectory: window.api.filesWatchStop,
-                      onDirectoryChanged: window.api.filesOnDirChanged,
-                    }}
+                    filesBridge={filesBridge}
                   />
 
                   {/* Toolbar: provider + model + mode */}
@@ -865,10 +897,10 @@ function AppInner(): React.ReactElement {
                           thinkingEffort={activeThread?.thinkingEffort}
                           onThinkingEffortChange={handleThinkingEffortChange}
                           onFetchModels={() =>
-                            window.api.getAvailableModels(
+                            settingsBridge.getAvailableModels?.(
                               (activeThread?.provider as string) ??
                                 pendingProvider,
-                            )
+                            ) ?? Promise.resolve([])
                           }
                           isOpen={modelPickerOpen}
                           onOpenChange={setModelPickerOpen}
@@ -951,14 +983,7 @@ function AppInner(): React.ReactElement {
                 <PreviewPane
                   preview={preview}
                   onClose={closePreview}
-                  filesBridge={{
-                    listDirectory: window.api.filesListDir,
-                    readFile: window.api.filesReadFile,
-                    writeFile: window.api.filesWriteFile,
-                    watchDirectory: window.api.filesWatchStart,
-                    unwatchDirectory: window.api.filesWatchStop,
-                    onDirectoryChanged: window.api.filesOnDirChanged,
-                  }}
+                  filesBridge={filesBridge}
                 />
               </Panel>
             </>

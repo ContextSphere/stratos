@@ -1,4 +1,5 @@
 import type { Thread, StoredMessage, AgentMode } from "@stratosapp/core";
+import type { ModelInfo } from "../types";
 
 export interface ImageAttachment {
   id: string;
@@ -46,6 +47,7 @@ export interface ChatBridge {
     enabled: boolean,
   ): Promise<void>;
   openMcpConfig?(configPath: string): Promise<void>;
+  reconnectMcpServer?(threadId: string, serverName: string): Promise<void>;
 }
 
 export interface StreamEvent {
@@ -72,7 +74,12 @@ export interface StreamEvent {
 
 export interface ThreadBridge {
   list(): Promise<Thread[]>;
-  create(title?: string, model?: string, cwd?: string): Promise<Thread>;
+  create(
+    title?: string,
+    model?: string,
+    cwd?: string,
+    provider?: string,
+  ): Promise<Thread>;
   update(threadId: string, updates: Partial<Thread>): Promise<Thread | null>;
   delete(threadId: string): Promise<boolean>;
   loadMessages(threadId: string): Promise<StoredMessage[]>;
@@ -82,7 +89,13 @@ export interface ThreadBridge {
 
 export interface SettingsBridge {
   getHomeDirectory(): Promise<string>;
-  selectDirectory(): Promise<{ canceled: boolean; path?: string }>;
+  selectDirectory(
+    defaultPath?: string,
+  ): Promise<{ canceled: boolean; path?: string }>;
+  checkIsGitRepo?(path: string): Promise<boolean>;
+  getSettings?(): Promise<Record<string, unknown>>;
+  updateSettings?(updates: Record<string, unknown>): Promise<void>;
+  getAvailableModels?(provider?: string): Promise<ModelInfo[]>;
 }
 
 export interface PreviewBridge {
