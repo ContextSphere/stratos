@@ -34,7 +34,7 @@ export function TaskPanel({
   );
 
   return (
-    <div className="fixed top-20 right-8 z-30 w-80 max-w-[calc(100vw-2rem)] hidden md:block">
+    <div className="absolute top-full right-0 mt-1 z-30 w-80 max-w-[calc(100vw-2rem)]">
       <PanelCard title="Active Tasks" headerAction={closeButton}>
         <TodoList todoData={todoData} />
       </PanelCard>

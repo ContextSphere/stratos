@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./shared/StatusIndicator";
-import { TaskPanel } from "./TaskPanel";
 import type { ChatMessage, TodoData } from "../types";
 import type { ProviderType } from "../utils/modes";
 
@@ -21,9 +20,6 @@ interface Props {
   ) => void;
   onViewPlan?: (content: string, title: string) => void;
   onUpdateTaskExpanded?: (messageId: string, expanded: boolean) => void;
-  todoData?: TodoData | null;
-  showTaskPanel?: boolean;
-  onToggleTaskPanel?: () => void;
 }
 
 /** Pixel threshold: user is considered "at the bottom" if within this distance */
@@ -39,9 +35,6 @@ export function ChatView({
   onPlanReviewDecision,
   onViewPlan,
   onUpdateTaskExpanded,
-  todoData,
-  showTaskPanel,
-  onToggleTaskPanel,
 }: Props): React.ReactElement {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
@@ -137,11 +130,6 @@ export function ChatView({
           </svg>
           New messages
         </button>
-      )}
-
-      {/* Persistent Task Panel */}
-      {showTaskPanel && todoData && (
-        <TaskPanel todoData={todoData} onClose={() => onToggleTaskPanel?.()} />
       )}
     </div>
   );

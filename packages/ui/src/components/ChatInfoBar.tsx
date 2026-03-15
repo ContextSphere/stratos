@@ -4,6 +4,7 @@ import type { McpServerInfo } from "../bridges/types";
 import { basename } from "../utils/path";
 import { ToolsBadge } from "./ToolsBadge";
 import WorktreeToggle from "./WorktreeToggle";
+import { TaskPanel } from "./TaskPanel";
 
 export interface SessionStats {
   totalCost: number;
@@ -18,6 +19,7 @@ interface ChatInfoBarProps {
   homeDir?: string;
   sessionTools?: string[];
   todoData?: TodoData | null;
+  showTaskPanel?: boolean;
   onToggleTaskPanel?: () => void;
   worktreeMode?: "local" | "worktree";
   isGitRepo?: boolean;
@@ -36,6 +38,7 @@ export function ChatInfoBar({
   homeDir,
   sessionTools,
   todoData,
+  showTaskPanel,
   onToggleTaskPanel,
   worktreeMode,
   isGitRepo,
@@ -96,16 +99,27 @@ export function ChatInfoBar({
           )}
 
           {todoData && todoData.todos.length > 0 && (
-            <button
-              onClick={() => onToggleTaskPanel?.()}
-              title="Toggle task panel"
-              className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--bg-surface)] text-[var(--text-control)] hover:bg-[var(--border)] transition-colors whitespace-nowrap"
-            >
-              <span className="text-xs">
-                {todoData.todos.filter((t) => t.status === "completed").length}/
-                {todoData.todos.length}
-              </span>
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => onToggleTaskPanel?.()}
+                title="Toggle task panel"
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--bg-surface)] text-[var(--text-control)] hover:bg-[var(--border)] transition-colors whitespace-nowrap"
+              >
+                <span className="text-xs">
+                  {
+                    todoData.todos.filter((t) => t.status === "completed")
+                      .length
+                  }
+                  /{todoData.todos.length}
+                </span>
+              </button>
+              {showTaskPanel && (
+                <TaskPanel
+                  todoData={todoData}
+                  onClose={() => onToggleTaskPanel?.()}
+                />
+              )}
+            </div>
           )}
 
           {primaryCwd && onToggleFileExplorer && (
