@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Editor, DiffEditor } from "@monaco-editor/react";
 import { useMonacoFontReady } from "../hooks/useMonacoFontReady";
 import type { ToolCall } from "../types";
@@ -30,6 +30,14 @@ const statusLabels: Record<ToolCall["status"], string> = {
   completed: "Done",
   denied: "Denied",
 };
+
+// Minimal interfaces for the Monaco scroll APIs we need
+type ScrollableEditor = {
+  getScrollTop(): number;
+  getScrollHeight(): number;
+  getLayoutInfo(): { height: number };
+};
+type DiffEditorInstance = { getModifiedEditor(): ScrollableEditor };
 
 const MAX_LINES_INLINE = 500;
 const MAX_VISIBLE_LINES = 30;
@@ -74,6 +82,57 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
   const theme = useTheme();
   const [isExpanded, setIsExpanded] = useState(true);
   const [shouldRenderMonaco, setShouldRenderMonaco] = useState(false);
+  const editorRef = useRef<ScrollableEditor | null>(null);
+  const diffEditorRef = useRef<DiffEditorInstance | null>(null);
+  const monacoContainerRef = useRef<HTMLDivElement>(null);
+
+  // Bubble wheel events to parent when Monaco is at its scroll boundary.
+  // Monaco consumes all wheel events internally; capture-phase interception
+  // lets us intercept before Monaco and redirect boundary scrolls upward.
+  const getActiveEditor = useCallback(() => {
+    if (diffEditorRef.current) return diffEditorRef.current.getModifiedEditor();
+    return editorRef.current;
+  }, []);
+
+  useEffect(() => {
+    const container = monacoContainerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      const editor = getActiveEditor();
+      if (!editor) return;
+
+      const scrollTop = editor.getScrollTop();
+      const scrollHeight = editor.getScrollHeight();
+      const layoutHeight = editor.getLayoutInfo().height;
+
+      const atTop = scrollTop <= 0 && e.deltaY < 0;
+      const atBottom =
+        scrollTop + layoutHeight >= scrollHeight - 1 && e.deltaY > 0;
+
+      if (atTop || atBottom) {
+        e.stopPropagation();
+        e.preventDefault();
+        // Find nearest scrollable ancestor and scroll it
+        let parent = container.parentElement;
+        while (parent) {
+          const { overflowY } = getComputedStyle(parent);
+          if (overflowY === "auto" || overflowY === "scroll") {
+            parent.scrollBy({ top: e.deltaY, behavior: "auto" });
+            break;
+          }
+          parent = parent.parentElement;
+        }
+      }
+    };
+
+    container.addEventListener("wheel", handleWheel, {
+      passive: false,
+      capture: true,
+    });
+    return () =>
+      container.removeEventListener("wheel", handleWheel, { capture: true });
+  }, [getActiveEditor, shouldRenderMonaco]);
 
   const filePath = extractFilePath(toolCall.input);
   const fileName = getFileName(filePath);
@@ -285,7 +344,7 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
           className="border-t border-[var(--border)]"
           style={{ display: isExpanded ? "block" : "none" }}
         >
-          <div className="relative">
+          <div className="relative" ref={monacoContainerRef}>
             {unifiedDiff ? (
               // Unified diff view (Codex-style)
               <Editor
@@ -293,6 +352,9 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
                 language="diff"
                 value={displayContent}
                 theme={monacoThemeName(theme)}
+                onMount={(editor) => {
+                  editorRef.current = editor;
+                }}
                 options={{
                   readOnly: true,
                   minimap: { enabled: false },
@@ -324,6 +386,9 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
                 original={oldContent}
                 modified={newContent}
                 theme={monacoThemeName(theme)}
+                onMount={(editor) => {
+                  diffEditorRef.current = editor;
+                }}
                 options={{
                   readOnly: true,
                   renderSideBySide: true,
@@ -358,6 +423,9 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
                 language={language}
                 value={displayContent}
                 theme={monacoThemeName(theme)}
+                onMount={(editor) => {
+                  editorRef.current = editor;
+                }}
                 options={{
                   readOnly: true,
                   minimap: { enabled: false },
