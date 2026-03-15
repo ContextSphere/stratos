@@ -51,6 +51,10 @@ export function createDesktopBridge(): StratosContextValue {
       loadMessages: (threadId) => window.api.threadsLoadMessages(threadId),
       getActive: () => window.api.threadsGetActive(),
       setActive: (id) => window.api.threadsSetActive(id),
+      onThreadActivate: (callback) => {
+        window.api.onThreadActivate(callback);
+        return () => window.api.removeAllListeners("chat:thread-activate");
+      },
     },
 
     settings: {
@@ -60,6 +64,14 @@ export function createDesktopBridge(): StratosContextValue {
       getSettings: () => window.api.settings.get(),
       updateSettings: (updates) => window.api.settings.update(updates),
       getAvailableModels: (provider) => window.api.getAvailableModels(provider),
+      onOpenModelPicker: (callback) => {
+        window.api.onOpenModelPicker(callback);
+        return () => window.api.removeAllListeners("ui:open-model-picker");
+      },
+      onDiagnosticError: (callback) => {
+        window.api.onDiagnosticError(callback);
+        return () => window.api.removeAllListeners("app:diagnostic-error");
+      },
     },
 
     files: {

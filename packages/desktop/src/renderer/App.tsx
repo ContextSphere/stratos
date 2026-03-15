@@ -578,11 +578,10 @@ function AppInner(): React.ReactElement {
 
   // Handle notification click -> activate thread
   useEffect(() => {
-    window.api.onThreadActivate(({ threadId }: { threadId: string }) => {
+    return threadsBridge.onThreadActivate?.(({ threadId }) => {
       handleThreadClick(threadId);
     });
-    return () => window.api.removeAllListeners("chat:thread-activate");
-  }, [handleThreadClick]);
+  }, [handleThreadClick, threadsBridge]);
 
   // Cmd+B to toggle file explorer
   useEffect(() => {
@@ -638,9 +637,10 @@ function AppInner(): React.ReactElement {
 
   // Cmd+P to open model picker (via main process menu)
   useEffect(() => {
-    window.api.onOpenModelPicker(() => setModelPickerOpen((v) => !v));
-    return () => window.api.removeAllListeners("ui:open-model-picker");
-  }, []);
+    return settingsBridge.onOpenModelPicker?.(() =>
+      setModelPickerOpen((v) => !v),
+    );
+  }, [settingsBridge]);
 
   // Auto-open Claude auth dialog on auth failure
   useEffect(() => {
@@ -651,11 +651,10 @@ function AppInner(): React.ReactElement {
 
   // Listen for diagnostic errors from main process
   useEffect(() => {
-    window.api.onDiagnosticError((data) => {
+    return settingsBridge.onDiagnosticError?.((data) => {
       report(data);
     });
-    return () => window.api.removeAllListeners("app:diagnostic-error");
-  }, [report]);
+  }, [report, settingsBridge]);
 
   const toggleSidebar = useCallback(
     () => setSidebarCollapsed((prev) => !prev),

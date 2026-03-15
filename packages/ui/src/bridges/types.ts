@@ -85,6 +85,7 @@ export interface ThreadBridge {
   loadMessages(threadId: string): Promise<StoredMessage[]>;
   getActive(): Promise<string | null>;
   setActive(threadId: string | null): Promise<void>;
+  onThreadActivate?(callback: (data: { threadId: string }) => void): () => void;
 }
 
 export interface SettingsBridge {
@@ -96,6 +97,16 @@ export interface SettingsBridge {
   getSettings?(): Promise<Record<string, unknown>>;
   updateSettings?(updates: Record<string, unknown>): Promise<void>;
   getAvailableModels?(provider?: string): Promise<ModelInfo[]>;
+  onOpenModelPicker?(callback: () => void): () => void;
+  onDiagnosticError?(
+    callback: (data: {
+      title: string;
+      message: string;
+      context?: Record<string, unknown>;
+      stack?: string;
+      severity?: "error" | "warning" | "info";
+    }) => void,
+  ): () => void;
 }
 
 export interface PreviewBridge {
