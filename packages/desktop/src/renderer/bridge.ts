@@ -62,7 +62,9 @@ export function createDesktopBridge(): StratosContextValue {
       selectDirectory: (defaultPath) => window.api.selectDirectory(defaultPath),
       checkIsGitRepo: (path) => window.api.checkIsGitRepo(path),
       getSettings: () => window.api.settings.get(),
-      updateSettings: (updates) => window.api.settings.update(updates),
+      updateSettings: async (updates) => {
+        await window.api.settings.update(updates);
+      },
       getAvailableModels: (provider) => window.api.getAvailableModels(provider),
       onOpenModelPicker: (callback) => {
         window.api.onOpenModelPicker(callback);
