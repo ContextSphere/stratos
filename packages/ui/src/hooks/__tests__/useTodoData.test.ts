@@ -27,7 +27,7 @@ describe("useTodoData", () => {
     const messages = [makeMsg("1"), makeMsg("2", todos)];
     const { result } = renderHook(() => useTodoData(messages));
     expect(result.current.latestTodoData).toEqual(todos);
-    expect(result.current.showTaskPanel).toBe(true);
+    expect(result.current.showTaskPanel).toBe(false);
   });
 
   it("auto-hides panel when all tasks are completed (same fingerprint)", () => {
@@ -44,9 +44,15 @@ describe("useTodoData", () => {
     const { result, rerender } = renderHook(({ msgs }) => useTodoData(msgs), {
       initialProps: { msgs: [makeMsg("1", initial)] },
     });
+    expect(result.current.showTaskPanel).toBe(false);
+
+    // Manually open the panel
+    act(() => {
+      result.current.setShowTaskPanel(true);
+    });
     expect(result.current.showTaskPanel).toBe(true);
 
-    // Same fingerprint (content unchanged), but all completed
+    // Same fingerprint (content unchanged), but all completed — should auto-close
     rerender({ msgs: [makeMsg("1", completed)] });
     expect(result.current.showTaskPanel).toBe(false);
   });
@@ -59,6 +65,12 @@ describe("useTodoData", () => {
     };
     const { result, rerender } = renderHook(({ msgs }) => useTodoData(msgs), {
       initialProps: { msgs: [makeMsg("1", todos)] },
+    });
+    expect(result.current.showTaskPanel).toBe(false);
+
+    // Manually open
+    act(() => {
+      result.current.setShowTaskPanel(true);
     });
     expect(result.current.showTaskPanel).toBe(true);
 
@@ -82,7 +94,7 @@ describe("useTodoData", () => {
     expect(result.current.showTaskPanel).toBe(false);
   });
 
-  it("resets manual toggle when new task set appears", () => {
+  it("switching to a new task set keeps panel closed and updates data", () => {
     const first: TodoData = {
       todos: [
         { content: "Task A", status: "in_progress", activeForm: "Doing A" },
@@ -91,19 +103,15 @@ describe("useTodoData", () => {
     const { result, rerender } = renderHook(({ msgs }) => useTodoData(msgs), {
       initialProps: { msgs: [makeMsg("1", first)] },
     });
-
-    // Manually close
-    act(() => {
-      result.current.setShowTaskPanel(false);
-    });
     expect(result.current.showTaskPanel).toBe(false);
 
-    // New set of tasks (different fingerprint)
+    // New set of tasks (different fingerprint) — panel stays closed, data updates
     const second: TodoData = {
       todos: [{ content: "Task B", status: "pending", activeForm: "Doing B" }],
     };
     rerender({ msgs: [makeMsg("1", first), makeMsg("2", second)] });
-    expect(result.current.showTaskPanel).toBe(true);
+    expect(result.current.showTaskPanel).toBe(false);
+    expect(result.current.latestTodoData).toEqual(second);
   });
 
   it("does not crash when todoData exists but todos is undefined (malformed persisted data)", () => {
