@@ -4,6 +4,7 @@ import { MarkdownPreview } from "./preview/MarkdownPreview";
 import { ArtifactEditorPreview } from "./preview/ArtifactEditorPreview";
 import { FileExplorer } from "./FileExplorer";
 import { TerminalPane } from "./TerminalPane";
+import { WebviewPreview } from "./preview/WebviewPreview";
 
 interface Props {
   preview: PreviewState;
@@ -111,9 +112,7 @@ export function PreviewPane({
       ) : preview.type === "terminal" ? (
         <TerminalPane cwd={preview.cwd ?? ""} />
       ) : preview.url ? (
-        <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
-          External URL preview not available
-        </div>
+        <WebviewPreview url={preview.url} />
       ) : null}
     </div>
   );

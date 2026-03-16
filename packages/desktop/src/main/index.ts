@@ -122,6 +122,7 @@ if (!gotLock) {
         sandbox: false,
         contextIsolation: true,
         nodeIntegration: false,
+        webviewTag: true,
       },
     });
 
