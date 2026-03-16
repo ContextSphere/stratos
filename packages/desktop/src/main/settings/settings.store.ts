@@ -4,13 +4,18 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 
 export type AppTheme = "dark" | "light";
 
+export interface ProviderPrefs {
+  lastUsedModel?: string;
+  lastUsedEffort?: "low" | "medium" | "high" | "max";
+}
+
 export interface AppSettings {
   theme?: AppTheme;
+  providers?: Record<string, ProviderPrefs>;
   [key: string]: unknown;
 }
 
 const STORE_FILE = "app-settings.json";
-
 const GLOBAL_CONFIG_DIR = join(homedir(), ".stratos");
 
 function getStorePath(): string {
@@ -46,7 +51,40 @@ export function saveSettings(settings: AppSettings): void {
 }
 
 export function updateSettings(updates: Partial<AppSettings>): AppSettings {
-  const updated = { ...loadSettings(), ...updates };
+  const current = loadSettings();
+  const updated: AppSettings = { ...current, ...updates };
+  // Deep-merge providers so writing one provider's prefs doesn't erase another's
+  if (updates.providers !== undefined) {
+    updated.providers = {
+      ...current.providers,
+      ...Object.fromEntries(
+        Object.entries(updates.providers).map(([provider, prefs]) => [
+          provider,
+          { ...(current.providers?.[provider] ?? {}), ...prefs },
+        ]),
+      ),
+    };
+  }
   saveSettings(updated);
   return updated;
+}
+
+export function getProviderSettings(provider: string): ProviderPrefs {
+  const settings = loadSettings();
+  return settings.providers?.[provider] ?? {};
+}
+
+export function setProviderSettings(
+  provider: string,
+  patch: Partial<ProviderPrefs>,
+): void {
+  const current = loadSettings();
+  const existing = current.providers?.[provider] ?? {};
+  saveSettings({
+    ...current,
+    providers: {
+      ...current.providers,
+      [provider]: { ...existing, ...patch },
+    },
+  });
 }
