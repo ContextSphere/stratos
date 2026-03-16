@@ -572,10 +572,10 @@ function AppInner(): React.ReactElement {
     [activeThread?.cwd, openFileExplorer, openUrl],
   );
 
-  // Ctrl+Tab to cycle modes
+  // Shift+Tab to cycle modes
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.shiftKey) && e.key === "Tab") {
+      if (e.shiftKey && !e.ctrlKey && e.key === "Tab") {
         e.preventDefault();
         e.stopPropagation();
         if (isStreaming) return;
@@ -595,6 +595,25 @@ function AppInner(): React.ReactElement {
     return () =>
       document.removeEventListener("keydown", handler, { capture: true });
   }, [activeThread, pendingMode, isStreaming, handleModeChange]);
+
+  // Ctrl+Tab / Ctrl+Shift+Tab to cycle threads
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (threads.length <= 1) return;
+        const currentIndex = threads.findIndex((t) => t.id === activeThreadId);
+        const direction = e.shiftKey ? -1 : 1;
+        const nextIndex =
+          (currentIndex + direction + threads.length) % threads.length;
+        setActiveThreadId(threads[nextIndex].id);
+      }
+    };
+    document.addEventListener("keydown", handler, { capture: true });
+    return () =>
+      document.removeEventListener("keydown", handler, { capture: true });
+  }, [threads, activeThreadId, setActiveThreadId]);
 
   // Handle notification click -> activate thread
   useEffect(() => {
