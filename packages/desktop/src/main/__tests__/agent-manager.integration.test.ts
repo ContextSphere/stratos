@@ -28,6 +28,7 @@ vi.mock("@stratosapp/core", async (importOriginal) => {
 // The import is: import { loadSettings } from './settings/settings.store'
 vi.mock("../settings/settings.store", () => ({
   loadSettings: vi.fn().mockReturnValue({}),
+  setProviderSettings: vi.fn(),
 }));
 
 describe("AgentManager (integration)", () => {
@@ -112,5 +113,47 @@ describe("AgentManager (integration)", () => {
     const manager = new AgentManager(mockWindow);
     expect(manager.getSlashCommands()).toEqual([]);
     manager.dispose();
+  });
+
+  describe("stale model detection", () => {
+    it("falls back to first available model and updates settings when saved model is not in cache", async () => {
+      const mockStorage = {
+        getThread: vi.fn().mockResolvedValue({
+          id: "t1",
+          model: "claude-stale-model",
+          provider: "claude-code",
+          cwd: "/home/user",
+        }),
+        updateThread: vi.fn().mockResolvedValue(undefined),
+        clearPersistedSessionId: vi.fn(),
+        loadMessages: vi.fn().mockResolvedValue([]),
+        saveMessages: vi.fn(),
+      };
+
+      const { setProviderSettings } =
+        await import("../settings/settings.store");
+      const manager = new AgentManager(mockWindow);
+
+      // Inject a storage stub and seed the modelsCache with models that
+      // do NOT include "claude-stale-model"
+      (manager as any).storage = mockStorage;
+      (manager as any).modelsCache.set("claude-code", {
+        models: [{ value: "claude-sonnet-4-6" }, { value: "claude-haiku-4-5" }],
+        ts: Date.now(),
+      });
+
+      // runStream is private — access via any cast
+      // It will throw after the stale-model correction when it tries to create
+      // a provider session (no real provider injected). That's fine — we only
+      // care that updateThread and setProviderSettings were called first.
+      await (manager as any).runStream("t1", "hello").catch(() => {});
+
+      expect(mockStorage.updateThread).toHaveBeenCalledWith("t1", {
+        model: "claude-sonnet-4-6",
+      });
+      expect(setProviderSettings).toHaveBeenCalledWith("claude-code", {
+        lastUsedModel: "claude-sonnet-4-6",
+      });
+    });
   });
 });

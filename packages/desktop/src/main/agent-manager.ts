@@ -25,7 +25,7 @@ import type {
   SendMessageParams,
   ProviderType,
 } from "@stratosapp/core";
-import { loadSettings } from "./settings/settings.store";
+import { loadSettings, setProviderSettings } from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 import { resolveClaudePathOrUndefined } from "./integrations/claude-path";
 
@@ -469,6 +469,29 @@ export class AgentManager {
   ): Promise<void> {
     let thread = await this.storage.getThread(threadId);
     if (!thread) throw new Error(`Thread ${threadId} not found`);
+
+    // Stale model check: only runs before the first message (no session yet).
+    // If the model cache is populated and thread.model isn't in it, fall back
+    // silently to the first available model and self-correct the saved setting.
+    if (thread.model && !this.sessions.has(threadId)) {
+      const cached = this.modelsCache.get(thread.provider ?? "claude-code");
+      if (cached && cached.models.length > 0) {
+        const modelValues = cached.models.map(
+          (m) => (m as { value: string }).value,
+        );
+        if (!modelValues.includes(thread.model)) {
+          const fallback = modelValues[0];
+          console.warn(
+            `[agent-manager] thread ${threadId}: model "${thread.model}" not in available list, falling back to "${fallback}"`,
+          );
+          await this.storage.updateThread(threadId, { model: fallback });
+          if (thread.provider) {
+            setProviderSettings(thread.provider, { lastUsedModel: fallback });
+          }
+          thread = { ...thread, model: fallback };
+        }
+      }
+    }
 
     // Lazy worktree creation: if user selected worktree mode but no worktree exists yet
     if (thread.worktreeMode === "worktree" && !thread.worktree && thread.cwd) {
