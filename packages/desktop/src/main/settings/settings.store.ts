@@ -78,13 +78,5 @@ export function setProviderSettings(
   provider: string,
   patch: Partial<ProviderPrefs>,
 ): void {
-  const current = loadSettings();
-  const existing = current.providers?.[provider] ?? {};
-  saveSettings({
-    ...current,
-    providers: {
-      ...current.providers,
-      [provider]: { ...existing, ...patch },
-    },
-  });
+  updateSettings({ providers: { [provider]: patch } });
 }

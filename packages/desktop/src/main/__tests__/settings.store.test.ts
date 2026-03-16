@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 
 vi.mock("fs");
 vi.mock("os", () => ({ homedir: () => "/mock-home" }));
@@ -7,7 +7,6 @@ vi.mock("os", () => ({ homedir: () => "/mock-home" }));
 const mockExistsSync = vi.mocked(existsSync);
 const mockReadFileSync = vi.mocked(readFileSync);
 const mockWriteFileSync = vi.mocked(writeFileSync);
-vi.mocked(mkdirSync);
 
 describe("settings.store", () => {
   beforeEach(() => {
