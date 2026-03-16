@@ -395,8 +395,18 @@ function AppInner(): React.ReactElement {
       if (!activeThreadId) return;
       await threadsBridge.update(activeThreadId, { model });
       await refreshThreads();
+      const provider = activeThread?.provider ?? "claude-code";
+      await settingsBridge.updateSettings?.({
+        providers: { [provider]: { lastUsedModel: model } },
+      });
     },
-    [activeThreadId, refreshThreads, threadsBridge],
+    [
+      activeThreadId,
+      activeThread,
+      refreshThreads,
+      threadsBridge,
+      settingsBridge,
+    ],
   );
 
   const handleThinkingEffortChange = useCallback(
@@ -406,8 +416,18 @@ function AppInner(): React.ReactElement {
         thinkingEffort: effort as "low" | "medium" | "high" | "max",
       });
       await refreshThreads();
+      const provider = activeThread?.provider ?? "claude-code";
+      await settingsBridge.updateSettings?.({
+        providers: { [provider]: { lastUsedEffort: effort } },
+      });
     },
-    [activeThreadId, refreshThreads, threadsBridge],
+    [
+      activeThreadId,
+      activeThread,
+      refreshThreads,
+      threadsBridge,
+      settingsBridge,
+    ],
   );
 
   const handleModeChange = useCallback(
