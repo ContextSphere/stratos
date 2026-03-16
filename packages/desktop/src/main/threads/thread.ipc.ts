@@ -4,6 +4,7 @@ import { join } from "path";
 import { mkdirSync } from "fs";
 import { homedir } from "os";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
+import { getProviderSettings } from "../settings/settings.store";
 import {
   FileStorageAdapter,
   readTraceEntries,
@@ -78,7 +79,18 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
       cwd?: string,
       provider?: string,
     ) => {
-      const thread = await storage.createThread(title, model, cwd, provider);
+      // Pre-populate model and effort from last-used provider settings
+      const providerPrefs = provider ? getProviderSettings(provider) : {};
+      const resolvedModel = model ?? providerPrefs.lastUsedModel;
+
+      const thread = await storage.createThread(title, resolvedModel, cwd, provider);
+
+      if (providerPrefs.lastUsedEffort) {
+        await storage.updateThread(thread.id, {
+          thinkingEffort: providerPrefs.lastUsedEffort,
+        });
+      }
+
       return thread;
     },
   );

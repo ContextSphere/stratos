@@ -100,4 +100,96 @@ describe("thread IPC session reset behavior", () => {
       cwd: "/tmp/other",
     });
   });
+
+  describe("THREADS_CREATE provider settings pre-population", () => {
+    // Each test resets modules so the vi.doMock for settings.store takes effect
+    // on the fresh thread.ipc import. The outer beforeEach only does clearAllMocks,
+    // not resetModules, so we must do it here explicitly.
+
+    it("pre-populates model from provider settings when lastUsedModel is set", async () => {
+      vi.resetModules();
+      handleMocks.clear();
+      vi.doMock("../settings/settings.store", () => ({
+        getProviderSettings: vi.fn().mockReturnValue({
+          lastUsedModel: "claude-sonnet-4-6",
+        }),
+        setProviderSettings: vi.fn(),
+        updateSettings: vi.fn(),
+        loadSettings: vi.fn().mockReturnValue({ theme: "dark" }),
+      }));
+
+      const threadIpc = await import("../threads/thread.ipc");
+      threadIpc.registerThreadIpc(mockStorage as any);
+
+      const createHandler = handleMocks.get("chat:threads:create");
+      mockStorage.createThread.mockResolvedValue({ id: "t1", model: "claude-sonnet-4-6" });
+      mockStorage.updateThread.mockResolvedValue(undefined);
+
+      await createHandler?.({}, "New chat", undefined, "/home/user", "claude-code");
+
+      expect(mockStorage.createThread).toHaveBeenCalledWith(
+        "New chat",
+        "claude-sonnet-4-6", // lastUsedModel injected
+        "/home/user",
+        "claude-code",
+      );
+      // No effort set — updateThread must NOT be called
+      expect(mockStorage.updateThread).not.toHaveBeenCalled();
+    });
+
+    it("pre-populates thinkingEffort via updateThread when lastUsedEffort is set", async () => {
+      vi.resetModules();
+      handleMocks.clear();
+      vi.doMock("../settings/settings.store", () => ({
+        getProviderSettings: vi.fn().mockReturnValue({
+          lastUsedModel: "claude-sonnet-4-6",
+          lastUsedEffort: "medium",
+        }),
+        setProviderSettings: vi.fn(),
+        updateSettings: vi.fn(),
+        loadSettings: vi.fn().mockReturnValue({ theme: "dark" }),
+      }));
+
+      const threadIpc = await import("../threads/thread.ipc");
+      threadIpc.registerThreadIpc(mockStorage as any);
+
+      const createHandler = handleMocks.get("chat:threads:create");
+      mockStorage.createThread.mockResolvedValue({ id: "t1" });
+      mockStorage.updateThread.mockResolvedValue(undefined);
+
+      await createHandler?.({}, "New chat", undefined, "/home/user", "claude-code");
+
+      expect(mockStorage.updateThread).toHaveBeenCalledWith("t1", {
+        thinkingEffort: "medium",
+      });
+    });
+
+    it("creates thread without pre-population when no provider settings exist (first launch)", async () => {
+      vi.resetModules();
+      handleMocks.clear();
+      vi.doMock("../settings/settings.store", () => ({
+        getProviderSettings: vi.fn().mockReturnValue({}),
+        setProviderSettings: vi.fn(),
+        updateSettings: vi.fn(),
+        loadSettings: vi.fn().mockReturnValue({ theme: "dark" }),
+      }));
+
+      const threadIpc = await import("../threads/thread.ipc");
+      threadIpc.registerThreadIpc(mockStorage as any);
+
+      const createHandler = handleMocks.get("chat:threads:create");
+      mockStorage.createThread.mockResolvedValue({ id: "t1" });
+      mockStorage.updateThread.mockResolvedValue(undefined);
+
+      await createHandler?.({}, "New chat", undefined, "/home/user", "claude-code");
+
+      expect(mockStorage.createThread).toHaveBeenCalledWith(
+        "New chat",
+        undefined, // no pre-population
+        "/home/user",
+        "claude-code",
+      );
+      expect(mockStorage.updateThread).not.toHaveBeenCalled();
+    });
+  });
 });
