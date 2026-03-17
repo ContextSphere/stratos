@@ -7,6 +7,7 @@ const FileChangeViewer = lazy(() =>
 
 interface Props {
   toolCall: ToolCall;
+  isHistorical?: boolean;
 }
 
 const statusColors: Record<ToolCall["status"], string> = {
@@ -56,7 +57,10 @@ function SkillCard({ toolCall }: Props): React.ReactElement {
   );
 }
 
-export function ToolCallCard({ toolCall }: Props): React.ReactElement {
+export function ToolCallCard({
+  toolCall,
+  isHistorical = false,
+}: Props): React.ReactElement {
   if (toolCall.toolName === "Skill") {
     return <SkillCard toolCall={toolCall} />;
   }
@@ -81,7 +85,7 @@ export function ToolCallCard({ toolCall }: Props): React.ReactElement {
           </div>
         }
       >
-        <FileChangeViewer toolCall={toolCall} />
+        <FileChangeViewer toolCall={toolCall} defaultExpanded={!isHistorical} />
       </Suspense>
     );
   }

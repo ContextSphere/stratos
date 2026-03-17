@@ -465,7 +465,11 @@ export function MessageBubble({
       {regularToolCalls.length > 0 && (
         <div className="w-full space-y-2">
           {regularToolCalls.map((tc) => (
-            <ToolCallCard key={tc.toolCallId} toolCall={tc} />
+            <ToolCallCard
+              key={tc.toolCallId}
+              toolCall={tc}
+              isHistorical={!isStreaming}
+            />
           ))}
         </div>
       )}

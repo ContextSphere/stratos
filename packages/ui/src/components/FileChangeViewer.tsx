@@ -15,6 +15,7 @@ import { useTheme, monacoThemeName } from "../context/ThemeContext";
 
 interface Props {
   toolCall: ToolCall;
+  defaultExpanded?: boolean;
 }
 
 const statusColors: Record<ToolCall["status"], string> = {
@@ -77,10 +78,14 @@ function calculateChangeStats(
   return { added, removed };
 }
 
-export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
+export function FileChangeViewer({
+  toolCall,
+  defaultExpanded = true,
+}: Props): React.ReactElement {
   useMonacoFontReady();
   const theme = useTheme();
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const hasEverExpandedRef = useRef(defaultExpanded);
   const [shouldRenderMonaco, setShouldRenderMonaco] = useState(false);
   const editorRef = useRef<ScrollableEditor | null>(null);
   const diffEditorRef = useRef<DiffEditorInstance | null>(null);
@@ -186,7 +191,11 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
     MAX_VISIBLE_LINES,
   );
 
-  const toggleExpand = () => setIsExpanded(!isExpanded);
+  const toggleExpand = () => {
+    const next = !isExpanded;
+    if (next) hasEverExpandedRef.current = true;
+    setIsExpanded(next);
+  };
 
   // Binary file indicator
   if (isBinary) {
@@ -338,8 +347,10 @@ export function FileChangeViewer({ toolCall }: Props): React.ReactElement {
 
       {/* Monaco editors - kept mounted once rendered (hidden via CSS when collapsed).
           Unmounting Monaco while it's active causes a race condition:
-          "TextModel got disposed before DiffEditorWidget model got reset" */}
-      {shouldRenderMonaco && !isTooLarge && (
+          "TextModel got disposed before DiffEditorWidget model got reset".
+          We skip rendering entirely until the user has expanded at least once
+          (hasEverExpandedRef) to avoid Monaco initialization cost on history load. */}
+      {shouldRenderMonaco && !isTooLarge && hasEverExpandedRef.current && (
         <div
           className="border-t border-[var(--border)]"
           style={{ display: isExpanded ? "block" : "none" }}
