@@ -321,8 +321,16 @@ export function MessageBubble({
     message.todoData ||
     message.worktreeProgress
   );
+  const INTERACTIVE_TOOLS = new Set([
+    "AskUserQuestion",
+    "EnterPlanMode",
+    "ExitPlanMode",
+    "TodoWrite",
+  ]);
   const regularToolCalls = !message.taskInfo
-    ? (message.toolCalls ?? []).filter((tc) => tc.toolName !== "Task")
+    ? (message.toolCalls ?? []).filter(
+        (tc) => tc.toolName !== "Task" && !INTERACTIVE_TOOLS.has(tc.toolName),
+      )
     : [];
   const hasToolCalls = regularToolCalls.length > 0 || !!message.taskInfo;
 
