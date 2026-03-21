@@ -1009,23 +1009,29 @@ export class AgentManager {
     this.previewFileWatchers.get(threadId)?.close();
 
     let debounce: NodeJS.Timeout | null = null;
-    const watcher = watch(filePath, { persistent: false }, () => {
-      if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(async () => {
-        try {
-          const content = await fsPromises.readFile(filePath, "utf-8");
-          const fileName = filePath.split("/").pop() ?? filePath;
-          this.lastPlanMarkdown = { content, title: fileName };
-          this.sendToRenderer(
-            IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
-            { content, title: fileName, filePath },
-            threadId,
-          );
-        } catch {
-          // file deleted or unreadable — ignore
-        }
-      }, 150);
-    });
+    let watcher: FSWatcher;
+    try {
+      watcher = watch(filePath, { persistent: false }, () => {
+        if (debounce) clearTimeout(debounce);
+        debounce = setTimeout(async () => {
+          try {
+            const content = await fsPromises.readFile(filePath, "utf-8");
+            const fileName = filePath.split("/").pop() ?? filePath;
+            this.lastPlanMarkdown = { content, title: fileName };
+            this.sendToRenderer(
+              IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
+              { content, title: fileName, filePath },
+              threadId,
+            );
+          } catch {
+            // file deleted or unreadable — ignore
+          }
+        }, 150);
+      });
+    } catch {
+      // File doesn't exist or is inaccessible — skip watching
+      return;
+    }
 
     watcher.on("error", () => watcher.close());
     this.previewFileWatchers.set(threadId, watcher);
