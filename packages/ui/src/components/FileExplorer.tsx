@@ -148,6 +148,16 @@ export function FileExplorer({
     treeRef.current = tree;
   }, [tree]);
 
+  const openFileRef = useRef(openFile);
+  useEffect(() => {
+    openFileRef.current = openFile;
+  }, [openFile]);
+
+  const saveStatusRef = useRef(saveStatus);
+  useEffect(() => {
+    saveStatusRef.current = saveStatus;
+  }, [saveStatus]);
+
   useEffect(() => {
     if (!watchDirectory || !unwatchDirectory || !onDirectoryChanged) return;
 
@@ -197,6 +207,48 @@ export function FileExplorer({
 
       const updated = await refreshInTree(currentTree);
       setTree(updated);
+
+      // Re-read the currently open file if it lives in the changed directory
+      const currentOpenFile = openFileRef.current;
+      if (
+        currentOpenFile &&
+        !currentOpenFile.tooLarge &&
+        !currentOpenFile.isBinary
+      ) {
+        const openFileDir = currentOpenFile.path.substring(
+          0,
+          currentOpenFile.path.lastIndexOf("/"),
+        );
+        if (openFileDir === changedDirPath) {
+          // Don't overwrite unsaved markdown edits
+          if (
+            saveStatusRef.current === "unsaved" ||
+            saveStatusRef.current === "saving"
+          ) {
+            return;
+          }
+          try {
+            const result = await readFile(currentOpenFile.path, cwd);
+            if (openFileRef.current?.path === currentOpenFile.path) {
+              setOpenFile({
+                path: currentOpenFile.path,
+                ...result,
+                tooLarge: false,
+              });
+              setEditContent(result.content);
+            }
+          } catch {
+            if (openFileRef.current?.path === currentOpenFile.path) {
+              setOpenFile({
+                path: currentOpenFile.path,
+                content: "File no longer available",
+                isBinary: false,
+                tooLarge: false,
+              });
+            }
+          }
+        }
+      }
     };
 
     // Register listener BEFORE starting watcher — events can arrive before invoke resolves
@@ -213,6 +265,7 @@ export function FileExplorer({
     unwatchDirectory,
     onDirectoryChanged,
     listDirectory,
+    readFile,
   ]);
 
   const toggleFolder = useCallback(
