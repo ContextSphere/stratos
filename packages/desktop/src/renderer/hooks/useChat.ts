@@ -656,6 +656,10 @@ export function useChat(
               },
             ]);
           }
+          // Refresh thread data so activeThread.cwd reflects the worktree path
+          if (msg.status === "completed") {
+            onThreadUpdated?.();
+          }
           break;
         }
 
