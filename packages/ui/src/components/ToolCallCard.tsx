@@ -1,9 +1,24 @@
 import { lazy, Suspense } from "react";
 import type { ToolCall } from "../types";
+import { MemoryOperationCard } from "./MemoryOperationCard";
 
 const FileChangeViewer = lazy(() =>
   import("./FileChangeViewer").then((m) => ({ default: m.FileChangeViewer })),
 );
+
+function extractFilePath(input: Record<string, unknown>): string {
+  return (
+    (input.file_path as string | undefined) ??
+    (input.filePath as string | undefined) ??
+    (input.path as string | undefined) ??
+    (input.file as string | undefined) ??
+    ""
+  );
+}
+
+function isMemoryPath(filePath: string): boolean {
+  return filePath.includes("/.claude/") && filePath.includes("/memory/");
+}
 
 interface Props {
   toolCall: ToolCall;
@@ -63,6 +78,14 @@ export function ToolCallCard({
 }: Props): React.ReactElement {
   if (toolCall.toolName === "Skill") {
     return <SkillCard toolCall={toolCall} />;
+  }
+
+  // Use MemoryOperationCard for memory file operations
+  if (["Edit", "Write", "Read"].includes(toolCall.toolName)) {
+    const filePath = extractFilePath(toolCall.input);
+    if (isMemoryPath(filePath)) {
+      return <MemoryOperationCard toolCall={toolCall} />;
+    }
   }
 
   // Use FileChangeViewer for file operation tools
