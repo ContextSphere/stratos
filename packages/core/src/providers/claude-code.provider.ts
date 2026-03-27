@@ -27,9 +27,6 @@ export class ClaudeCodeProvider implements AgentProvider {
   private sessionId?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private currentQuery?: any;
-  private textWasStreamed = false;
-  private thinkingWasStreamed = false;
-  private pendingToolIds: Map<number, string> = new Map();
   // Background control query kept alive for MCP operations between turns
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private controlQuery?: any;
@@ -182,6 +179,14 @@ export class ClaudeCodeProvider implements AgentProvider {
       this.currentQuery = query({ prompt: params.prompt, options });
     }
 
+    // Per-stream tracking state — kept local so concurrent calls on the same
+    // provider instance don't corrupt each other's streaming flags.
+    const streamCtx = {
+      textWasStreamed: false,
+      thinkingWasStreamed: false,
+      pendingToolIds: new Map<number, string>(),
+    };
+
     for await (const msg of this.currentQuery) {
       if (params.traceCallback) {
         params.traceCallback({
@@ -195,7 +200,7 @@ export class ClaudeCodeProvider implements AgentProvider {
           data: msg,
         });
       }
-      yield* this.transformMessage(msg);
+      yield* this.transformMessage(msg, streamCtx);
     }
 
     // The turn is done — the query's transport is now closed.
@@ -483,8 +488,15 @@ export class ClaudeCodeProvider implements AgentProvider {
     this.currentQuery = undefined;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private *transformMessage(msg: any): Generator<AgentMessage> {
+  private *transformMessage(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    msg: any,
+    ctx: {
+      textWasStreamed: boolean;
+      thinkingWasStreamed: boolean;
+      pendingToolIds: Map<number, string>;
+    },
+  ): Generator<AgentMessage> {
     switch (msg.type) {
       case "system":
         if (msg.subtype === "init") {
@@ -513,16 +525,16 @@ export class ClaudeCodeProvider implements AgentProvider {
         const event = msg.event;
         if (!event) break;
         if (event.type === "message_start") {
-          this.textWasStreamed = false;
-          this.thinkingWasStreamed = false;
-          this.pendingToolIds.clear();
+          ctx.textWasStreamed = false;
+          ctx.thinkingWasStreamed = false;
+          ctx.pendingToolIds.clear();
         } else if (event.type === "content_block_delta") {
           const delta = event.delta;
           if (delta?.type === "text_delta" && delta.text) {
-            this.textWasStreamed = true;
+            ctx.textWasStreamed = true;
             yield { type: "text", content: delta.text, isStreaming: true };
           } else if (delta?.type === "thinking_delta" && delta.thinking) {
-            this.thinkingWasStreamed = true;
+            ctx.thinkingWasStreamed = true;
             yield {
               type: "thinking",
               content: delta.thinking,
@@ -532,10 +544,10 @@ export class ClaudeCodeProvider implements AgentProvider {
         } else if (event.type === "content_block_stop") {
           const index = event.index;
           if (typeof index === "number") {
-            const toolId = this.pendingToolIds.get(index);
+            const toolId = ctx.pendingToolIds.get(index);
             if (toolId) {
               yield { type: "tool_result", toolCallId: toolId, output: "" };
-              this.pendingToolIds.delete(index);
+              ctx.pendingToolIds.delete(index);
             }
           }
         }
@@ -564,7 +576,7 @@ export class ClaudeCodeProvider implements AgentProvider {
           ) {
             const block = msg.message.content[blockIndex];
             if (block.type === "thinking" && block.thinking) {
-              if (!this.thinkingWasStreamed) {
+              if (!ctx.thinkingWasStreamed) {
                 yield {
                   type: "thinking",
                   content: block.thinking,
@@ -572,7 +584,7 @@ export class ClaudeCodeProvider implements AgentProvider {
                 };
               }
             } else if ("text" in block && block.text) {
-              if (!this.textWasStreamed) {
+              if (!ctx.textWasStreamed) {
                 yield { type: "text", content: block.text, isStreaming: false };
               }
             } else if ("name" in block && block.name === "TodoWrite") {
@@ -592,7 +604,7 @@ export class ClaudeCodeProvider implements AgentProvider {
             } else if ("name" in block && block.name) {
               const toolId = block.id ?? "";
               if (toolId) {
-                this.pendingToolIds.set(blockIndex, toolId);
+                ctx.pendingToolIds.set(blockIndex, toolId);
               }
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const parentId = (msg as any).parent_tool_use_id as
@@ -607,8 +619,8 @@ export class ClaudeCodeProvider implements AgentProvider {
               };
             }
           }
-          this.textWasStreamed = false;
-          this.thinkingWasStreamed = false;
+          ctx.textWasStreamed = false;
+          ctx.thinkingWasStreamed = false;
         }
         break;
 

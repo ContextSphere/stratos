@@ -198,6 +198,9 @@ export function useChat(
   const prevThreadIdRef = useRef<string | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamingThreadsRef = useRef<Map<string, ThreadStreamState>>(new Map());
+  // Tracks the active streamId per thread so late events from an interrupted
+  // stream can be discarded before they corrupt the new stream's messages.
+  const activeStreamIdRef = useRef<Map<string, string>>(new Map());
   const activeThreadIdRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const loadingThreadIdRef = useRef<string | null>(null);
@@ -324,6 +327,9 @@ export function useChat(
       if (!msg || !msg.type) return;
       if (!threadId) return;
 
+      // Extract the stream ID injected by the main process
+      const msgStreamId: string | undefined = msg._streamId;
+
       let state = streamingThreadsRef.current.get(threadId);
       if (!state) {
         // Auto-initialize streaming state for main-process-triggered turns
@@ -338,11 +344,23 @@ export function useChat(
             activeTaskId: null,
           };
           streamingThreadsRef.current.set(threadId, state);
+          // Register this as the active stream for the thread
+          if (msgStreamId) activeStreamIdRef.current.set(threadId, msgStreamId);
         } else {
           // No streaming state means the stream was already finalized (by result/error)
           // or cleaned up (by interrupt timeout). Ignore late arrivals.
           return;
         }
+      } else if (msg.type === "user_message" && msgStreamId) {
+        // A new stream started — update the active stream ID.
+        // This happens when the renderer pre-creates state before the first IPC event.
+        activeStreamIdRef.current.set(threadId, msgStreamId);
+      }
+
+      // Discard events from a stale (interrupted/replaced) stream
+      const currentStreamId = activeStreamIdRef.current.get(threadId);
+      if (msgStreamId && currentStreamId && msgStreamId !== currentStreamId) {
+        return;
       }
 
       const apply = (updater: (msgs: ChatMessage[]) => ChatMessage[]) => {
@@ -725,6 +743,7 @@ export function useChat(
             saveMessages(threadId, state.messages);
           }
           streamingThreadsRef.current.delete(threadId);
+          activeStreamIdRef.current.delete(threadId);
 
           // Clear running state immediately — result means the turn is complete.
           // The main process also sends THREAD_STREAM_STATE, but the SDK generator
@@ -753,6 +772,7 @@ export function useChat(
               saveMessages(threadId, state.messages);
             }
             streamingThreadsRef.current.delete(threadId);
+            activeStreamIdRef.current.delete(threadId);
             setRunningThreadIds((prev) => prev.filter((id) => id !== threadId));
             break;
           }
@@ -772,6 +792,7 @@ export function useChat(
             saveMessages(threadId, state.messages);
           }
           streamingThreadsRef.current.delete(threadId);
+          activeStreamIdRef.current.delete(threadId);
           setRunningThreadIds((prev) => prev.filter((id) => id !== threadId));
           break;
         }

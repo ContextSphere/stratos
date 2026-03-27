@@ -501,6 +501,7 @@ export class AgentManager {
           type: "worktree_progress",
           step: "Creating git worktree...",
           status: "running",
+          _streamId: streamId,
         },
         threadId,
       );
@@ -535,6 +536,7 @@ export class AgentManager {
             type: "worktree_progress",
             step: "Creating git worktree...",
             status: "completed",
+            _streamId: streamId,
           },
           threadId,
         );
@@ -545,6 +547,7 @@ export class AgentManager {
             type: "worktree_progress",
             step: `Failed to create worktree: ${err?.message ?? "Unknown error"}`,
             status: "error",
+            _streamId: streamId,
           },
           threadId,
         );
@@ -595,6 +598,10 @@ export class AgentManager {
       session = { provider, sessionId: thread.sessionId };
       this.sessions.set(threadId, session);
     }
+
+    // Generate a unique ID for this stream so the renderer can discard
+    // late-arriving events from a previous (interrupted) stream on the same thread.
+    const streamId = `${threadId}-${Date.now()}`;
 
     // Track active stream
     this.activeStreams.add(threadId);
@@ -710,7 +717,11 @@ export class AgentManager {
 
     try {
       for await (const msg of session.provider.sendMessage(params)) {
-        this.sendToRenderer(IPC_CHANNELS.STREAM_MESSAGE, msg, threadId);
+        this.sendToRenderer(
+          IPC_CHANNELS.STREAM_MESSAGE,
+          { ...msg, _streamId: streamId },
+          threadId,
+        );
 
         if (msg.type === "error") {
           specificErrorSent = true;
@@ -819,6 +830,7 @@ export class AgentManager {
             type: "error",
             message: err?.message ?? "Unknown error",
             code: "AGENT_ERROR",
+            _streamId: streamId,
           },
           threadId,
         );
