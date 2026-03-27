@@ -2,6 +2,7 @@ import type { ToolCall } from "../types";
 
 interface Props {
   toolCall: ToolCall;
+  onViewFile?: (filePath: string) => void;
 }
 
 const statusColors: Record<ToolCall["status"], string> = {
@@ -38,7 +39,10 @@ function basename(filePath: string): string {
   return filePath.split("/").pop() ?? filePath;
 }
 
-export function MemoryOperationCard({ toolCall }: Props): React.ReactElement {
+export function MemoryOperationCard({
+  toolCall,
+  onViewFile,
+}: Props): React.ReactElement {
   const filePath = extractFilePath(toolCall.input);
   const label = operationLabels[toolCall.toolName] ?? "Memory operation";
   const fileName = basename(filePath);
@@ -72,11 +76,19 @@ export function MemoryOperationCard({ toolCall }: Props): React.ReactElement {
           {fileName}
         </span>
       )}
-      <span
-        className={`ml-auto shrink-0 text-xs ${statusColors[toolCall.status]}`}
-      >
-        {statusLabels[toolCall.status]}
-      </span>
+      <div className="ml-auto flex items-center gap-2 shrink-0">
+        {onViewFile && filePath && (
+          <button
+            onClick={() => onViewFile(filePath)}
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            View
+          </button>
+        )}
+        <span className={`text-xs ${statusColors[toolCall.status]}`}>
+          {statusLabels[toolCall.status]}
+        </span>
+      </div>
     </div>
   );
 }

@@ -236,6 +236,7 @@ interface Props {
   ) => void;
   onViewPlan?: (content: string, title: string) => void;
   onUpdateTaskExpanded?: (messageId: string, expanded: boolean) => void;
+  onViewFile?: (filePath: string) => void;
   isStreaming?: boolean;
 }
 
@@ -285,6 +286,7 @@ export function MessageBubble({
   onPlanReviewDecision,
   onViewPlan,
   onUpdateTaskExpanded,
+  onViewFile,
   isStreaming,
 }: Props): React.ReactElement {
   const isUser = message.role === "user";
@@ -477,6 +479,7 @@ export function MessageBubble({
               key={tc.toolCallId}
               toolCall={tc}
               isHistorical={!isStreaming}
+              onViewFile={onViewFile}
             />
           ))}
         </div>

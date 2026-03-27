@@ -20,6 +20,7 @@ interface Props {
   ) => void;
   onViewPlan?: (content: string, title: string) => void;
   onUpdateTaskExpanded?: (messageId: string, expanded: boolean) => void;
+  onViewFile?: (filePath: string) => void;
 }
 
 /** Pixel threshold: user is considered "at the bottom" if within this distance */
@@ -35,6 +36,7 @@ export function ChatView({
   onPlanReviewDecision,
   onViewPlan,
   onUpdateTaskExpanded,
+  onViewFile,
 }: Props): React.ReactElement {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
@@ -98,6 +100,7 @@ export function ChatView({
             onPlanReviewDecision={onPlanReviewDecision}
             onViewPlan={onViewPlan}
             onUpdateTaskExpanded={onUpdateTaskExpanded}
+            onViewFile={onViewFile}
             isStreaming={isStreaming && idx === messages.length - 1}
           />
         ))}

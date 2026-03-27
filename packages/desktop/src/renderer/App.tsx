@@ -572,6 +572,15 @@ function AppInner(): React.ReactElement {
     [activeThread?.cwd, openFileExplorer, openUrl],
   );
 
+  const handleViewFile = useCallback(
+    (filePath: string) => {
+      const lastSlash = filePath.lastIndexOf("/");
+      const dir = lastSlash > 0 ? filePath.slice(0, lastSlash) : filePath;
+      openFileExplorer(dir, filePath);
+    },
+    [openFileExplorer],
+  );
+
   // Shift+Tab to cycle modes
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -896,6 +905,7 @@ function AppInner(): React.ReactElement {
                     onPlanReviewDecision={respondPlanReview}
                     onViewPlan={openMarkdown}
                     onUpdateTaskExpanded={updateTaskExpanded}
+                    onViewFile={handleViewFile}
                   />
 
                   {/* Input */}

@@ -23,6 +23,7 @@ function isMemoryPath(filePath: string): boolean {
 interface Props {
   toolCall: ToolCall;
   isHistorical?: boolean;
+  onViewFile?: (filePath: string) => void;
 }
 
 const statusColors: Record<ToolCall["status"], string> = {
@@ -75,6 +76,7 @@ function SkillCard({ toolCall }: Props): React.ReactElement {
 export function ToolCallCard({
   toolCall,
   isHistorical = false,
+  onViewFile,
 }: Props): React.ReactElement {
   if (toolCall.toolName === "Skill") {
     return <SkillCard toolCall={toolCall} />;
@@ -84,7 +86,9 @@ export function ToolCallCard({
   if (["Edit", "Write", "Read"].includes(toolCall.toolName)) {
     const filePath = extractFilePath(toolCall.input);
     if (isMemoryPath(filePath)) {
-      return <MemoryOperationCard toolCall={toolCall} />;
+      return (
+        <MemoryOperationCard toolCall={toolCall} onViewFile={onViewFile} />
+      );
     }
   }
 
