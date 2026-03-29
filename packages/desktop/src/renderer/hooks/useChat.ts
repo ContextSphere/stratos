@@ -67,6 +67,15 @@ function nextMessageId(): string {
   return `msg_${++messageIdCounter}_${Date.now()}`;
 }
 
+const TOOL_OUTPUT_DISPLAY_LIMIT = 50_000; // 50KB — full output is in SDK session store
+function truncateToolOutput(output: string | undefined): string | undefined {
+  if (!output || output.length <= TOOL_OUTPUT_DISPLAY_LIMIT) return output;
+  return (
+    output.slice(0, TOOL_OUTPUT_DISPLAY_LIMIT) +
+    `\n\n[… truncated ${output.length - TOOL_OUTPUT_DISPLAY_LIMIT} characters]`
+  );
+}
+
 function toStoredMessage(m: ChatMessage): StoredMessage {
   return {
     id: m.id,
@@ -539,6 +548,7 @@ export function useChat(
         }
 
         case "tool_result": {
+          const displayOutput = truncateToolOutput(msg.output);
           if (msg.toolCallId === state.activeTaskId) {
             // Task completed - update taskInfo and auto-collapse
             apply((prev) =>
@@ -550,14 +560,14 @@ export function useChat(
                       ...m.taskInfo,
                       status: "completed",
                       endTime: Date.now(),
-                      result: msg.output,
+                      result: displayOutput,
                       toolCallsExpanded: false,
                     } as ChatMessage["taskInfo"],
                     toolCalls: m.toolCalls?.map((tc) =>
                       tc.toolCallId === msg.toolCallId
                         ? {
                             ...tc,
-                            output: msg.output || tc.output,
+                            output: displayOutput || tc.output,
                             status: "completed" as const,
                           }
                         : tc,
@@ -577,7 +587,7 @@ export function useChat(
                   tc.toolCallId === msg.toolCallId
                     ? {
                         ...tc,
-                        output: msg.output || tc.output,
+                        output: displayOutput || tc.output,
                         status: "completed" as const,
                       }
                     : tc,
@@ -1014,6 +1024,8 @@ export function useChat(
       api.removeAllListeners("chat:thread-activate");
       api.removeAllListeners("mcp:status-changed");
       api.removeAllListeners("skills:slash-commands");
+      streamingThreadsRef.current.clear();
+      activeStreamIdRef.current.clear();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

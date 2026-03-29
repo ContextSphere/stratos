@@ -493,6 +493,11 @@ export class AgentManager {
       }
     }
 
+    // Generate a unique ID for this stream so the renderer can discard
+    // late-arriving events from a previous (interrupted) stream on the same thread.
+    // Declared here (before worktree creation) so worktree progress messages can carry it.
+    const streamId = `${threadId}-${Date.now()}`;
+
     // Lazy worktree creation: if user selected worktree mode but no worktree exists yet
     if (thread.worktreeMode === "worktree" && !thread.worktree && thread.cwd) {
       this.sendToRenderer(
@@ -598,10 +603,6 @@ export class AgentManager {
       session = { provider, sessionId: thread.sessionId };
       this.sessions.set(threadId, session);
     }
-
-    // Generate a unique ID for this stream so the renderer can discard
-    // late-arriving events from a previous (interrupted) stream on the same thread.
-    const streamId = `${threadId}-${Date.now()}`;
 
     // Track active stream
     this.activeStreams.add(threadId);

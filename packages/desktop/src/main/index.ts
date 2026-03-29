@@ -95,6 +95,9 @@ if (!gotLock) {
     app.commandLine.appendSwitch("remote-debugging-port", String(cdpPort));
   }
 
+  // Increase renderer V8 heap limit to reduce OOM risk on long conversations
+  app.commandLine.appendSwitch("js-flags", "--max-old-space-size=4096");
+
   // GPU acceleration
   app.commandLine.appendSwitch("enable-gpu-rasterization");
   app.commandLine.appendSwitch("enable-zero-copy");
