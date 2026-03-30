@@ -89,7 +89,9 @@ export function ChatInfoBar({
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {hasToolsBadge && (
             <ToolsBadge
-              toolCount={sessionTools?.length ?? 0}
+              toolCount={
+                mcpServers?.reduce((sum, s) => sum + s.tools.length, 0) ?? 0
+              }
               sessionTools={sessionTools ?? []}
               mcpServers={mcpServers}
               onToggleServer={onToggleMcpServer}
