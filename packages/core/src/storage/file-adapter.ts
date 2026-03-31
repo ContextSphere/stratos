@@ -184,7 +184,17 @@ export class FileStorageAdapter implements StorageAdapter {
 
     if (!thread.sessionId) return diskMessages;
     try {
-      return await sdkMessagesToStored(thread.sessionId, thread.createdAt);
+      const sdkMessages = await sdkMessagesToStored(
+        thread.sessionId,
+        thread.createdAt,
+      );
+      // If the current session is empty (e.g. after a stale-session retry created
+      // a new session) but we have a disk backup from the previous session, prefer
+      // the disk backup so history stays visible.
+      if (sdkMessages.length === 0 && diskMessages.length > 0) {
+        return diskMessages;
+      }
+      return sdkMessages;
     } catch {
       // SDK transcript unavailable — fall back to any disk backup
       return diskMessages;
@@ -203,6 +213,18 @@ export class FileStorageAdapter implements StorageAdapter {
     }
     if (!thread.provider && !hasExistingDiskMessages) return;
 
+    const dir = join(this.getThreadsDir(), "messages");
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(
+      this.getMessagesPath(threadId),
+      JSON.stringify(messages, null, 2),
+      "utf-8",
+    );
+  }
+
+  forceSaveMessages(threadId: string, messages: StoredMessage[]): void {
     const dir = join(this.getThreadsDir(), "messages");
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });

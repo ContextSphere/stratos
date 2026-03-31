@@ -822,9 +822,20 @@ export class AgentManager {
         console.warn(
           `[agent-manager] Stale session for thread ${threadId}, retrying without resume`,
         );
+        // Save messages to disk before losing the session reference.
+        // The retry will get a new sessionId from session_init which overwrites
+        // storage, so this disk backup is the only way to keep history visible
+        // when the new session is empty (e.g. interrupted subagent state prevents
+        // clean resumption of the old session).
+        try {
+          const messages = await this.storage.loadMessages(threadId);
+          if (messages.length > 0) {
+            this.storage.forceSaveMessages(threadId, messages);
+          }
+        } catch {
+          // Non-fatal — proceed with retry even if backup fails
+        }
         // Clear in-memory only so the retry starts a fresh session without resume.
-        // Do NOT clear from storage — if the retry also fails, the stored sessionId
-        // is the only way to reload message history after an app restart.
         // The session_init event from a successful retry will update storage with the new sessionId.
         session.sessionId = undefined;
         // Retry the send — recursive call will use sessionId=undefined

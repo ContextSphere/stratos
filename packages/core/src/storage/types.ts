@@ -21,6 +21,10 @@ export interface StorageAdapter {
   clearPersistedSessionId(threadId: string): void;
   loadMessages(threadId: string): Promise<StoredMessage[]>;
   saveMessages(threadId: string, messages: StoredMessage[]): void;
+  /** Force-write messages to disk regardless of provider type. Used to create
+   *  a backup before a session transition (e.g. stale session retry) so history
+   *  remains visible even after the sessionId is overwritten. */
+  forceSaveMessages(threadId: string, messages: StoredMessage[]): void;
 
   // Folders
   listFolders(): Folder[];
