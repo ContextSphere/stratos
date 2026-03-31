@@ -105,6 +105,30 @@ function TerminalInstance({
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
+    terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      // Cmd+C (or Ctrl+C on non-Mac) with selection → copy, don't send SIGINT
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.key === "c" &&
+        terminal.hasSelection()
+      ) {
+        if (e.type === "keydown") {
+          navigator.clipboard.writeText(terminal.getSelection());
+        }
+        return false;
+      }
+      // Cmd+V (or Ctrl+V) → paste from clipboard
+      if ((e.metaKey || e.ctrlKey) && e.key === "v") {
+        if (e.type === "keydown" && terminalIdRef.current) {
+          navigator.clipboard.readText().then((text) => {
+            api().terminalWrite(terminalIdRef.current!, text);
+          });
+        }
+        return false;
+      }
+      return true;
+    });
+
     api()
       .terminalCreate(cwd)
       .then((id: string) => {
@@ -169,8 +193,7 @@ function TerminalInstance({
       className="flex-1 min-h-0 p-1"
       style={{
         background: xtermTheme.background,
-        display: active ? "flex" : "none",
-        flexDirection: "column",
+        display: active ? "block" : "none",
       }}
     />
   );
