@@ -92,6 +92,10 @@ interface ThreadSession {
    *  sessionId — the old sessionId is still the source of truth for loading
    *  message history via the SDK transcript. */
   isStaleRetry?: boolean;
+  /** True when the user explicitly requested an interrupt. Prevents the stale
+   *  session detector from auto-retrying after the SDK raises "process exited"
+   *  as a result of provider.interrupt() killing the subprocess. */
+  interruptRequested?: boolean;
 }
 
 export class AgentManager {
@@ -189,6 +193,7 @@ export class AgentManager {
         if (!threadId) return;
         const session = this.sessions.get(threadId);
         if (session) {
+          session.interruptRequested = true;
           try {
             await session.provider.interrupt();
           } catch (err) {
@@ -482,6 +487,15 @@ export class AgentManager {
     prompt: string,
     images?: { dataUrl: string; mimeType: string }[],
   ): Promise<void> {
+    // Each new stream attempt clears any prior interrupt intent so that a
+    // user-triggered stop followed by a fresh send works correctly.
+    const sessionAtStart = this.sessions.get(threadId);
+    if (sessionAtStart) sessionAtStart.interruptRequested = false;
+
+    // When set to true in the stale-session catch branch, the finally block
+    // skips cleanup so it doesn't send isRunning:false while the retry runs.
+    let isRetrying = false;
+
     let thread = await this.storage.getThread(threadId);
     if (!thread) throw new Error(`Thread ${threadId} not found`);
 
@@ -825,8 +839,12 @@ export class AgentManager {
     } catch (err: any) {
       // If the error is due to a stale session (process exited), retry once
       // without the sessionId so a fresh session is started.
+      // Do NOT retry if the user explicitly interrupted — provider.interrupt()
+      // kills the subprocess which also raises "process exited", and we must
+      // not mistake a user stop for a dead session.
       const isStaleSession =
         session.sessionId &&
+        !session.interruptRequested &&
         typeof err?.message === "string" &&
         /process exited|exited with code/i.test(err.message);
 
@@ -840,7 +858,9 @@ export class AgentManager {
         // loading message history from the SDK transcript.
         session.sessionId = undefined;
         session.isStaleRetry = true;
-        // Retry the send — recursive call will use sessionId=undefined
+        // Signal the finally block to skip cleanup — the retry's own finally
+        // will send isRunning:false when it eventually completes.
+        isRetrying = true;
         this.activeStreams.delete(threadId);
         this.threadEffectiveModes.delete(threadId);
         return this.runStream(threadId, prompt, images);
@@ -859,12 +879,17 @@ export class AgentManager {
         );
       }
     } finally {
-      this.activeStreams.delete(threadId);
-      this.threadEffectiveModes.delete(threadId);
-      this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, {
-        threadId,
-        isRunning: false,
-      });
+      // Skip cleanup when we're about to retry — the recursive runStream call
+      // owns the running state from here and its own finally will send
+      // isRunning:false when it eventually finishes.
+      if (!isRetrying) {
+        this.activeStreams.delete(threadId);
+        this.threadEffectiveModes.delete(threadId);
+        this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, {
+          threadId,
+          isRunning: false,
+        });
+      }
     }
   }
 
