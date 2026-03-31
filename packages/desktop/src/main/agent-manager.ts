@@ -87,6 +87,11 @@ interface ThreadSession {
   provider: AgentProvider;
   sessionId?: string;
   abortController?: AbortController;
+  /** True when the current stream is a stale-session retry started without
+   *  resume. The session_init from this retry must NOT overwrite the stored
+   *  sessionId — the old sessionId is still the source of truth for loading
+   *  message history via the SDK transcript. */
+  isStaleRetry?: boolean;
 }
 
 export class AgentManager {
@@ -771,11 +776,18 @@ export class AgentManager {
 
         // Track session ID from init message
         if (msg.type === "session_init") {
+          const wasStaleRetry = session.isStaleRetry;
           session.sessionId = msg.sessionId;
-          // Persist sessionId to thread for resume
-          try {
-            this.storage.updateThread(threadId, { sessionId: msg.sessionId });
-          } catch {}
+          session.isStaleRetry = false;
+          // Persist sessionId to thread for resume — but skip this when the
+          // session_init comes from a stale-session retry. The old sessionId
+          // must stay in storage so loadMessages continues to read message
+          // history from the original SDK transcript.
+          if (!wasStaleRetry) {
+            try {
+              this.storage.updateThread(threadId, { sessionId: msg.sessionId });
+            } catch {}
+          }
           // Notify renderer of session readiness
           this.sendToRenderer(
             IPC_CHANNELS.SESSION_READY,
@@ -822,22 +834,12 @@ export class AgentManager {
         console.warn(
           `[agent-manager] Stale session for thread ${threadId}, retrying without resume`,
         );
-        // Save messages to disk before losing the session reference.
-        // The retry will get a new sessionId from session_init which overwrites
-        // storage, so this disk backup is the only way to keep history visible
-        // when the new session is empty (e.g. interrupted subagent state prevents
-        // clean resumption of the old session).
-        try {
-          const messages = await this.storage.loadMessages(threadId);
-          if (messages.length > 0) {
-            this.storage.forceSaveMessages(threadId, messages);
-          }
-        } catch {
-          // Non-fatal — proceed with retry even if backup fails
-        }
-        // Clear in-memory only so the retry starts a fresh session without resume.
-        // The session_init event from a successful retry will update storage with the new sessionId.
+        // Clear in-memory so the retry starts a fresh session without resume.
+        // Mark as stale retry so the new session_init does NOT overwrite the
+        // stored sessionId — the old sessionId remains the source of truth for
+        // loading message history from the SDK transcript.
         session.sessionId = undefined;
+        session.isStaleRetry = true;
         // Retry the send — recursive call will use sessionId=undefined
         this.activeStreams.delete(threadId);
         this.threadEffectiveModes.delete(threadId);

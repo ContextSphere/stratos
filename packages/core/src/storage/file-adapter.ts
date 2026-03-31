@@ -224,18 +224,6 @@ export class FileStorageAdapter implements StorageAdapter {
     );
   }
 
-  forceSaveMessages(threadId: string, messages: StoredMessage[]): void {
-    const dir = join(this.getThreadsDir(), "messages");
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    writeFileSync(
-      this.getMessagesPath(threadId),
-      JSON.stringify(messages, null, 2),
-      "utf-8",
-    );
-  }
-
   listFolders(): Folder[] {
     const data = this.loadThreadsFile();
     return [...(data.folders ?? [])].sort((a, b) => a.createdAt - b.createdAt);
