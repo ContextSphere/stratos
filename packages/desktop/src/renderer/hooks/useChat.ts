@@ -1102,7 +1102,9 @@ export function useChat(
         (typeof threadId === "string" ? threadId : undefined) ??
         activeThreadIdRef.current;
       if (!tid) return;
-      await window.api.interrupt(tid);
+
+      // Mark as interrupted before the async call so any error events that
+      // arrive (even if the interrupt IPC call fails) are suppressed in the UI.
       const state = streamingThreadsRef.current.get(tid);
       if (state) {
         state.interrupted = true;
@@ -1110,12 +1112,20 @@ export function useChat(
           saveMessages(tid, state.messages);
         }
       }
+
+      try {
+        await window.api.interrupt(tid);
+      } catch {
+        // Interrupt failed (e.g. session already dead). The cleanup timeout
+        // below will force-clear the running indicator so the UI isn't stuck.
+      }
+
       // Don't delete streaming state here — let the stream's result/error
       // event handle cleanup. Eagerly deleting causes late-arriving events
       // to create a new empty state, which clobbers messages via setMessages([]).
       //
       // However, if the stream doesn't end within 5s (e.g. the SDK generator
-      // hangs), force-clear the running indicator so the UI isn't stuck.
+      // hangs or the session is dead), force-clear the running indicator.
       const capturedTid = tid;
       setTimeout(() => {
         if (streamingThreadsRef.current.has(capturedTid)) {

@@ -184,7 +184,17 @@ export class AgentManager {
         if (!threadId) return;
         const session = this.sessions.get(threadId);
         if (session) {
-          await session.provider.interrupt();
+          try {
+            await session.provider.interrupt();
+          } catch (err) {
+            // Session may already be dead (e.g. "Query closed before response received").
+            // Log a warning but don't re-throw — a thrown handler rejects the renderer's
+            // invoke() call, which prevents the UI's 5s force-clear timeout from running.
+            console.warn(
+              `[agent-manager] interrupt failed for thread ${threadId}:`,
+              err,
+            );
+          }
         }
       },
     );
@@ -812,12 +822,11 @@ export class AgentManager {
         console.warn(
           `[agent-manager] Stale session for thread ${threadId}, retrying without resume`,
         );
+        // Clear in-memory only so the retry starts a fresh session without resume.
+        // Do NOT clear from storage — if the retry also fails, the stored sessionId
+        // is the only way to reload message history after an app restart.
+        // The session_init event from a successful retry will update storage with the new sessionId.
         session.sessionId = undefined;
-        try {
-          this.storage.updateThread(threadId, {
-            sessionId: undefined,
-          });
-        } catch {}
         // Retry the send — recursive call will use sessionId=undefined
         this.activeStreams.delete(threadId);
         this.threadEffectiveModes.delete(threadId);

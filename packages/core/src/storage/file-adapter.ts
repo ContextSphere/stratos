@@ -182,11 +182,12 @@ export class FileStorageAdapter implements StorageAdapter {
       return diskMessages;
     }
 
-    if (!thread.sessionId) return [];
+    if (!thread.sessionId) return diskMessages;
     try {
       return await sdkMessagesToStored(thread.sessionId, thread.createdAt);
     } catch {
-      return [];
+      // SDK transcript unavailable — fall back to any disk backup
+      return diskMessages;
     }
   }
 
@@ -196,8 +197,7 @@ export class FileStorageAdapter implements StorageAdapter {
     // Only persist to disk for non-claude-code providers; claude-code uses SDK as source of truth.
     if (
       !thread ||
-      (thread.provider === "claude-code" &&
-        !hasExistingDiskMessages)
+      (thread.provider === "claude-code" && !hasExistingDiskMessages)
     ) {
       return;
     }
