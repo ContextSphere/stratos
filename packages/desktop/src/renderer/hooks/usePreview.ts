@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { PreviewState } from "@stratosapp/ui";
 
 function titleFromUrl(url: string): string {
@@ -12,8 +12,10 @@ function titleFromUrl(url: string): string {
 
 const INITIAL_STATE: PreviewState = { isOpen: false, type: "url", title: "" };
 
-export function usePreview() {
+export function usePreview(activeThreadId?: string | null) {
   const [preview, setPreview] = useState<PreviewState>(INITIAL_STATE);
+  const activeThreadIdRef = useRef(activeThreadId);
+  activeThreadIdRef.current = activeThreadId;
 
   const openUrl = useCallback((url: string) => {
     setPreview({ isOpen: true, type: "url", url, title: titleFromUrl(url) });
@@ -70,7 +72,13 @@ export function usePreview() {
 
   useEffect(() => {
     window.api.onPreviewOpenUrl(openUrl);
-    window.api.onPreviewOpenMarkdown(({ content, title }) => {
+    window.api.onPreviewOpenMarkdown(({ content, title, threadId }) => {
+      if (
+        threadId &&
+        activeThreadIdRef.current &&
+        threadId !== activeThreadIdRef.current
+      )
+        return;
       openMarkdown(content, title);
     });
   }, [openUrl, openMarkdown]);

@@ -282,12 +282,16 @@ const api = {
       content: string;
       title: string;
       filePath: string;
+      threadId?: string;
     }) => void,
   ): void => {
     ipcRenderer.on(
       IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
-      (_event, data: { content: string; title: string; filePath: string }) =>
-        callback(data),
+      (
+        _event,
+        data: { content: string; title: string; filePath: string },
+        threadId?: string,
+      ) => callback({ ...data, threadId }),
     );
   },
 
