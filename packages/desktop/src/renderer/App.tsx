@@ -116,7 +116,7 @@ function AppInner(): React.ReactElement {
     openArtifactEditor,
     openFileExplorer,
     close: closePreview,
-  } = usePreview();
+  } = usePreview(activeThreadId);
   const { latestTodoData, showTaskPanel, setShowTaskPanel } =
     useTodoData(messages);
 
