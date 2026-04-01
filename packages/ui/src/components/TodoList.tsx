@@ -11,7 +11,7 @@ export function TodoList({ todoData }: TodoListProps): React.ReactElement {
 
   return (
     <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--bg-overlay)] p-3">
-      <h4 className="text-sm font-medium text-gray-300 mb-2">Task Progress</h4>
+      <h4 className="text-sm font-medium text-[var(--text-secondary)] mb-2">Task Progress</h4>
       <div className="space-y-1.5">
         {todos.map((todo, index) => {
           const isCompleted = todo.status === "completed";
@@ -22,12 +22,12 @@ export function TodoList({ todoData }: TodoListProps): React.ReactElement {
             <div key={index} className="flex items-start gap-2 text-sm">
               {/* Status indicator */}
               <div className="flex-shrink-0 mt-1">
-                {isCompleted && <span className="text-green-400">✓</span>}
+                {isCompleted && <span className="text-green-600">✓</span>}
                 {isInProgress && (
-                  <span className="text-blue-400 animate-pulse">⋯</span>
+                  <span className="text-blue-500 animate-pulse">⋯</span>
                 )}
                 {todo.status === "pending" && (
-                  <span className="text-gray-600">○</span>
+                  <span className="text-[var(--text-muted)]">○</span>
                 )}
               </div>
 
@@ -35,10 +35,10 @@ export function TodoList({ todoData }: TodoListProps): React.ReactElement {
               <span
                 className={`flex-1 ${
                   isCompleted
-                    ? "line-through text-gray-500"
+                    ? "line-through text-[var(--text-muted)]"
                     : isInProgress
-                      ? "text-blue-300 font-medium"
-                      : "text-gray-400"
+                      ? "text-blue-500 font-medium"
+                      : "text-[var(--text-secondary)]"
                 }`}
               >
                 {displayText}
