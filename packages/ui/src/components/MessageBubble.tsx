@@ -9,6 +9,7 @@ import { QuestionSequence } from "./QuestionSequence";
 import { PlanReviewBlock } from "./PlanReviewBlock";
 import { TodoList } from "./TodoList";
 import { WorktreeProgress } from "./WorktreeProgress";
+import { MermaidDiagram } from "./MermaidDiagram";
 import type { ChatMessage } from "../types";
 import type { AgentMode, ProviderType } from "../utils/modes";
 import { getModeConfig } from "../utils/modes";
@@ -97,6 +98,10 @@ function buildMarkdownComponents(onLinkClick?: (url: string) => void) {
       const match = /language-(\w+)/.exec(className || "");
       const language = match ? match[1] : "";
       const isBlock = node?.position && String(children).includes("\n");
+
+      if ((isBlock || language) && language === "mermaid") {
+        return <MermaidDiagram chart={String(children).replace(/\n$/, "")} />;
+      }
 
       return isBlock || language ? (
         <SyntaxHighlighter
