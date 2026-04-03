@@ -72,16 +72,22 @@ export function usePreview(activeThreadId?: string | null) {
 
   useEffect(() => {
     window.api.onPreviewOpenUrl(openUrl);
-    window.api.onPreviewOpenMarkdown(({ content, title, threadId }) => {
-      if (
-        threadId &&
-        activeThreadIdRef.current &&
-        threadId !== activeThreadIdRef.current
-      )
-        return;
-      openMarkdown(content, title);
-    });
-  }, [openUrl, openMarkdown]);
+    window.api.onPreviewOpenMarkdown(
+      ({ content, title, filePath, threadId }) => {
+        if (
+          threadId &&
+          activeThreadIdRef.current &&
+          threadId !== activeThreadIdRef.current
+        )
+          return;
+        if (filePath) {
+          openArtifactEditor(content, filePath);
+        } else {
+          openMarkdown(content, title);
+        }
+      },
+    );
+  }, [openUrl, openMarkdown, openArtifactEditor]);
 
   return {
     preview,

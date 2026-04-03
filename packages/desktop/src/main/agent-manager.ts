@@ -3,7 +3,7 @@ import type { McpElicitationRequest } from "@stratosapp/core";
 import { execSync } from "child_process";
 import { mkdirSync, watch, promises as fsPromises } from "fs";
 import type { FSWatcher } from "fs";
-import { join } from "path";
+import { join, basename } from "path";
 import { homedir } from "os";
 import { IPC_CHANNELS } from "../common/ipc-channels";
 import {
@@ -771,7 +771,6 @@ export class AgentManager {
           msg.type === "tool_use" &&
           msg.toolName === "Write" &&
           typeof msg.input?.file_path === "string" &&
-          msg.input.file_path.endsWith(".md") &&
           typeof msg.input?.content === "string"
         ) {
           pendingWriteTools.set(msg.toolCallId, {
@@ -1054,7 +1053,7 @@ export class AgentManager {
     content: string,
     threadId: string,
   ): void {
-    const fileName = filePath.split("/").pop() ?? filePath;
+    const fileName = basename(filePath);
     this.lastPlanMarkdown = { content, title: fileName };
     this.sendToRenderer(
       IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
@@ -1076,7 +1075,7 @@ export class AgentManager {
         debounce = setTimeout(async () => {
           try {
             const content = await fsPromises.readFile(filePath, "utf-8");
-            const fileName = filePath.split("/").pop() ?? filePath;
+            const fileName = basename(filePath);
             this.lastPlanMarkdown = { content, title: fileName };
             this.sendToRenderer(
               IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
