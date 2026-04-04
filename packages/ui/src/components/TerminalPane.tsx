@@ -100,10 +100,26 @@ function TerminalInstance({
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(containerRef.current);
+    terminal.focus();
     fitAddon.fit();
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
+
+    // Single paste handler in capture phase — intercepts before xterm's internal
+    // textarea listener so the clipboard text is written to PTY exactly once.
+    // This covers both Cmd+V and right-click → Paste.
+    containerRef.current.addEventListener(
+      "paste",
+      (e: ClipboardEvent) => {
+        e.preventDefault();
+        const text = e.clipboardData?.getData("text/plain") ?? "";
+        if (text && terminalIdRef.current) {
+          api().terminalWrite(terminalIdRef.current, text);
+        }
+      },
+      true,
+    );
 
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       // Cmd+C (or Ctrl+C on non-Mac) with selection → copy, don't send SIGINT
@@ -117,13 +133,8 @@ function TerminalInstance({
         }
         return false;
       }
-      // Cmd+V (or Ctrl+V) → paste from clipboard
+      // Cmd+V (or Ctrl+V) → let the paste event handler above deal with it
       if ((e.metaKey || e.ctrlKey) && e.key === "v") {
-        if (e.type === "keydown" && terminalIdRef.current) {
-          navigator.clipboard.readText().then((text) => {
-            api().terminalWrite(terminalIdRef.current!, text);
-          });
-        }
         return false;
       }
       return true;
@@ -171,11 +182,12 @@ function TerminalInstance({
     }
   }, [xtermTheme]);
 
-  // Re-fit when becoming visible
+  // Re-fit and re-focus when becoming visible
   useEffect(() => {
     if (active && fitAddonRef.current && terminalRef.current) {
       setTimeout(() => {
         fitAddonRef.current?.fit();
+        terminalRef.current?.focus();
         if (terminalIdRef.current) {
           api().terminalResize(
             terminalIdRef.current,
@@ -195,6 +207,7 @@ function TerminalInstance({
         background: xtermTheme.background,
         display: active ? "block" : "none",
       }}
+      onClick={() => terminalRef.current?.focus()}
     />
   );
 }
