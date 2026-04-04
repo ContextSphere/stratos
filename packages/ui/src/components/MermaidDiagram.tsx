@@ -215,7 +215,7 @@ export function MermaidDiagram({
           type="button"
           onClick={resetView}
           className="rounded px-1.5 py-0.5 text-xs text-[var(--text-muted)] hover:bg-white/10"
-          title="Reset view"
+          title="Fit to window"
         >
           Reset
         </button>
