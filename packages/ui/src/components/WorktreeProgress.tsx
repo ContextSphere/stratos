@@ -8,7 +8,7 @@ interface Props {
 export function WorktreeProgress({ progressData }: Props): React.ReactElement {
   return (
     <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] p-3 text-xs space-y-2">
-      <div className="flex items-center gap-2 text-gray-300 font-semibold">
+      <div className="flex items-center gap-2 text-[var(--text-primary)] font-semibold">
         <svg
           className="w-4 h-4"
           viewBox="0 0 24 24"
@@ -35,10 +35,10 @@ export function WorktreeProgress({ progressData }: Props): React.ReactElement {
             <span
               className={
                 step.status === "running"
-                  ? "text-blue-300"
+                  ? "text-[var(--text-primary)]"
                   : step.status === "error"
-                    ? "text-red-400"
-                    : "text-gray-400"
+                    ? "text-red-500"
+                    : "text-[var(--text-secondary)]"
               }
             >
               {step.step}
