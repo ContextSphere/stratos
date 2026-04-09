@@ -893,6 +893,7 @@ function AppInner(): React.ReactElement {
 
                   {/* Chat messages */}
                   <ChatView
+                    key={activeThreadId ?? "new"}
                     provider={
                       ((activeThread?.provider as "claude-code" | "codex") ??
                         pendingProvider) as "claude-code" | "codex"
