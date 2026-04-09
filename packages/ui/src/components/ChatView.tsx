@@ -1,8 +1,21 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useRef,
+  useCallback,
+  useState,
+  useImperativeHandle,
+} from "react";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./shared/StatusIndicator";
 import type { ChatMessage, TodoData } from "../types";
 import type { ProviderType } from "../utils/modes";
+import type { NavAnchor } from "../types/nav";
+
+export interface ChatViewHandle {
+  scrollToMessage(messageId: string): void;
+  scrollToBottom(): void;
+}
 
 interface Props {
   provider?: ProviderType;
@@ -21,38 +34,42 @@ interface Props {
   onViewPlan?: (content: string, title: string) => void;
   onUpdateTaskExpanded?: (messageId: string, expanded: boolean) => void;
   onViewFile?: (filePath: string) => void;
+  /** Called (debounced 300ms) when the user's scroll position changes meaningfully */
+  onAnchorChange?: (anchor: NavAnchor) => void;
 }
 
 /** Pixel threshold: user is considered "at the bottom" if within this distance */
 const SCROLL_THRESHOLD = 80;
 
-export function ChatView({
-  provider = "claude-code",
-  messages,
-  isStreaming,
-  onLinkClick,
-  onSendMessage,
-  onQuestionAnswer,
-  onPlanReviewDecision,
-  onViewPlan,
-  onUpdateTaskExpanded,
-  onViewFile,
-}: Props): React.ReactElement {
+export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
+  {
+    provider = "claude-code",
+    messages,
+    isStreaming,
+    onLinkClick,
+    onSendMessage,
+    onQuestionAnswer,
+    onPlanReviewDecision,
+    onViewPlan,
+    onUpdateTaskExpanded,
+    onViewFile,
+    onAnchorChange,
+  }: Props,
+  ref,
+) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const anchorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Keep latest callback in a ref to avoid stale closures in debounced handler
+  const onAnchorChangeRef = useRef(onAnchorChange);
+  useEffect(() => {
+    onAnchorChangeRef.current = onAnchorChange;
+  }, [onAnchorChange]);
 
   const checkIfNearBottom = useCallback((el: HTMLDivElement) => {
     return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
   }, []);
-
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const nearBottom = checkIfNearBottom(el);
-    isNearBottomRef.current = nearBottom;
-    setShowScrollButton(!nearBottom);
-  }, [checkIfNearBottom]);
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -62,12 +79,97 @@ export function ChatView({
     setShowScrollButton(false);
   }, []);
 
+  // Expose imperative API to parent (must be called unconditionally before early return)
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToMessage(messageId: string) {
+        const el = scrollRef.current;
+        if (!el) return;
+        const target = el.querySelector(`[data-message-id="${messageId}"]`);
+        if (target) {
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      },
+      scrollToBottom() {
+        const el = scrollRef.current;
+        if (!el) return;
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+        isNearBottomRef.current = true;
+        setShowScrollButton(false);
+      },
+    }),
+    [],
+  );
+
+  /** Find and report the top-visible message after scrolling stops */
+  const detectAnchor = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const nearBottom = checkIfNearBottom(el);
+    if (nearBottom) {
+      onAnchorChangeRef.current?.({ type: "latest" });
+      return;
+    }
+
+    // Find the message element whose top edge is closest to (but not past) the
+    // top of the scroll container — i.e. the last message that scrolled off the top.
+    const containerTop = el.getBoundingClientRect().top;
+    const msgEls = el.querySelectorAll("[data-message-id]");
+
+    let bestId: string | null = null;
+    let bestTop = -Infinity; // closest-to-zero negative top
+
+    for (const msgEl of msgEls) {
+      const msgTop = msgEl.getBoundingClientRect().top - containerTop;
+      if (msgTop <= 4 && msgTop > bestTop) {
+        // at or just above the container top
+        bestTop = msgTop;
+        bestId = (msgEl as HTMLElement).dataset.messageId ?? null;
+      }
+    }
+
+    // Fall back to first fully visible message if all are below the fold
+    if (!bestId) {
+      for (const msgEl of msgEls) {
+        const msgTop = msgEl.getBoundingClientRect().top - containerTop;
+        if (msgTop >= 0) {
+          bestId = (msgEl as HTMLElement).dataset.messageId ?? null;
+          break;
+        }
+      }
+    }
+
+    if (bestId) {
+      onAnchorChangeRef.current?.({ type: "message", messageId: bestId });
+    }
+  }, [checkIfNearBottom]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const nearBottom = checkIfNearBottom(el);
+    isNearBottomRef.current = nearBottom;
+    setShowScrollButton(!nearBottom);
+
+    // Debounce anchor detection so we don't spam on every pixel
+    if (anchorTimerRef.current) clearTimeout(anchorTimerRef.current);
+    anchorTimerRef.current = setTimeout(detectAnchor, 300);
+  }, [checkIfNearBottom, detectAnchor]);
+
   // Auto-scroll only when user is near the bottom
   useEffect(() => {
     if (scrollRef.current && isNearBottomRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (anchorTimerRef.current) clearTimeout(anchorTimerRef.current);
+    };
+  }, []);
 
   if (messages.length === 0) {
     return (
@@ -136,4 +238,4 @@ export function ChatView({
       )}
     </div>
   );
-}
+});

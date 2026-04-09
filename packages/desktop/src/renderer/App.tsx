@@ -4,6 +4,7 @@ import type { ImageAttachment } from "@stratosapp/ui";
 import {
   Sidebar,
   ChatView,
+  type ChatViewHandle,
   InputBar,
   type InputBarRef,
   type InteractiveMode,
@@ -30,6 +31,8 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { useChat } from "./hooks/useChat";
 import { useThreads } from "./hooks/useThreads";
 import { useFolders } from "./hooks/useFolders";
+import { useNavHistory } from "./hooks/useNavHistory";
+import type { NavEntry, NavAnchor } from "./navigation/types";
 import { useGitHub } from "./hooks/useGitHub";
 import { useClaude } from "./hooks/useClaude";
 import { useCodex } from "./hooks/useCodex";
@@ -147,6 +150,23 @@ function AppInner(): React.ReactElement {
   const prevActiveThreadIdRef = useRef<string | null>(null);
   const [draftThreadIds, setDraftThreadIds] = useState<Set<string>>(new Set());
 
+  // Navigation history refs
+  const chatViewRef = useRef<ChatViewHandle | null>(null);
+  /** Mirror of activeThreadId for use in callbacks without stale closures */
+  const activeThreadIdRef = useRef<string | null>(null);
+  /** Current scroll anchor in the active thread */
+  const currentAnchorRef = useRef<NavAnchor>({ type: "latest" });
+  /** True while a programmatic back/forward navigation is in flight */
+  const isNavigatingRef = useRef(false);
+  /** Pending cross-thread scroll to apply once messages load */
+  const pendingNavRef = useRef<{
+    targetThreadId: string;
+    anchor: NavAnchor;
+  } | null>(null);
+  /** Tracks the last activeThreadId seen by the pending-nav effect, so we skip
+   *  the first fire (where messages are still from the old thread) */
+  const lastEffectThreadRef = useRef<string | null>(null);
+
   // Fetch home directory
   useEffect(() => {
     settingsBridge.getHomeDirectory().then(setHomeDir);
@@ -191,25 +211,110 @@ function AppInner(): React.ReactElement {
   // Restore draft when activeThreadId changes
   useEffect(() => {
     prevActiveThreadIdRef.current = activeThreadId;
+    activeThreadIdRef.current = activeThreadId;
+    // Reset anchor to "latest" when thread changes (unless navigation is setting it)
+    if (!isNavigatingRef.current) {
+      currentAnchorRef.current = { type: "latest" };
+    }
     if (activeThreadId) {
       const draft = draftsRef.current.get(activeThreadId);
       inputRef.current?.prefillDraft(draft?.text ?? "", draft?.images ?? []);
     }
   }, [activeThreadId]);
 
+  // Apply pending cross-thread scroll once the new thread's messages have loaded.
+  // We skip the first effect fire after a thread switch because messages may still
+  // be from the previous thread (useChat loads asynchronously).
+  useEffect(() => {
+    const nav = pendingNavRef.current;
+    if (!nav || !chatViewRef.current) return;
+    if (nav.targetThreadId !== activeThreadId) return;
+
+    // Skip first fire after the thread changed — messages might be stale
+    if (lastEffectThreadRef.current !== activeThreadId) {
+      lastEffectThreadRef.current = activeThreadId;
+      return;
+    }
+
+    // Messages have now loaded for this thread — apply the scroll
+    pendingNavRef.current = null;
+    isNavigatingRef.current = false;
+    if (nav.anchor.type === "latest") {
+      chatViewRef.current.scrollToBottom();
+    } else {
+      chatViewRef.current.scrollToMessage(nav.anchor.messageId);
+    }
+  }, [messages, activeThreadId]);
+
+  /** Called by useNavHistory when the user presses back/forward */
+  const handleNavigation = useCallback(
+    (entry: NavEntry) => {
+      isNavigatingRef.current = true;
+      currentAnchorRef.current = entry.anchor;
+
+      if (entry.threadId !== activeThreadIdRef.current) {
+        // Cross-thread navigation — store pending scroll and switch thread
+        pendingNavRef.current = {
+          targetThreadId: entry.threadId,
+          anchor: entry.anchor,
+        };
+        const fromThreadId = prevActiveThreadIdRef.current;
+        if (fromThreadId) saveDraft(fromThreadId);
+        closePreview();
+        setActiveThreadId(entry.threadId).catch(() => {
+          isNavigatingRef.current = false;
+          pendingNavRef.current = null;
+        });
+      } else {
+        // Same thread — scroll directly, no thread switch needed
+        requestAnimationFrame(() => {
+          if (entry.anchor.type === "latest") {
+            chatViewRef.current?.scrollToBottom();
+          } else {
+            chatViewRef.current?.scrollToMessage(entry.anchor.messageId);
+          }
+          isNavigatingRef.current = false;
+        });
+      }
+    },
+    [saveDraft, closePreview, setActiveThreadId],
+  );
+
+  const navHistory = useNavHistory(handleNavigation);
+
+  /** Called by ChatView when the user's scroll position settles */
+  const handleAnchorChange = useCallback(
+    (anchor: NavAnchor) => {
+      currentAnchorRef.current = anchor;
+      if (activeThreadIdRef.current) {
+        navHistory.updateCurrentAnchor({
+          threadId: activeThreadIdRef.current,
+          anchor,
+        });
+      }
+    },
+    [navHistory],
+  );
+
   const handleThreadClick = useCallback(
     async (threadId: string) => {
+      // Ignore clicks triggered by programmatic back/forward navigation
+      if (isNavigatingRef.current) return;
+
+      const fromId = prevActiveThreadIdRef.current;
       // Save current draft BEFORE switching (inputRef still points to the current InputBar)
-      if (
-        prevActiveThreadIdRef.current &&
-        prevActiveThreadIdRef.current !== threadId
-      ) {
-        saveDraft(prevActiveThreadIdRef.current);
+      if (fromId && fromId !== threadId) {
+        saveDraft(fromId);
+        // Record where we are in the departing thread
+        navHistory.push({ threadId: fromId, anchor: currentAnchorRef.current });
       }
       closePreview();
+      currentAnchorRef.current = { type: "latest" };
       await setActiveThreadId(threadId);
+      // Record the landing location in the new thread
+      navHistory.push({ threadId, anchor: { type: "latest" } });
     },
-    [setActiveThreadId, closePreview, saveDraft],
+    [setActiveThreadId, closePreview, saveDraft, navHistory],
   );
 
   const handleAddFolder = useCallback(async () => {
@@ -683,6 +788,34 @@ function AppInner(): React.ReactElement {
     return () => document.removeEventListener("keydown", handler);
   }, [handleToggleTerminal]);
 
+  // Navigate back/forward (VSCode-style)
+  // macOS: Ctrl+- (back) / Ctrl+Shift+- (forward)
+  // Win/Linux: Alt+ArrowLeft (back) / Alt+ArrowRight (forward)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().includes("MAC");
+      const isBack = isMac
+        ? e.ctrlKey && !e.shiftKey && e.code === "Minus"
+        : e.altKey && e.key === "ArrowLeft";
+      const isForward = isMac
+        ? e.ctrlKey && e.shiftKey && e.code === "Minus"
+        : e.altKey && e.key === "ArrowRight";
+
+      if (isBack) {
+        e.preventDefault();
+        e.stopPropagation();
+        navHistory.back();
+      } else if (isForward) {
+        e.preventDefault();
+        e.stopPropagation();
+        navHistory.forward();
+      }
+    };
+    document.addEventListener("keydown", handler, { capture: true });
+    return () =>
+      document.removeEventListener("keydown", handler, { capture: true });
+  }, [navHistory]);
+
   // Cmd+P to open model picker (via main process menu)
   useEffect(() => {
     return settingsBridge.onOpenModelPicker?.(() =>
@@ -893,6 +1026,7 @@ function AppInner(): React.ReactElement {
 
                   {/* Chat messages */}
                   <ChatView
+                    ref={chatViewRef}
                     provider={
                       ((activeThread?.provider as "claude-code" | "codex") ??
                         pendingProvider) as "claude-code" | "codex"
@@ -906,6 +1040,7 @@ function AppInner(): React.ReactElement {
                     onViewPlan={openMarkdown}
                     onUpdateTaskExpanded={updateTaskExpanded}
                     onViewFile={handleViewFile}
+                    onAnchorChange={handleAnchorChange}
                   />
 
                   {/* Input */}

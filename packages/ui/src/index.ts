@@ -1,5 +1,5 @@
 // Components
-export { ChatView } from "./components/ChatView";
+export { ChatView, type ChatViewHandle } from "./components/ChatView";
 export { MessageBubble } from "./components/MessageBubble";
 export {
   InputBar,
@@ -77,6 +77,7 @@ export type { DiagnosticError } from "./hooks/useDiagnostics";
 export type { FileMentionsBridge } from "./hooks/useFileMentions";
 
 // Types
+export type { NavAnchor } from "./types/nav";
 export type {
   ChatMessage,
   ToolCall,

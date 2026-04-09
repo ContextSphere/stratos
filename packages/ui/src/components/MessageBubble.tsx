@@ -309,7 +309,11 @@ export function MessageBubble({
     const config = getModeConfig(provider, modeKey);
     const colors = PILL_COLOR_MAP[config.color] ?? PILL_COLOR_MAP.blue;
     return (
-      <div className="flex justify-center my-2">
+      <div
+        id={`msg-${message.id}`}
+        data-message-id={message.id}
+        className="flex justify-center my-2"
+      >
         <div
           className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${colors.border} ${colors.bg} ${colors.text}`}
         >
@@ -342,7 +346,11 @@ export function MessageBubble({
   const hasToolCalls = regularToolCalls.length > 0 || !!message.taskInfo;
 
   return (
-    <div className="space-y-2">
+    <div
+      id={`msg-${message.id}`}
+      data-message-id={message.id}
+      className="space-y-2"
+    >
       {/* Message content — user gets a bubble, assistant flows full-width */}
       {(isUser || hasTextContent) && (
         <div className={isUser ? "flex justify-end" : ""}>
