@@ -76,7 +76,7 @@ const PROVIDER_MODE_CONFIG_OVERRIDES: Partial<
 export const AGENT_MODES: AgentMode[] = PROVIDER_AGENT_MODES["claude-code"];
 
 export function getAgentModes(provider: ProviderType): AgentMode[] {
-  return PROVIDER_AGENT_MODES[provider];
+  return PROVIDER_AGENT_MODES[provider] ?? PROVIDER_AGENT_MODES["claude-code"];
 }
 
 export function getModeConfig(
