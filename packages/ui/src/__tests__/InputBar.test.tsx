@@ -126,7 +126,11 @@ describe("InputBar", () => {
     setContentEditable(textbox, "  hello world  ");
     await user.click(screen.getByTitle("Send"));
     expect(props.onSend).toHaveBeenCalledOnce();
-    expect(props.onSend).toHaveBeenCalledWith("hello world", undefined);
+    expect(props.onSend).toHaveBeenCalledWith(
+      "hello world",
+      undefined,
+      undefined,
+    );
   });
 
   it("does NOT call onSend when content is empty and send button is clicked (disabled)", async () => {
@@ -157,7 +161,11 @@ describe("InputBar", () => {
     const textbox = screen.getByRole("textbox");
     setContentEditable(textbox, "press enter");
     await user.type(textbox, "{Enter}");
-    expect(props.onSend).toHaveBeenCalledWith("press enter", undefined);
+    expect(props.onSend).toHaveBeenCalledWith(
+      "press enter",
+      undefined,
+      undefined,
+    );
   });
 
   it("does NOT call onSend when Shift+Enter is pressed", async () => {
@@ -214,8 +222,8 @@ describe("InputBar", () => {
 
   // ---------- attach image button ----------
 
-  it("renders the attach image button", () => {
+  it("renders the attach file button", () => {
     render(<InputBar {...makeProps()} />);
-    expect(screen.getByTitle("Attach image")).toBeInTheDocument();
+    expect(screen.getByTitle("Attach file")).toBeInTheDocument();
   });
 });

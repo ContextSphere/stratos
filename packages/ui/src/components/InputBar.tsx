@@ -6,7 +6,7 @@ import {
   useImperativeHandle,
   useMemo,
 } from "react";
-import type { ImageAttachment } from "../types";
+import type { ImageAttachment, FileAttachment } from "../types";
 import { SlashCommandMenu, type SlashCommandInfo } from "./SlashCommandMenu";
 import { FileMentionMenu } from "./FileMentionMenu";
 import {
@@ -20,7 +20,11 @@ export type InteractiveMode =
   | { type: "question"; requestId: string; data: unknown };
 
 interface Props {
-  onSend: (prompt: string, images?: ImageAttachment[]) => Promise<void>;
+  onSend: (
+    prompt: string,
+    images?: ImageAttachment[],
+    fileAttachments?: FileAttachment[],
+  ) => Promise<void>;
   onInterrupt: () => Promise<void>;
   isStreaming: boolean;
   interactiveMode?: InteractiveMode;
@@ -35,7 +39,12 @@ export interface InputBarRef {
   prefill: (text: string) => void;
   getText: () => string;
   getImages: () => ImageAttachment[];
-  prefillDraft: (text: string, images: ImageAttachment[]) => void;
+  getFileAttachments: () => FileAttachment[];
+  prefillDraft: (
+    text: string,
+    images: ImageAttachment[],
+    fileAttachments?: FileAttachment[],
+  ) => void;
 }
 
 async function readImageFile(file: File): Promise<ImageAttachment> {
@@ -53,13 +62,25 @@ async function readImageFile(file: File): Promise<ImageAttachment> {
   });
 }
 
-async function processFiles(
-  files: FileList | File[],
-): Promise<ImageAttachment[]> {
-  const imageFiles = Array.from(files).filter((f) =>
-    f.type.startsWith("image/"),
-  );
-  return Promise.all(imageFiles.map(readImageFile));
+interface ProcessedFiles {
+  images: ImageAttachment[];
+  fileAttachments: FileAttachment[];
+}
+
+async function processFiles(files: FileList | File[]): Promise<ProcessedFiles> {
+  const all = Array.from(files);
+  const imageFiles = all.filter((f) => f.type.startsWith("image/"));
+  const nonImageFiles = all.filter((f) => !f.type.startsWith("image/"));
+
+  const images = await Promise.all(imageFiles.map(readImageFile));
+  const fileAttachments: FileAttachment[] = nonImageFiles.map((f) => ({
+    id: crypto.randomUUID(),
+    name: f.name,
+    // Electron exposes the absolute path on File objects in the renderer
+    path: (f as File & { path?: string }).path ?? f.name,
+  }));
+
+  return { images, fileAttachments };
 }
 
 export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
@@ -76,6 +97,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
   ref,
 ): React.ReactElement {
   const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [slashMenu, setSlashMenu] = useState<{ triggerPos: number } | null>(
     null,
@@ -131,11 +153,21 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       },
       getText: () => getPlainText(),
       getImages: () => images,
-      prefillDraft: (text: string, imgs: ImageAttachment[]) => {
+      getFileAttachments: () => fileAttachments,
+      prefillDraft: (
+        text: string,
+        imgs: ImageAttachment[],
+        files?: FileAttachment[],
+      ) => {
         if (editableRef.current) {
           editableRef.current.textContent = text;
-          setHasContent(text.trim().length > 0 || imgs.length > 0);
+          setHasContent(
+            text.trim().length > 0 ||
+              imgs.length > 0 ||
+              (files?.length ?? 0) > 0,
+          );
           setImages(imgs);
+          setFileAttachments(files ?? []);
           if (text) {
             editableRef.current.focus();
             const range = document.createRange();
@@ -148,18 +180,19 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
         }
       },
     }),
-    [images],
+    [images, fileAttachments],
   );
 
   const handleSend = useCallback(async () => {
     const trimmed = getPlainText().trim();
-    if (!trimmed && images.length === 0) return;
+    if (!trimmed && images.length === 0 && fileAttachments.length === 0) return;
 
     if (interactiveMode && interactiveMode.type !== "none") {
       onInteractiveResponse?.(trimmed);
       if (editableRef.current) editableRef.current.innerHTML = "";
       setHasContent(false);
       setImages([]);
+      setFileAttachments([]);
       setSlashMenu(null);
       setMentionMenu(null);
       return;
@@ -168,14 +201,27 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
     if (isStreaming) return;
 
     const sentImages = images;
+    const sentFileAttachments = fileAttachments;
     if (editableRef.current) editableRef.current.innerHTML = "";
     setHasContent(false);
     setImages([]);
+    setFileAttachments([]);
     setSlashMenu(null);
     setMentionMenu(null);
 
-    await onSend(trimmed, sentImages.length > 0 ? sentImages : undefined);
-  }, [images, isStreaming, interactiveMode, onInteractiveResponse, onSend]);
+    await onSend(
+      trimmed,
+      sentImages.length > 0 ? sentImages : undefined,
+      sentFileAttachments.length > 0 ? sentFileAttachments : undefined,
+    );
+  }, [
+    images,
+    fileAttachments,
+    isStreaming,
+    interactiveMode,
+    onInteractiveResponse,
+    onSend,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -340,8 +386,11 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
   const handleFileInputChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (!e.target.files || e.target.files.length === 0) return;
-      const newImages = await processFiles(e.target.files);
-      setImages((prev) => [...prev, ...newImages]);
+      const { images: newImages, fileAttachments: newFiles } =
+        await processFiles(e.target.files);
+      if (newImages.length > 0) setImages((prev) => [...prev, ...newImages]);
+      if (newFiles.length > 0)
+        setFileAttachments((prev) => [...prev, ...newFiles]);
       e.target.value = "";
     },
     [],
@@ -371,20 +420,29 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
     e.stopPropagation();
     dragCounterRef.current = 0;
     setIsDragging(false);
-    const newImages = await processFiles(e.dataTransfer.files);
+    const { images: newImages, fileAttachments: newFiles } = await processFiles(
+      e.dataTransfer.files,
+    );
     if (newImages.length > 0) setImages((prev) => [...prev, ...newImages]);
+    if (newFiles.length > 0)
+      setFileAttachments((prev) => [...prev, ...newFiles]);
   }, []);
 
   const removeImage = useCallback((id: string) => {
     setImages((prev) => prev.filter((img) => img.id !== id));
   }, []);
 
+  const removeFileAttachment = useCallback((id: string) => {
+    setFileAttachments((prev) => prev.filter((f) => f.id !== id));
+  }, []);
+
   const isInteractive = interactiveMode && interactiveMode.type !== "none";
   const canSend =
-    (hasContent || images.length > 0) && (!isStreaming || isInteractive);
+    (hasContent || images.length > 0 || fileAttachments.length > 0) &&
+    (!isStreaming || isInteractive);
 
   const placeholder = useMemo(() => {
-    if (isDragging) return "Drop image...";
+    if (isDragging) return "Drop files...";
     if (interactiveMode?.type === "plan-review")
       return "Provide feedback to revise the plan...";
     if (interactiveMode?.type === "question") return "Type your answer...";
@@ -436,11 +494,11 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       <div>
         {isDragging && (
           <div className="mb-2 text-center text-blue-400 text-xs py-1">
-            Drop image here
+            Drop files here
           </div>
         )}
 
-        {images.length > 0 && (
+        {(images.length > 0 || fileAttachments.length > 0) && (
           <div className="flex flex-wrap gap-2 mb-2">
             {images.map((img) => (
               <div key={img.id} className="relative group flex-shrink-0">
@@ -459,6 +517,36 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
                 </button>
               </div>
             ))}
+            {fileAttachments.map((file) => (
+              <div
+                key={file.id}
+                className="relative group flex-shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-lg border border-[var(--border-mid)] bg-[var(--bg-surface)] text-[var(--text-secondary)] text-xs max-w-[180px]"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="w-3 h-3 flex-shrink-0"
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                <span className="truncate" title={file.path}>
+                  {file.name}
+                </span>
+                <button
+                  onClick={() => removeFileAttachment(file.id)}
+                  className="flex-shrink-0 w-3.5 h-3.5 rounded-full bg-gray-700 hover:bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[9px] leading-none"
+                  title={`Remove ${file.name}`}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
           </div>
         )}
 
@@ -466,7 +554,6 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
             multiple
             className="hidden"
             onChange={handleFileInputChange}
@@ -475,7 +562,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
           <button
             onClick={() => fileInputRef.current?.click()}
             className="no-drag flex-shrink-0 w-10 h-10 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-mid)] hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center justify-center transition-colors"
-            title="Attach image"
+            title="Attach file"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -487,9 +574,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
               strokeLinejoin="round"
               className="w-4 h-4"
             >
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <polyline points="21 15 16 10 5 21" />
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
             </svg>
           </button>
 

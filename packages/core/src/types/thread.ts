@@ -36,6 +36,12 @@ export interface StoredImageAttachment {
   mimeType: string;
 }
 
+export interface StoredFileAttachment {
+  id: string;
+  name: string;
+  path: string;
+}
+
 export interface Folder {
   id: string;
   name: string;
@@ -100,6 +106,7 @@ export interface StoredMessage {
   todoData?: unknown;
   worktreeProgress?: WorktreeProgressData;
   images?: StoredImageAttachment[];
+  fileAttachments?: StoredFileAttachment[];
   stop_reason?: "end_turn" | "max_tokens" | "stop_sequence" | null;
 }
 

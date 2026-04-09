@@ -7,6 +7,7 @@ import type {
   AskUserQuestionRequest,
   PlanReviewRequest,
   ImageAttachment,
+  FileAttachment,
   TodoData,
   WorktreeProgressData,
   McpServerInfo,
@@ -39,6 +40,7 @@ interface UseChatReturn {
     prompt: string,
     threadId?: string,
     images?: ImageAttachment[],
+    fileAttachments?: FileAttachment[],
   ) => Promise<void>;
   interrupt: (threadId?: string) => Promise<void>;
   respondPermission: (
@@ -95,6 +97,8 @@ function toStoredMessage(m: ChatMessage): StoredMessage {
     ...(m.todoData && { todoData: m.todoData }),
     ...(m.worktreeProgress && { worktreeProgress: m.worktreeProgress }),
     ...(m.images && m.images.length > 0 && { images: m.images }),
+    ...(m.fileAttachments &&
+      m.fileAttachments.length > 0 && { fileAttachments: m.fileAttachments }),
   };
 }
 
@@ -138,6 +142,8 @@ function fromStoredMessage(m: StoredMessage): ChatMessage {
       ? { worktreeProgress: m.worktreeProgress as WorktreeProgressData }
       : {}),
     ...(m.images && m.images.length > 0 && { images: m.images }),
+    ...(m.fileAttachments &&
+      m.fileAttachments.length > 0 && { fileAttachments: m.fileAttachments }),
   };
 }
 
@@ -1040,7 +1046,12 @@ export function useChat(
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sendMessage = useCallback(
-    async (prompt: string, threadId?: string, images?: ImageAttachment[]) => {
+    async (
+      prompt: string,
+      threadId?: string,
+      images?: ImageAttachment[],
+      fileAttachments?: FileAttachment[],
+    ) => {
       const targetThreadId = threadId ?? activeThreadId;
       if (!targetThreadId) return;
 
@@ -1055,7 +1066,9 @@ export function useChat(
           ? trimmed.length > 50
             ? trimmed.slice(0, 50) + "..."
             : trimmed
-          : "New chat";
+          : fileAttachments && fileAttachments.length > 0
+            ? fileAttachments[0].name
+            : "New chat";
         await window.api.threadsUpdate(targetThreadId, { title });
         onThreadUpdated?.();
       }
@@ -1066,6 +1079,8 @@ export function useChat(
         content: prompt,
         timestamp: Date.now(),
         ...(images && images.length > 0 && { images }),
+        ...(fileAttachments &&
+          fileAttachments.length > 0 && { fileAttachments }),
       };
       const newMessages = [...currentMessages, userMsg];
 
@@ -1083,25 +1098,36 @@ export function useChat(
         mimeType: img.mimeType,
       }));
 
+      // Append file paths to the prompt so the agent can read them
+      let promptToSend = prompt;
+      if (fileAttachments && fileAttachments.length > 0) {
+        const filePaths = fileAttachments.map((f) => `- ${f.path}`).join("\n");
+        promptToSend = prompt
+          ? `${prompt}\n\nAttached files:\n${filePaths}`
+          : `Attached files:\n${filePaths}`;
+      }
+
       // Fire and forget — sendMessage now returns immediately from main process
-      window.api.sendMessage(prompt, targetThreadId, ipcImages).catch((err) => {
-        const errorId = nextMessageId();
-        const errorMsg: ChatMessage = {
-          id: errorId,
-          role: "assistant",
-          content: `Error: ${err instanceof Error ? err.message : "Failed to send message"}`,
-          timestamp: Date.now(),
-        };
-        const state = streamingThreadsRef.current.get(targetThreadId);
-        if (state) {
-          state.messages = [...state.messages, errorMsg];
-          saveMessages(targetThreadId, state.messages);
-          streamingThreadsRef.current.delete(targetThreadId);
-        }
-        if (activeThreadIdRef.current === targetThreadId) {
-          setMessages((prev) => [...prev, errorMsg]);
-        }
-      });
+      window.api
+        .sendMessage(promptToSend, targetThreadId, ipcImages)
+        .catch((err) => {
+          const errorId = nextMessageId();
+          const errorMsg: ChatMessage = {
+            id: errorId,
+            role: "assistant",
+            content: `Error: ${err instanceof Error ? err.message : "Failed to send message"}`,
+            timestamp: Date.now(),
+          };
+          const state = streamingThreadsRef.current.get(targetThreadId);
+          if (state) {
+            state.messages = [...state.messages, errorMsg];
+            saveMessages(targetThreadId, state.messages);
+            streamingThreadsRef.current.delete(targetThreadId);
+          }
+          if (activeThreadIdRef.current === targetThreadId) {
+            setMessages((prev) => [...prev, errorMsg]);
+          }
+        });
     },
     [runningThreadIds, activeThreadId, onThreadUpdated, saveMessages],
   );

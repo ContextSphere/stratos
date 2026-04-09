@@ -5,6 +5,7 @@ export type {
   StoredMessage,
   StoredToolCall,
   StoredImageAttachment,
+  StoredFileAttachment,
   AgentMode,
 } from "@stratosapp/core";
 
@@ -33,6 +34,12 @@ export interface ImageAttachment {
   name: string;
   dataUrl: string;
   mimeType: string;
+}
+
+export interface FileAttachment {
+  id: string;
+  name: string;
+  path: string;
 }
 
 export interface TodoItem {
@@ -72,6 +79,7 @@ export interface ChatMessage {
   worktreeProgress?: WorktreeProgressData;
   modeChange?: AgentMode;
   images?: ImageAttachment[];
+  fileAttachments?: FileAttachment[];
 }
 
 export interface ToolCall {

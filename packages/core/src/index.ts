@@ -10,6 +10,7 @@ export type {
   WorktreeProgressStep,
   WorktreeProgressData,
   StoredImageAttachment,
+  StoredFileAttachment,
 } from "./types/thread";
 export { normalizeMode } from "./types/thread";
 export type { ModeConfig } from "./types/mode";

@@ -10,7 +10,7 @@ const KNOWN_PROVIDERS = new Set<string>(["claude-code", "codex"]);
 function normalizeProvider(p: string | undefined): ProviderType {
   return (p && KNOWN_PROVIDERS.has(p) ? p : "claude-code") as ProviderType;
 }
-import type { ImageAttachment } from "@stratosapp/ui";
+import type { ImageAttachment, FileAttachment } from "@stratosapp/ui";
 import {
   Sidebar,
   ChatView,
@@ -155,7 +155,14 @@ function AppInner(): React.ReactElement {
   const [showNewThreadDialog, setShowNewThreadDialog] = useState(false);
   const inputRef = useRef<InputBarRef | null>(null);
   const draftsRef = useRef<
-    Map<string, { text: string; images: ImageAttachment[] }>
+    Map<
+      string,
+      {
+        text: string;
+        images: ImageAttachment[];
+        fileAttachments?: FileAttachment[];
+      }
+    >
   >(new Map());
   const prevActiveThreadIdRef = useRef<string | null>(null);
   const [draftThreadIds, setDraftThreadIds] = useState<Set<string>>(new Set());
@@ -205,8 +212,9 @@ function AppInner(): React.ReactElement {
   const saveDraft = useCallback((threadId: string) => {
     const text = inputRef.current?.getText() ?? "";
     const images = inputRef.current?.getImages() ?? [];
-    if (text || images.length > 0) {
-      draftsRef.current.set(threadId, { text, images });
+    const fileAttachments = inputRef.current?.getFileAttachments() ?? [];
+    if (text || images.length > 0 || fileAttachments.length > 0) {
+      draftsRef.current.set(threadId, { text, images, fileAttachments });
       setDraftThreadIds((prev) => new Set([...prev, threadId]));
     } else {
       draftsRef.current.delete(threadId);
@@ -228,7 +236,11 @@ function AppInner(): React.ReactElement {
     }
     if (activeThreadId) {
       const draft = draftsRef.current.get(activeThreadId);
-      inputRef.current?.prefillDraft(draft?.text ?? "", draft?.images ?? []);
+      inputRef.current?.prefillDraft(
+        draft?.text ?? "",
+        draft?.images ?? [],
+        draft?.fileAttachments,
+      );
     }
   }, [activeThreadId]);
 
@@ -439,7 +451,11 @@ function AppInner(): React.ReactElement {
   );
 
   const handleSend = useCallback(
-    async (prompt: string, images?: ImageAttachment[]) => {
+    async (
+      prompt: string,
+      images?: ImageAttachment[],
+      fileAttachments?: FileAttachment[],
+    ) => {
       let threadId = activeThreadId;
 
       if (!threadId) {
@@ -480,7 +496,7 @@ function AppInner(): React.ReactElement {
         }
       }
 
-      await sendMessage(prompt, threadId, images);
+      await sendMessage(prompt, threadId, images, fileAttachments);
       // Clear draft for this thread since it was sent
       draftsRef.current.delete(threadId);
       setDraftThreadIds((prev) => {

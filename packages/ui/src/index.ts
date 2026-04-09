@@ -88,6 +88,7 @@ export type {
   TodoItem,
   TodoData,
   ImageAttachment,
+  FileAttachment,
   ModelInfo,
   WorktreeProgressStep,
   WorktreeProgressData,
