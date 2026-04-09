@@ -1035,6 +1035,7 @@ function AppInner(): React.ReactElement {
 
                   {/* Chat messages */}
                   <ChatView
+                    key={activeThreadId ?? "new"}
                     ref={chatViewRef}
                     provider={
                       normalizeProvider(activeThread?.provider) ??
