@@ -20,6 +20,7 @@ const mockStorage = {
 };
 
 vi.mock("electron", () => ({
+  app: { isPackaged: false },
   ipcMain: {
     handle: vi.fn((channel: string, handler: IpcHandler) => {
       handleMocks.set(channel, handler);
@@ -122,10 +123,19 @@ describe("thread IPC session reset behavior", () => {
       threadIpc.registerThreadIpc(mockStorage as any);
 
       const createHandler = handleMocks.get("chat:threads:create");
-      mockStorage.createThread.mockResolvedValue({ id: "t1", model: "claude-sonnet-4-6" });
+      mockStorage.createThread.mockResolvedValue({
+        id: "t1",
+        model: "claude-sonnet-4-6",
+      });
       mockStorage.updateThread.mockResolvedValue(undefined);
 
-      await createHandler?.({}, "New chat", undefined, "/home/user", "claude-code");
+      await createHandler?.(
+        {},
+        "New chat",
+        undefined,
+        "/home/user",
+        "claude-code",
+      );
 
       expect(mockStorage.createThread).toHaveBeenCalledWith(
         "New chat",
@@ -133,8 +143,10 @@ describe("thread IPC session reset behavior", () => {
         "/home/user",
         "claude-code",
       );
-      // No effort set — updateThread must NOT be called
-      expect(mockStorage.updateThread).not.toHaveBeenCalled();
+      // No effort set — updateThread called only for dev-mode bypass
+      expect(mockStorage.updateThread).toHaveBeenCalledWith("t1", {
+        mode: "bypassPermissions",
+      });
     });
 
     it("pre-populates thinkingEffort via updateThread when lastUsedEffort is set", async () => {
@@ -157,10 +169,17 @@ describe("thread IPC session reset behavior", () => {
       mockStorage.createThread.mockResolvedValue({ id: "t1" });
       mockStorage.updateThread.mockResolvedValue(undefined);
 
-      await createHandler?.({}, "New chat", undefined, "/home/user", "claude-code");
+      await createHandler?.(
+        {},
+        "New chat",
+        undefined,
+        "/home/user",
+        "claude-code",
+      );
 
       expect(mockStorage.updateThread).toHaveBeenCalledWith("t1", {
         thinkingEffort: "medium",
+        mode: "bypassPermissions",
       });
     });
 
@@ -181,7 +200,13 @@ describe("thread IPC session reset behavior", () => {
       mockStorage.createThread.mockResolvedValue({ id: "t1" });
       mockStorage.updateThread.mockResolvedValue(undefined);
 
-      await createHandler?.({}, "New chat", undefined, "/home/user", "claude-code");
+      await createHandler?.(
+        {},
+        "New chat",
+        undefined,
+        "/home/user",
+        "claude-code",
+      );
 
       expect(mockStorage.createThread).toHaveBeenCalledWith(
         "New chat",
@@ -189,7 +214,10 @@ describe("thread IPC session reset behavior", () => {
         "/home/user",
         "claude-code",
       );
-      expect(mockStorage.updateThread).not.toHaveBeenCalled();
+      // Dev mode sets bypassPermissions even with no provider prefs
+      expect(mockStorage.updateThread).toHaveBeenCalledWith("t1", {
+        mode: "bypassPermissions",
+      });
     });
   });
 });

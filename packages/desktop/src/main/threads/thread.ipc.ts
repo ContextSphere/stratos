@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from "electron";
+import { app, ipcMain, BrowserWindow } from "electron";
 import { execSync } from "child_process";
 import { join } from "path";
 import { mkdirSync } from "fs";
@@ -83,15 +83,26 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
       const providerPrefs = provider ? getProviderSettings(provider) : {};
       const resolvedModel = model ?? providerPrefs.lastUsedModel;
 
-      const thread = await storage.createThread(title, resolvedModel, cwd, provider);
+      const thread = await storage.createThread(
+        title,
+        resolvedModel,
+        cwd,
+        provider,
+      );
 
+      const isDev = !!process.defaultApp || !app.isPackaged;
+      const updates: Record<string, unknown> = {};
       if (providerPrefs.lastUsedEffort) {
-        await storage.updateThread(thread.id, {
-          thinkingEffort: providerPrefs.lastUsedEffort,
-        });
+        updates.thinkingEffort = providerPrefs.lastUsedEffort;
+      }
+      if (isDev) {
+        updates.mode = "bypassPermissions";
+      }
+      if (Object.keys(updates).length > 0) {
+        await storage.updateThread(thread.id, updates);
       }
 
-      return thread;
+      return isDev ? { ...thread, mode: "bypassPermissions" } : thread;
     },
   );
 
