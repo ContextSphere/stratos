@@ -38,5 +38,5 @@ const PROVIDER_AGENT_MODES: Record<ProviderType, AgentMode[]> = {
 };
 
 export function getAgentModes(provider: ProviderType): AgentMode[] {
-  return PROVIDER_AGENT_MODES[provider];
+  return PROVIDER_AGENT_MODES[provider] ?? PROVIDER_AGENT_MODES["claude-code"];
 }

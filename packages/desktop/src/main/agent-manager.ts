@@ -101,6 +101,8 @@ interface ThreadSession {
 export class AgentManager {
   private window: BrowserWindow;
   private sessions = new Map<string, ThreadSession>();
+  private sessionAccessOrder: string[] = []; // LRU tracking: most recent at end
+  private static readonly MAX_IDLE_SESSIONS = 3;
   private activeStreams = new Set<string>();
   private modelsCache = new Map<string, { models: unknown[]; ts: number }>();
   private static readonly MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -298,6 +300,8 @@ export class AgentManager {
         if (!pending) return;
         const { resolve, threadId, input } = pending;
         this.pendingPlanReviews.delete(data.requestId);
+        // Free plan markdown memory — it's been sent to the renderer already
+        this.lastPlanMarkdown = null;
 
         switch (data.decision.type) {
           case "clear-bypass":
@@ -633,6 +637,10 @@ export class AgentManager {
       this.sessions.set(threadId, session);
     }
 
+    // Update LRU tracking and evict idle sessions to prevent OOM
+    this.touchSession(threadId);
+    this.evictIdleSessions();
+
     // Track active stream
     this.activeStreams.add(threadId);
 
@@ -721,7 +729,7 @@ export class AgentManager {
 
     const mode = normalizeMode(thread.mode, thread.provider);
     this.threadEffectiveModes.set(threadId, mode);
-    let latestPlanContent = "";
+    const planContentChunks: string[] = [];
     let sawPlanUpdate = false;
     const params: SendMessageParams = {
       prompt,
@@ -760,7 +768,7 @@ export class AgentManager {
         if (mode === "plan" && msg.type === "plan_update") {
           sawPlanUpdate = true;
           if (msg.content) {
-            latestPlanContent += msg.content;
+            planContentChunks.push(msg.content);
           }
         }
 
@@ -813,6 +821,7 @@ export class AgentManager {
         }
       }
 
+      const latestPlanContent = planContentChunks.join("");
       if (
         mode === "plan" &&
         sawPlanUpdate &&
@@ -1096,6 +1105,34 @@ export class AgentManager {
     this.previewFileWatchers.set(threadId, watcher);
   }
 
+  /** Touch session in LRU order (most recent at end). */
+  private touchSession(threadId: string): void {
+    this.sessionAccessOrder = this.sessionAccessOrder.filter(
+      (id) => id !== threadId,
+    );
+    this.sessionAccessOrder.push(threadId);
+  }
+
+  /** Evict idle sessions beyond MAX_IDLE_SESSIONS to prevent OOM. */
+  private evictIdleSessions(): void {
+    // Count idle sessions (not actively streaming)
+    const idleIds = this.sessionAccessOrder.filter(
+      (id) => !this.activeStreams.has(id) && this.sessions.has(id),
+    );
+    const toEvict = idleIds.length - AgentManager.MAX_IDLE_SESSIONS;
+    if (toEvict <= 0) return;
+
+    // Evict oldest idle sessions (front of the list = least recently used)
+    const evictIds = idleIds.slice(0, toEvict);
+    for (const id of evictIds) {
+      safeLog(
+        console.log,
+        `[agent-manager] evicting idle session for thread ${id}`,
+      );
+      this.clearSession(id);
+    }
+  }
+
   clearSession(threadId: string): void {
     this.previewFileWatchers.get(threadId)?.close();
     this.previewFileWatchers.delete(threadId);
@@ -1105,6 +1142,9 @@ export class AgentManager {
       session.provider.dispose().catch(() => {});
       this.sessions.delete(threadId);
     }
+    this.sessionAccessOrder = this.sessionAccessOrder.filter(
+      (id) => id !== threadId,
+    );
   }
 
   getRunningThreadIds(): string[] {

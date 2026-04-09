@@ -25,6 +25,15 @@ function getToolResultText(
     .join("\n");
 }
 
+const TOOL_OUTPUT_STORAGE_LIMIT = 50_000; // 50KB — match renderer truncation limit
+function truncateToolOutput(output: string | undefined): string | undefined {
+  if (!output || output.length <= TOOL_OUTPUT_STORAGE_LIMIT) return output;
+  return (
+    output.slice(0, TOOL_OUTPUT_STORAGE_LIMIT) +
+    `\n\n[… truncated ${output.length - TOOL_OUTPUT_STORAGE_LIMIT} characters]`
+  );
+}
+
 const SKIP_TEXT = new Set(["No response requested."]);
 const SKIP_TEXT_PREFIXES = ["[Request interrupted by user"];
 
@@ -41,11 +50,26 @@ function shouldSkip(text: string): boolean {
  * approximated from array index since the SDK does not expose per-message
  * timestamps.
  */
+/**
+ * Maximum number of raw SDK messages to process. Long-lived threads can
+ * accumulate tens of thousands of SDK messages; loading all of them at once
+ * spikes memory and contributes to OOM crashes. We cap the window and only
+ * process the most recent messages. The limit is on raw SDK entries (each
+ * API turn may produce multiple entries), not on the final StoredMessage count.
+ */
+const MAX_SDK_MESSAGES = 2000;
+
 export async function sdkMessagesToStored(
   sessionId: string,
   threadCreatedAt: number,
 ): Promise<StoredMessage[]> {
-  const sdkMessages = await getSessionMessages(sessionId);
+  const allSdkMessages = await getSessionMessages(sessionId);
+
+  // Cap to the most recent messages to prevent OOM on long threads
+  const sdkMessages =
+    allSdkMessages.length > MAX_SDK_MESSAGES
+      ? allSdkMessages.slice(-MAX_SDK_MESSAGES)
+      : allSdkMessages;
 
   // We process the full list in two passes:
   // 1. Build a map of tool_use_id → output from tool_result user messages
@@ -156,7 +180,7 @@ export async function sdkMessagesToStored(
                 toolCallId: block.id,
                 toolName: block.name,
                 input: block.input as Record<string, unknown>,
-                output: toolResults.get(block.id),
+                output: truncateToolOutput(toolResults.get(block.id)),
                 status: toolResults.has(block.id) ? "completed" : "pending",
               });
             }

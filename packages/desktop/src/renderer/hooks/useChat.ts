@@ -267,6 +267,15 @@ export function useChat(
     // Clear interactive mode when switching threads
     setInteractiveMode({ type: "none" });
 
+    // Evict streaming state for idle threads (not actively streaming) to free memory.
+    // Keep: the new active thread + any threads that are currently running.
+    for (const [tid] of streamingThreadsRef.current) {
+      if (tid !== activeThreadId && !runningThreadIds.includes(tid)) {
+        streamingThreadsRef.current.delete(tid);
+        activeStreamIdRef.current.delete(tid);
+      }
+    }
+
     if (activeThreadId) {
       const streamState = streamingThreadsRef.current.get(activeThreadId);
       if (streamState) {
@@ -548,7 +557,8 @@ export function useChat(
         }
 
         case "tool_result": {
-          const displayOutput = truncateToolOutput(msg.output);
+          // Truncate at storage level to prevent unbounded memory growth
+          const truncatedOutput = truncateToolOutput(msg.output);
           if (msg.toolCallId === state.activeTaskId) {
             // Task completed - update taskInfo and auto-collapse
             apply((prev) =>
@@ -560,14 +570,14 @@ export function useChat(
                       ...m.taskInfo,
                       status: "completed",
                       endTime: Date.now(),
-                      result: displayOutput,
+                      result: truncatedOutput,
                       toolCallsExpanded: false,
                     } as ChatMessage["taskInfo"],
                     toolCalls: m.toolCalls?.map((tc) =>
                       tc.toolCallId === msg.toolCallId
                         ? {
                             ...tc,
-                            output: displayOutput || tc.output,
+                            output: truncatedOutput || tc.output,
                             status: "completed" as const,
                           }
                         : tc,
@@ -587,7 +597,7 @@ export function useChat(
                   tc.toolCallId === msg.toolCallId
                     ? {
                         ...tc,
-                        output: displayOutput || tc.output,
+                        output: truncatedOutput || tc.output,
                         status: "completed" as const,
                       }
                     : tc,

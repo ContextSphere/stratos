@@ -1,5 +1,15 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { getAgentModes, normalizeMode, type AgentMode } from "./utils/modes";
+import {
+  getAgentModes,
+  normalizeMode,
+  type AgentMode,
+  type ProviderType,
+} from "./utils/modes";
+
+const KNOWN_PROVIDERS = new Set<string>(["claude-code", "codex"]);
+function normalizeProvider(p: string | undefined): ProviderType {
+  return (p && KNOWN_PROVIDERS.has(p) ? p : "claude-code") as ProviderType;
+}
 import type { ImageAttachment } from "@stratosapp/ui";
 import {
   Sidebar,
@@ -693,9 +703,8 @@ function AppInner(): React.ReactElement {
         e.preventDefault();
         e.stopPropagation();
         if (isStreaming) return;
-        const currentProvider = ((activeThread?.provider as
-          | "claude-code"
-          | "codex") ?? pendingProvider) as "claude-code" | "codex";
+        const currentProvider =
+          normalizeProvider(activeThread?.provider) ?? pendingProvider;
         const currentMode = activeThread?.mode
           ? normalizeMode(activeThread.mode, currentProvider)
           : (pendingMode ?? "default");
@@ -1028,8 +1037,8 @@ function AppInner(): React.ReactElement {
                   <ChatView
                     ref={chatViewRef}
                     provider={
-                      ((activeThread?.provider as "claude-code" | "codex") ??
-                        pendingProvider) as "claude-code" | "codex"
+                      normalizeProvider(activeThread?.provider) ??
+                      pendingProvider
                     }
                     messages={messages}
                     isStreaming={isStreaming}
@@ -1062,9 +1071,8 @@ function AppInner(): React.ReactElement {
                       <div className="flex items-center gap-2">
                         <ProviderToggle
                           provider={
-                            (activeThread?.provider as
-                              | "claude-code"
-                              | "codex") ?? pendingProvider
+                            normalizeProvider(activeThread?.provider) ??
+                            pendingProvider
                           }
                           onProviderChange={handleProviderChange}
                           disabled={isStreaming || messages.length > 0}
@@ -1079,7 +1087,7 @@ function AppInner(): React.ReactElement {
                           onThinkingEffortChange={handleThinkingEffortChange}
                           onFetchModels={() =>
                             settingsBridge.getAvailableModels?.(
-                              (activeThread?.provider as string) ??
+                              normalizeProvider(activeThread?.provider) ??
                                 pendingProvider,
                             ) ?? Promise.resolve([])
                           }
@@ -1089,21 +1097,15 @@ function AppInner(): React.ReactElement {
                       </div>
                       <ModeToggle
                         provider={
-                          ((activeThread?.provider as
-                            | "claude-code"
-                            | "codex") ?? pendingProvider) as
-                            | "claude-code"
-                            | "codex"
+                          normalizeProvider(activeThread?.provider) ??
+                          pendingProvider
                         }
                         mode={
                           activeThread?.mode
                             ? normalizeMode(
                                 activeThread.mode,
-                                ((activeThread?.provider as
-                                  | "claude-code"
-                                  | "codex") ?? pendingProvider) as
-                                  | "claude-code"
-                                  | "codex",
+                                normalizeProvider(activeThread?.provider) ??
+                                  pendingProvider,
                               )
                             : pendingMode
                         }
