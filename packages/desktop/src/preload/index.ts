@@ -210,6 +210,24 @@ const api = {
   codexGetConnection: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.CODEX_GET_CONNECTION),
 
+  // Opencode — provider key management
+  opencodeGetProviderKeys: (): Promise<
+    Record<string, { apiKey: string; baseURL?: string }>
+  > => ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_GET_PROVIDER_KEYS),
+  opencodeSetProviderKey: (
+    providerId: string,
+    apiKey: string,
+    baseURL?: string,
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      IPC_CHANNELS.OPENCODE_SET_PROVIDER_KEY,
+      providerId,
+      apiKey,
+      baseURL,
+    ),
+  opencodeDeleteProviderKey: (providerId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_DELETE_PROVIDER_KEY, providerId),
+
   // Folders
   foldersList: (): Promise<Folder[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.FOLDERS_LIST),

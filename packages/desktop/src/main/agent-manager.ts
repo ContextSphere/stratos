@@ -9,6 +9,7 @@ import { IPC_CHANNELS } from "../common/ipc-channels";
 import {
   ClaudeCodeProvider,
   CodexProvider,
+  OpencodeProvider,
   createProvider,
   FileStorageAdapter,
   appendTraceEntry,
@@ -25,7 +26,13 @@ import type {
   SendMessageParams,
   ProviderType,
 } from "@stratosapp/core";
-import { loadSettings, setProviderSettings } from "./settings/settings.store";
+import {
+  loadSettings,
+  setProviderSettings,
+  getOpencodeProviderKeys,
+  setOpencodeProviderKey,
+  deleteOpencodeProviderKey,
+} from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 import { resolveClaudePathOrUndefined } from "./integrations/claude-path";
 
@@ -230,8 +237,13 @@ export class AgentManager {
                 settings.cliPath as string | undefined,
               )
             : undefined;
+        const opencodeConfig =
+          key === "opencode"
+            ? { providers: getOpencodeProviderKeys() }
+            : undefined;
         await provider.initialize({
           cliPath,
+          ...(opencodeConfig ? { opencodeConfig } : {}),
         });
         try {
           const models = await provider.getAvailableModels();
@@ -484,6 +496,36 @@ export class AgentManager {
         }
       },
     );
+
+    // Opencode provider key management
+    ipcMain.handle(IPC_CHANNELS.OPENCODE_GET_PROVIDER_KEYS, async () => {
+      return getOpencodeProviderKeys();
+    });
+
+    ipcMain.handle(
+      IPC_CHANNELS.OPENCODE_SET_PROVIDER_KEY,
+      async (_event, providerId: string, apiKey: string, baseURL?: string) => {
+        setOpencodeProviderKey(providerId, {
+          apiKey,
+          ...(baseURL ? { baseURL } : {}),
+        });
+        // Restart the opencode server so it picks up the new key
+        OpencodeProvider.restartServer();
+        // Invalidate models cache for opencode
+        this.modelsCache.delete("opencode");
+      },
+    );
+
+    ipcMain.handle(
+      IPC_CHANNELS.OPENCODE_DELETE_PROVIDER_KEY,
+      async (_event, providerId: string) => {
+        deleteOpencodeProviderKey(providerId);
+        // Restart the opencode server so it drops the old key
+        OpencodeProvider.restartServer();
+        // Invalidate models cache for opencode
+        this.modelsCache.delete("opencode");
+      },
+    );
   }
 
   private async runStream(
@@ -628,6 +670,9 @@ export class AgentManager {
                 ].join("\n"),
               },
             }
+          : {}),
+        ...(providerName === "opencode"
+          ? { opencodeConfig: { providers: getOpencodeProviderKeys() } }
           : {}),
         model: thread.model,
         cwd: threadCwd,

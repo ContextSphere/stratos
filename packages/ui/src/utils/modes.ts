@@ -7,7 +7,7 @@ export type AgentMode =
   | "bypassPermissions"
   | "fullAccess";
 
-export type ProviderType = "claude-code" | "codex";
+export type ProviderType = "claude-code" | "codex" | "opencode";
 
 export interface ModeConfig {
   label: string;
@@ -59,6 +59,7 @@ export const MODE_CONFIGS: Record<AgentMode, ModeConfig> = {
 const PROVIDER_AGENT_MODES: Record<ProviderType, AgentMode[]> = {
   "claude-code": ["plan", "default", "acceptEdits", "bypassPermissions"],
   codex: ["plan", "default", "fullAccess"],
+  opencode: ["default", "bypassPermissions"],
 };
 
 const PROVIDER_MODE_CONFIG_OVERRIDES: Partial<

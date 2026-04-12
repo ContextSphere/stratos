@@ -58,7 +58,7 @@ export interface ThreadWorktree {
 }
 
 /** Supported provider identifiers */
-export type ProviderType = "claude-code" | "codex";
+export type ProviderType = "claude-code" | "codex" | "opencode";
 
 export interface Thread {
   id: string;

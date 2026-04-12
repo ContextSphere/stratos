@@ -6,7 +6,7 @@ import {
   type ProviderType,
 } from "./utils/modes";
 
-const KNOWN_PROVIDERS = new Set<string>(["claude-code", "codex"]);
+const KNOWN_PROVIDERS = new Set<string>(["claude-code", "codex", "opencode"]);
 function normalizeProvider(p: string | undefined): ProviderType {
   return (p && KNOWN_PROVIDERS.has(p) ? p : "claude-code") as ProviderType;
 }
@@ -50,6 +50,7 @@ import { usePreview } from "./hooks/usePreview";
 import { ConnectGitHubDialog } from "./components/ConnectGitHubDialog";
 import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
 import { ConnectCodexDialog } from "./components/ConnectCodexDialog";
+import { OpencodeSettingsDialog } from "./components/OpencodeSettingsDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { NewThreadDialog } from "./components/NewThreadDialog";
 import { createDesktopBridge } from "./bridge";
@@ -136,12 +137,12 @@ function AppInner(): React.ReactElement {
   const [showClaudeDialog, setShowClaudeDialog] = useState(false);
   const [showGitHubDialog, setShowGitHubDialog] = useState(false);
   const [showCodexDialog, setShowCodexDialog] = useState(false);
+  const [showOpencodeDialog, setShowOpencodeDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [pendingMode, setPendingMode] = useState<AgentMode>();
-  const [pendingProvider, setPendingProvider] = useState<
-    "claude-code" | "codex"
-  >("claude-code");
+  const [pendingProvider, setPendingProvider] =
+    useState<ProviderType>("claude-code");
   const [homeDir, setHomeDir] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showBottomTerminal, setShowBottomTerminal] = useState(false);
@@ -574,7 +575,7 @@ function AppInner(): React.ReactElement {
   );
 
   const handleProviderChange = useCallback(
-    async (provider: "claude-code" | "codex") => {
+    async (provider: ProviderType) => {
       if (!activeThreadId) {
         setPendingProvider(provider);
         setPendingMode((prev) => (prev ? normalizeMode(prev, provider) : prev));
@@ -978,6 +979,16 @@ function AppInner(): React.ReactElement {
                         </span>
                       </button>
                       <button
+                        onClick={() => setShowOpencodeDialog(true)}
+                        className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                        title="Opencode settings"
+                      >
+                        <div className="w-1.5 h-1.5 rounded-full bg-gray-600" />
+                        <span className="text-[var(--text-muted)]">
+                          Opencode
+                        </span>
+                      </button>
+                      <button
                         onClick={() => setShowGitHubDialog(true)}
                         className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
                         title={
@@ -1225,6 +1236,12 @@ function AppInner(): React.ReactElement {
           onClose={() => setShowCodexDialog(false)}
           onConnect={codex.connect}
           onDisconnect={codex.disconnect}
+        />
+
+        {/* Opencode settings dialog */}
+        <OpencodeSettingsDialog
+          isOpen={showOpencodeDialog}
+          onClose={() => setShowOpencodeDialog(false)}
         />
 
         {/* GitHub connect dialog */}

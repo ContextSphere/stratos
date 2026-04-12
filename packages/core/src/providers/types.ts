@@ -168,6 +168,15 @@ export interface ProviderConfig {
   cliPath?: string;
   /** Codex sandbox policy (default: 'workspace-write') */
   sandboxPolicy?: "read-only" | "workspace-write" | "danger-full-access";
+  /** Opencode-specific configuration */
+  opencodeConfig?: {
+    /** Per-sub-provider API keys injected via OPENCODE_CONFIG_CONTENT env var */
+    providers?: Record<string, { apiKey: string; baseURL?: string }>;
+    /** Port override (default: derived from cwd hash, range 8200–8998) */
+    port?: number;
+    /** Path to opencode binary (defaults to PATH lookup) */
+    binaryPath?: string;
+  };
 }
 
 export interface TokenUsage {

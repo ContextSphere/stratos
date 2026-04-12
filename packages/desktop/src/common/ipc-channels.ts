@@ -56,6 +56,11 @@ export const IPC_CHANNELS = {
   CODEX_DISCONNECT: "integration:codex:disconnect",
   CODEX_GET_CONNECTION: "integration:codex:get-connection",
 
+  // Opencode — provider key management
+  OPENCODE_GET_PROVIDER_KEYS: "integration:opencode:get-provider-keys",
+  OPENCODE_SET_PROVIDER_KEY: "integration:opencode:set-provider-key",
+  OPENCODE_DELETE_PROVIDER_KEY: "integration:opencode:delete-provider-key",
+
   // Interactive tool events (AskUserQuestion, plan mode)
   ASK_USER_QUESTION: "chat:ask-user-question",
   ASK_USER_RESPONSE: "chat:ask-user-response",

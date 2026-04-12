@@ -9,9 +9,17 @@ export interface ProviderPrefs {
   lastUsedEffort?: "low" | "medium" | "high" | "max";
 }
 
+/** API keys for opencode sub-providers (stored in app-settings.json, plain text) */
+export interface OpencodeProviderKey {
+  apiKey: string;
+  baseURL?: string;
+}
+
 export interface AppSettings {
   theme?: AppTheme;
   providers?: Record<string, ProviderPrefs>;
+  /** Opencode sub-provider API keys keyed by opencode provider ID (e.g. "anthropic", "openai") */
+  opencodeProviderKeys?: Record<string, OpencodeProviderKey>;
   [key: string]: unknown;
 }
 
@@ -79,4 +87,32 @@ export function setProviderSettings(
   patch: Partial<ProviderPrefs>,
 ): void {
   updateSettings({ providers: { [provider]: patch } });
+}
+
+export function getOpencodeProviderKeys(): Record<string, OpencodeProviderKey> {
+  const settings = loadSettings();
+  return settings.opencodeProviderKeys ?? {};
+}
+
+export function setOpencodeProviderKey(
+  providerId: string,
+  key: OpencodeProviderKey,
+): void {
+  const current = loadSettings();
+  const updated: AppSettings = {
+    ...current,
+    opencodeProviderKeys: {
+      ...(current.opencodeProviderKeys ?? {}),
+      [providerId]: key,
+    },
+  };
+  saveSettings(updated);
+}
+
+export function deleteOpencodeProviderKey(providerId: string): void {
+  const current = loadSettings();
+  const keys = { ...(current.opencodeProviderKeys ?? {}) };
+  delete keys[providerId];
+  const updated: AppSettings = { ...current, opencodeProviderKeys: keys };
+  saveSettings(updated);
 }
