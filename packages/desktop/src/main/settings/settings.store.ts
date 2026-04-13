@@ -20,8 +20,14 @@ export interface AppSettings {
   providers?: Record<string, ProviderPrefs>;
   /** Opencode sub-provider API keys keyed by opencode provider ID (e.g. "anthropic", "openai") */
   opencodeProviderKeys?: Record<string, OpencodeProviderKey>;
+  /** Allowlist of opencode sub-provider IDs whose models are shown in the picker.
+   *  If undefined, DEFAULT_OPENCODE_MODEL_ALLOWLIST is used. */
+  opencodeModelAllowlist?: string[];
   [key: string]: unknown;
 }
+
+/** Default allowlist: only show Anthropic and OpenAI models in the picker. */
+export const DEFAULT_OPENCODE_MODEL_ALLOWLIST = ["anthropic", "openai"];
 
 const STORE_FILE = "app-settings.json";
 const GLOBAL_CONFIG_DIR = join(homedir(), ".stratos");
@@ -115,4 +121,14 @@ export function deleteOpencodeProviderKey(providerId: string): void {
   delete keys[providerId];
   const updated: AppSettings = { ...current, opencodeProviderKeys: keys };
   saveSettings(updated);
+}
+
+export function getOpencodeModelAllowlist(): string[] {
+  const settings = loadSettings();
+  return settings.opencodeModelAllowlist ?? DEFAULT_OPENCODE_MODEL_ALLOWLIST;
+}
+
+export function setOpencodeModelAllowlist(allowlist: string[]): void {
+  const current = loadSettings();
+  saveSettings({ ...current, opencodeModelAllowlist: allowlist });
 }

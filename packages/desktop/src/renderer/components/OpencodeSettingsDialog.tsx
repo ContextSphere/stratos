@@ -32,6 +32,7 @@ export function OpencodeSettingsDialog({
   const [newBaseURL, setNewBaseURL] = useState("");
   const [showCustomProvider, setShowCustomProvider] = useState(false);
   const [customProviderId, setCustomProviderId] = useState("");
+  const [allowlist, setAllowlist] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -45,6 +46,10 @@ export function OpencodeSettingsDialog({
   useEffect(() => {
     if (isOpen) {
       refresh();
+      window.api
+        .opencodeGetModelAllowlist?.()
+        .then(setAllowlist)
+        .catch(() => {});
       setError(null);
       setAddingProvider("");
       setNewApiKey("");
@@ -101,6 +106,17 @@ export function OpencodeSettingsDialog({
       }
     },
     [refresh],
+  );
+
+  const toggleAllowlist = useCallback(
+    async (providerId: string) => {
+      const next = allowlist.includes(providerId)
+        ? allowlist.filter((id) => id !== providerId)
+        : [...allowlist, providerId];
+      setAllowlist(next);
+      await window.api.opencodeSetModelAllowlist?.(next);
+    },
+    [allowlist],
   );
 
   const activeProviderId = showCustomProvider
@@ -239,6 +255,34 @@ export function OpencodeSettingsDialog({
                 </Button>
               </div>
             )}
+          </div>
+
+          {/* Visible model providers */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-[var(--text-control)] uppercase tracking-wide">
+              Visible Model Providers
+            </p>
+            <p className="text-xs text-[var(--text-muted)]">
+              Only models from selected providers appear in the model picker.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {COMMON_PROVIDERS.map((p) => {
+                const active = allowlist.includes(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => toggleAllowlist(p.id)}
+                    className={`px-2 py-0.5 rounded text-xs transition-colors border ${
+                      active
+                        ? "bg-[var(--border)] text-[var(--text-primary)] border-[var(--text-control)]"
+                        : "text-[var(--text-muted)] border-[var(--border)] hover:text-[var(--text-primary)] opacity-50"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {error && (

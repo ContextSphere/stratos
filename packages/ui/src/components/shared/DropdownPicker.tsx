@@ -33,6 +33,7 @@ export default function DropdownPicker({
 
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   // Sync controlled open state
   useEffect(() => {
@@ -90,6 +91,15 @@ export default function DropdownPicker({
       document.removeEventListener("keydown", handler, { capture: true });
   }, [isOpen, items, highlightedIndex, onSelect]);
 
+  // Auto-scroll highlighted item into view during keyboard navigation
+  useEffect(() => {
+    if (!isOpen) return;
+    const list = listRef.current;
+    if (!list) return;
+    const item = list.children[highlightedIndex] as HTMLElement | undefined;
+    item?.scrollIntoView({ block: "nearest" });
+  }, [highlightedIndex, isOpen]);
+
   const currentItem = items.find((item) => item.value === selectedValue);
 
   return (
@@ -117,7 +127,8 @@ export default function DropdownPicker({
 
         {isOpen && (
           <div
-            className={`absolute bottom-full mb-1 left-0 z-50 ${minWidth} bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-lg shadow-xl overflow-hidden`}
+            ref={listRef}
+            className={`absolute bottom-full mb-1 left-0 z-50 ${minWidth} bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-lg shadow-xl overflow-y-auto max-h-64`}
           >
             {items.map((item, i) => (
               <button
