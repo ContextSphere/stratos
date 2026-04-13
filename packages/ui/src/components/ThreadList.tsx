@@ -151,6 +151,22 @@ function ThreadRow({
           />
         </svg>
       )}
+      {thread.scheduledPromptId && !status && !hasDraft && (
+        <svg
+          className="w-3 h-3 flex-shrink-0 text-[var(--text-muted)]"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          viewBox="0 0 24 24"
+          aria-label="Scheduled"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z"
+          />
+        </svg>
+      )}
       <span className="flex-1 truncate">{thread.title}</span>
       {isDeleting ? (
         <div

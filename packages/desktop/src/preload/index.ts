@@ -228,6 +228,12 @@ const api = {
   opencodeDeleteProviderKey: (providerId: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_DELETE_PROVIDER_KEY, providerId),
 
+  // Opencode model allowlist
+  opencodeGetModelAllowlist: (): Promise<string[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_GET_MODEL_ALLOWLIST),
+  opencodeSetModelAllowlist: (allowlist: string[]): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_SET_MODEL_ALLOWLIST, allowlist),
+
   // Folders
   foldersList: (): Promise<Folder[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.FOLDERS_LIST),
@@ -435,6 +441,39 @@ const api = {
     ipcRenderer.on(IPC_CHANNELS.DIAGNOSTIC_ERROR, (_event, data) =>
       callback(data),
     );
+  },
+
+  // Scheduled prompts
+  scheduledList: (): Promise<unknown[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SCHEDULED_LIST),
+
+  scheduledCreate: (data: {
+    name: string;
+    prompt: string;
+    provider: string;
+    model?: string;
+    folderId: string;
+    schedule: unknown;
+  }): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SCHEDULED_CREATE, data),
+
+  scheduledUpdate: (
+    id: string,
+    updates: Record<string, unknown>,
+  ): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SCHEDULED_UPDATE, id, updates),
+
+  scheduledDelete: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SCHEDULED_DELETE, id),
+
+  scheduledRunNow: (id: string): Promise<string | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SCHEDULED_RUN_NOW, id),
+
+  onScheduledChanged: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC_CHANNELS.SCHEDULED_CHANGED, listener);
+    return () =>
+      ipcRenderer.removeListener(IPC_CHANNELS.SCHEDULED_CHANGED, listener);
   },
 
   // Skills

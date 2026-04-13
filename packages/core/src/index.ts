@@ -12,6 +12,13 @@ export type {
   StoredImageAttachment,
   StoredFileAttachment,
 } from "./types/thread";
+export type {
+  ScheduledPrompt,
+  ScheduleConfig,
+  ScheduleType,
+  RecurringInterval,
+} from "./types/scheduled-prompt";
+export { scheduleToCron, scheduleToHuman } from "./types/scheduled-prompt";
 export { normalizeMode } from "./types/thread";
 export type { ModeConfig } from "./types/mode";
 export { MODE_CONFIGS, AGENT_MODES } from "./types/mode";
@@ -46,6 +53,16 @@ export {
   readTraceEntries,
   clearTraceFile,
 } from "./storage/trace.store";
+
+// Scheduled prompts
+export {
+  loadScheduledPrompts,
+  saveScheduledPrompts,
+  addScheduledPrompt,
+  updateScheduledPrompt,
+  deleteScheduledPrompt,
+  getScheduledPrompt,
+} from "./storage/scheduled-prompts.store";
 
 // Utils
 export type { WorktreeInfo } from "./utils/worktree";

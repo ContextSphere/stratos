@@ -56,6 +56,11 @@ import {
   registerTerminalIpc,
   unregisterTerminalIpc,
 } from "./terminal/terminal-manager";
+import { SchedulerManager } from "./scheduler/scheduler";
+import {
+  registerSchedulerIpc,
+  unregisterSchedulerIpc,
+} from "./scheduler/scheduler.ipc";
 import { statSync } from "fs";
 import { FileStorageAdapter, getWorktreeInfo } from "@stratosapp/core";
 import { generateDockIcon } from "./dock-icon";
@@ -106,6 +111,7 @@ if (!gotLock) {
 
   let mainWindow: BrowserWindow | null = null;
   let agentManager: AgentManager | null = null;
+  let schedulerManager: SchedulerManager | null = null;
 
   function createWindow(): void {
     mainWindow = new BrowserWindow({
@@ -203,6 +209,11 @@ if (!gotLock) {
     registerSkillsIpc();
     registerFilesIpc();
     registerTerminalIpc(mainWindow.webContents);
+
+    // Scheduled prompts
+    schedulerManager = new SchedulerManager(agentManager, storage, mainWindow);
+    registerSchedulerIpc(schedulerManager);
+    schedulerManager.initialize();
   }
 
   app.on("web-contents-created", (_event, contents) => {
@@ -226,8 +237,10 @@ if (!gotLock) {
   });
 
   app.on("window-all-closed", () => {
+    schedulerManager?.dispose();
     agentManager?.dispose();
     ipcMain.removeHandler(IPC_CHANNELS.APP_INFO);
+    unregisterSchedulerIpc();
     unregisterThreadIpc();
     unregisterGitHubIpc();
     unregisterClaudeIpc();

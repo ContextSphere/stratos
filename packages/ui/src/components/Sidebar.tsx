@@ -13,6 +13,7 @@ interface Props {
   onDeleteThread: (threadId: string) => void;
   onToggleSidebar: () => void;
   onSettingsClick: () => void;
+  onSchedulesClick?: () => void;
   runningThreadIds: string[];
   threadNotifications: Map<string, string>;
   pendingPermissionThreadIds?: Set<string>;
@@ -31,6 +32,7 @@ export function Sidebar({
   onDeleteThread,
   onToggleSidebar,
   onSettingsClick,
+  onSchedulesClick,
   runningThreadIds,
   threadNotifications,
   pendingPermissionThreadIds,
@@ -86,8 +88,30 @@ export function Sidebar({
           />
         </div>
 
-        {/* Settings footer */}
-        <div className="flex-shrink-0 border-t border-[var(--border)] px-3 py-2">
+        {/* Footer buttons */}
+        <div className="flex-shrink-0 border-t border-[var(--border)] px-3 py-2 space-y-0.5">
+          {onSchedulesClick && (
+            <button
+              onClick={onSchedulesClick}
+              className="no-drag w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[var(--text-control)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] transition-colors text-sm"
+              title="Scheduled Prompts"
+            >
+              <svg
+                className="w-4 h-4 flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z"
+                />
+              </svg>
+              <span>Schedules</span>
+            </button>
+          )}
           <button
             onClick={onSettingsClick}
             className="no-drag w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[var(--text-control)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] transition-colors text-sm"

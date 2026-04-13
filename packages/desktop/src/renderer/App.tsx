@@ -52,6 +52,7 @@ import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
 import { ConnectCodexDialog } from "./components/ConnectCodexDialog";
 import { OpencodeSettingsDialog } from "./components/OpencodeSettingsDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { ScheduledPromptsDialog } from "./components/ScheduledPromptsDialog";
 import { NewThreadDialog } from "./components/NewThreadDialog";
 import { createDesktopBridge } from "./bridge";
 
@@ -139,6 +140,7 @@ function AppInner(): React.ReactElement {
   const [showCodexDialog, setShowCodexDialog] = useState(false);
   const [showOpencodeDialog, setShowOpencodeDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [showSchedulesDialog, setShowSchedulesDialog] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [pendingMode, setPendingMode] = useState<AgentMode>();
   const [pendingProvider, setPendingProvider] =
@@ -890,6 +892,7 @@ function AppInner(): React.ReactElement {
             onDeleteThread={handleDeleteThread}
             onToggleSidebar={toggleSidebar}
             onSettingsClick={() => setShowSettingsDialog(true)}
+            onSchedulesClick={() => setShowSchedulesDialog(true)}
             runningThreadIds={runningThreadIds}
             threadNotifications={threadNotifications}
             pendingPermissionThreadIds={pendingPermissionThreadIds}
@@ -1266,6 +1269,13 @@ function AppInner(): React.ReactElement {
           folders={folders}
           onSelectFolder={handleNewThreadFromFolder}
           onBrowse={handleNewThreadBrowse}
+        />
+
+        {/* Scheduled prompts dialog */}
+        <ScheduledPromptsDialog
+          isOpen={showSchedulesDialog}
+          onClose={() => setShowSchedulesDialog(false)}
+          folders={folders}
         />
 
         {/* Settings dialog */}

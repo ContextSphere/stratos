@@ -25,3 +25,6 @@ export {
 export type { StatusIndicatorProps } from "./StatusIndicator";
 
 export { DiagnosticToast, DiagnosticToastContainer } from "./DiagnosticToast";
+
+export { default as DropdownPicker } from "./DropdownPicker";
+export type { DropdownItem } from "./DropdownPicker";

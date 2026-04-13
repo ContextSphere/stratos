@@ -77,6 +77,8 @@ export interface Thread {
   worktreeMode?: "local" | "worktree";
   worktree?: ThreadWorktree;
   sessionTools?: string[];
+  /** If this thread was created by a scheduled prompt, its ID */
+  scheduledPromptId?: string;
 }
 
 export interface WorktreeProgressStep {

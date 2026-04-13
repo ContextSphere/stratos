@@ -61,6 +61,10 @@ export const IPC_CHANNELS = {
   OPENCODE_SET_PROVIDER_KEY: "integration:opencode:set-provider-key",
   OPENCODE_DELETE_PROVIDER_KEY: "integration:opencode:delete-provider-key",
 
+  // Opencode — model allowlist
+  OPENCODE_GET_MODEL_ALLOWLIST: "integration:opencode:get-model-allowlist",
+  OPENCODE_SET_MODEL_ALLOWLIST: "integration:opencode:set-model-allowlist",
+
   // Interactive tool events (AskUserQuestion, plan mode)
   ASK_USER_QUESTION: "chat:ask-user-question",
   ASK_USER_RESPONSE: "chat:ask-user-response",
@@ -112,6 +116,14 @@ export const IPC_CHANNELS = {
 
   // Diagnostics
   DIAGNOSTIC_ERROR: "app:diagnostic-error",
+
+  // Scheduled prompts
+  SCHEDULED_LIST: "schedule:list",
+  SCHEDULED_CREATE: "schedule:create",
+  SCHEDULED_UPDATE: "schedule:update",
+  SCHEDULED_DELETE: "schedule:delete",
+  SCHEDULED_RUN_NOW: "schedule:run-now",
+  SCHEDULED_CHANGED: "schedule:changed",
 
   // Terminal
   TERMINAL_CREATE: "terminal:create",

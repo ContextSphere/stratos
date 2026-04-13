@@ -32,6 +32,8 @@ import {
   getOpencodeProviderKeys,
   setOpencodeProviderKey,
   deleteOpencodeProviderKey,
+  getOpencodeModelAllowlist,
+  setOpencodeModelAllowlist,
 } from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 import { resolveClaudePathOrUndefined } from "./integrations/claude-path";
@@ -246,7 +248,13 @@ export class AgentManager {
           ...(opencodeConfig ? { opencodeConfig } : {}),
         });
         try {
-          const models = await provider.getAvailableModels();
+          let models = await provider.getAvailableModels();
+          if (key === "opencode") {
+            const allowlist = getOpencodeModelAllowlist();
+            models = models.filter((m) =>
+              allowlist.includes(m.value.split("/")[0]),
+            );
+          }
           this.modelsCache.set(key, { models, ts: Date.now() });
           return models;
         } finally {
@@ -523,6 +531,19 @@ export class AgentManager {
         // Restart the opencode server so it drops the old key
         OpencodeProvider.restartServer();
         // Invalidate models cache for opencode
+        this.modelsCache.delete("opencode");
+      },
+    );
+
+    // Opencode model allowlist
+    ipcMain.handle(IPC_CHANNELS.OPENCODE_GET_MODEL_ALLOWLIST, async () => {
+      return getOpencodeModelAllowlist();
+    });
+
+    ipcMain.handle(
+      IPC_CHANNELS.OPENCODE_SET_MODEL_ALLOWLIST,
+      async (_event, allowlist: string[]) => {
+        setOpencodeModelAllowlist(allowlist);
         this.modelsCache.delete("opencode");
       },
     );
@@ -1175,6 +1196,140 @@ export class AgentManager {
         `[agent-manager] evicting idle session for thread ${id}`,
       );
       this.clearSession(id);
+    }
+  }
+
+  /**
+   * Run a prompt autonomously for a scheduled execution.
+   * Auto-approves all tools, auto-declines AskUserQuestion and MCP elicitations.
+   */
+  async runScheduledPrompt(threadId: string, prompt: string): Promise<void> {
+    let thread = await this.storage.getThread(threadId);
+    if (!thread) throw new Error(`Thread ${threadId} not found`);
+
+    const streamId = `${threadId}-${Date.now()}`;
+
+    // Get or create a session for this thread
+    let session = this.sessions.get(threadId);
+    if (!session) {
+      const providerName = (thread.provider ?? "claude-code") as ProviderType;
+      const provider = createProvider(providerName);
+      const settings = loadSettings();
+      const resolvedClaudeCliPath =
+        providerName === "claude-code"
+          ? await resolveClaudePathOrUndefined(
+              settings.cliPath as string | undefined,
+            )
+          : undefined;
+      const threadCwd = thread.cwd ?? process.env.HOME!;
+      const mcpServers = buildMcpServers(threadCwd);
+      await provider.initialize({
+        ...(providerName === "claude-code"
+          ? {
+              cliPath: resolvedClaudeCliPath,
+              settingSources: ["project", "user", "local"] as (
+                | "project"
+                | "user"
+                | "local"
+              )[],
+              systemPrompt: {
+                type: "preset" as const,
+                preset: "claude_code" as const,
+                append: [
+                  `\n# Host Environment`,
+                  `You are running inside Stratos as a scheduled automation (PID: ${process.pid}).`,
+                  `DO NOT kill, terminate, or signal this process or its parent Electron process.`,
+                  `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes.`,
+                  `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
+                ].join("\n"),
+              },
+            }
+          : {}),
+        ...(providerName === "opencode"
+          ? { opencodeConfig: { providers: getOpencodeProviderKeys() } }
+          : {}),
+        model: thread.model,
+        cwd: threadCwd,
+        ...(mcpServers ? { mcpServers } : {}),
+      });
+      session = { provider, sessionId: thread.sessionId };
+      this.sessions.set(threadId, session);
+    }
+
+    this.touchSession(threadId);
+    this.evictIdleSessions();
+
+    this.activeStreams.add(threadId);
+    this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, {
+      threadId,
+      isRunning: true,
+    });
+
+    // Autonomous permission handler: approve everything, auto-decline questions
+    const permissionHandler: PermissionHandler = async (toolName, input) => {
+      const name = effectiveToolName(toolName, input);
+      if (name === "AskUserQuestion") {
+        return { approved: false };
+      }
+      return { approved: true };
+    };
+
+    // Auto-decline MCP elicitations
+    const onElicitation = async (): Promise<{
+      action: "accept" | "decline" | "cancel";
+    }> => {
+      return { action: "decline" };
+    };
+
+    const mode = normalizeMode(thread.mode, thread.provider);
+    this.threadEffectiveModes.set(threadId, mode);
+    const params: SendMessageParams = {
+      prompt,
+      sessionId: session.sessionId,
+      model: thread.model,
+      cwd: thread.cwd ?? process.env.HOME,
+      thinkingEffort: thread.thinkingEffort,
+      mode,
+      permissionHandler,
+      onElicitation,
+      traceCallback: (entry) => {
+        appendTraceEntry(threadId, entry);
+      },
+    };
+
+    try {
+      for await (const msg of session.provider.sendMessage(params)) {
+        this.sendToRenderer(
+          IPC_CHANNELS.STREAM_MESSAGE,
+          { ...msg, _streamId: streamId },
+          threadId,
+        );
+        if (msg.type === "session_init") {
+          session.sessionId = msg.sessionId;
+          try {
+            this.storage.updateThread(threadId, { sessionId: msg.sessionId });
+          } catch {}
+        }
+      }
+    } catch (err: any) {
+      this.sendToRenderer(
+        IPC_CHANNELS.STREAM_MESSAGE,
+        {
+          type: "error",
+          message: err?.message ?? "Unknown error",
+          code: "AGENT_ERROR",
+          _streamId: streamId,
+        },
+        threadId,
+      );
+      throw err;
+    } finally {
+      this.activeStreams.delete(threadId);
+      this.threadEffectiveModes.delete(threadId);
+      this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, {
+        threadId,
+        isRunning: false,
+      });
     }
   }
 
