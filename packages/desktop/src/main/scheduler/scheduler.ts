@@ -1,5 +1,9 @@
 import cron from "node-cron";
 import { Notification, BrowserWindow } from "electron";
+import { writeFileSync, existsSync, mkdirSync, watch, chmodSync } from "fs";
+import type { FSWatcher } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
 import type { AgentManager } from "../agent-manager";
 import type { ScheduledPrompt } from "@stratosapp/core";
@@ -9,6 +13,12 @@ import {
   FileStorageAdapter,
   scheduleToCron,
 } from "@stratosapp/core";
+import { SCHEDULE_CLI_SOURCE } from "./schedule-cli-source";
+
+/** Path to the installed CLI script. */
+export function getScheduleCliPath(): string {
+  return join(homedir(), ".stratos", "bin", "stratos-schedule");
+}
 
 export class SchedulerManager {
   private tasks = new Map<string, cron.ScheduledTask>();
@@ -16,6 +26,7 @@ export class SchedulerManager {
   private agentManager: AgentManager;
   private storage: FileStorageAdapter;
   private window: BrowserWindow;
+  private fileWatcher: FSWatcher | null = null;
 
   constructor(
     agentManager: AgentManager,
@@ -27,8 +38,10 @@ export class SchedulerManager {
     this.window = window;
   }
 
-  /** Load all enabled schedules from disk and register them. */
+  /** Load all enabled schedules from disk, install CLI, and start file watcher. */
   initialize(): void {
+    this.installCli();
+
     const prompts = loadScheduledPrompts();
 
     // Recovery: mark any stale "running" entries as "error"
@@ -45,6 +58,8 @@ export class SchedulerManager {
         this.schedulePrompt(p);
       }
     }
+
+    this.watchStoreFile();
   }
 
   /** Register a cron task or setTimeout for a prompt. */
@@ -184,6 +199,8 @@ export class SchedulerManager {
 
   /** Clean up all tasks on app exit. */
   dispose(): void {
+    this.fileWatcher?.close();
+    this.fileWatcher = null;
     for (const [, task] of this.tasks) {
       task.stop();
     }
@@ -192,6 +209,40 @@ export class SchedulerManager {
       clearTimeout(timer);
     }
     this.timers.clear();
+  }
+
+  /** Install the stratos-schedule CLI to ~/.stratos/bin/ */
+  private installCli(): void {
+    try {
+      const binDir = join(homedir(), ".stratos", "bin");
+      if (!existsSync(binDir)) mkdirSync(binDir, { recursive: true });
+      const cliPath = getScheduleCliPath();
+      writeFileSync(cliPath, SCHEDULE_CLI_SOURCE, "utf-8");
+      chmodSync(cliPath, 0o755);
+    } catch (err) {
+      console.error("[scheduler] Failed to install CLI:", err);
+    }
+  }
+
+  /** Watch scheduled-prompts.json for external changes (e.g. from CLI). */
+  private watchStoreFile(): void {
+    const storePath = join(homedir(), ".stratos", "scheduled-prompts.json");
+    // Ensure the file exists so we can watch it
+    if (!existsSync(storePath)) return;
+
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    try {
+      this.fileWatcher = watch(storePath, () => {
+        // Debounce: multiple events fire per write
+        if (debounce) clearTimeout(debounce);
+        debounce = setTimeout(() => {
+          this.refreshAll();
+          this.notifyChanged();
+        }, 500);
+      });
+    } catch {
+      // Watching may fail on some platforms; non-critical
+    }
   }
 
   private scheduleOnce(prompt: ScheduledPrompt): void {

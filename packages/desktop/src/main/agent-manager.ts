@@ -37,6 +37,7 @@ import {
 } from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 import { resolveClaudePathOrUndefined } from "./integrations/claude-path";
+import { getScheduleCliPath } from "./scheduler/scheduler";
 
 /**
  * Build explicit MCP servers for an agent session.
@@ -688,6 +689,27 @@ export class AgentManager {
                   `DO NOT kill, terminate, or signal this process or its parent Electron process.`,
                   `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes — this would kill your own host application.`,
                   `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
+                  ``,
+                  `# Scheduled Prompts`,
+                  `You can create scheduled prompts that run automatically using the \`stratos-schedule\` CLI:`,
+                  `\`\`\`bash`,
+                  `# Create a recurring daily schedule`,
+                  `${getScheduleCliPath()} create --name "Daily review" --prompt "Review recent changes" --every-day --time "09:00"`,
+                  ``,
+                  `# Create a one-shot schedule`,
+                  `${getScheduleCliPath()} create --name "Remind me" --prompt "Check deployment" --once "2025-01-15T14:00"`,
+                  ``,
+                  `# Other schedule intervals: --every-hour, --every-6-hours, --every-12-hours, --every-week, --cron "<expr>"`,
+                  `# Options: --folder <name>, --cwd <path>, --provider <name>, --model <name>, --day <0-6>, --time <HH:mm>`,
+                  ``,
+                  `# Manage schedules`,
+                  `${getScheduleCliPath()} list`,
+                  `${getScheduleCliPath()} delete <id>`,
+                  `${getScheduleCliPath()} enable <id>`,
+                  `${getScheduleCliPath()} disable <id>`,
+                  `${getScheduleCliPath()} folders   # list available folders`,
+                  `\`\`\``,
+                  `Each schedule creates a new thread when it fires. The --folder or --cwd option determines which folder the thread appears in.`,
                 ].join("\n"),
               },
             }
@@ -1241,6 +1263,10 @@ export class AgentManager {
                   `DO NOT kill, terminate, or signal this process or its parent Electron process.`,
                   `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes.`,
                   `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
+                  ``,
+                  `# Scheduled Prompts`,
+                  `You can create additional schedules using: ${getScheduleCliPath()} create --name "..." --prompt "..." [options]`,
+                  `Run \`${getScheduleCliPath()} --help\` for full usage.`,
                 ].join("\n"),
               },
             }
