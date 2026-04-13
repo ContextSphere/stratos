@@ -1,6 +1,60 @@
 import { useEffect, useRef, useState, useId, useCallback } from "react";
 import mermaid from "mermaid";
 
+async function downloadSvgAsPng(svgHtml: string): Promise<void> {
+  // Parse the SVG to extract width/height for the canvas
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgHtml, "image/svg+xml");
+  const svgEl = doc.querySelector("svg");
+  if (!svgEl) return;
+
+  // Ensure SVG has explicit dimensions so the canvas sizes correctly
+  let w = svgEl.width?.baseVal?.value ?? 0;
+  let h = svgEl.height?.baseVal?.value ?? 0;
+  if (!w || !h) {
+    const vb = svgEl.viewBox?.baseVal;
+    if (vb && vb.width && vb.height) {
+      w = vb.width;
+      h = vb.height;
+    }
+  }
+  if (!w || !h) {
+    w = 800;
+    h = 600;
+  }
+  svgEl.setAttribute("width", String(w));
+  svgEl.setAttribute("height", String(h));
+
+  const serialized = new XMLSerializer().serializeToString(svgEl);
+  const blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  await new Promise<void>((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const scale = window.devicePixelRatio || 1;
+      canvas.width = w * scale;
+      canvas.height = h * scale;
+      const ctx = canvas.getContext("2d")!;
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+
+      const a = document.createElement("a");
+      a.download = "diagram.png";
+      a.href = canvas.toDataURL("image/png");
+      a.click();
+      resolve();
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+    img.src = url;
+  });
+}
+
 mermaid.initialize({
   startOnLoad: false,
   theme: "dark",
@@ -21,6 +75,18 @@ export function MermaidDiagram({
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [svg, setSvg] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = useCallback(() => {
+    navigator.clipboard.writeText(chart).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [chart]);
+
+  const downloadPng = useCallback(() => {
+    if (svg) downloadSvgAsPng(svg);
+  }, [svg]);
 
   // Pan/zoom state stored in refs to avoid re-renders during drag
   const scale = useRef(1);
@@ -189,6 +255,23 @@ export function MermaidDiagram({
     <div className="my-2 rounded-md bg-[var(--bg-overlay)]">
       {/* Toolbar */}
       <div className="flex items-center justify-end gap-1 px-2 pt-1.5 pb-0">
+        <button
+          type="button"
+          onClick={copyCode}
+          className="rounded px-1.5 py-0.5 text-xs text-[var(--text-muted)] hover:bg-white/10"
+          title="Copy diagram source"
+        >
+          {copied ? "Copied!" : "Copy"}
+        </button>
+        <button
+          type="button"
+          onClick={downloadPng}
+          className="rounded px-1.5 py-0.5 text-xs text-[var(--text-muted)] hover:bg-white/10"
+          title="Download as PNG"
+        >
+          PNG
+        </button>
+        <div className="h-3 w-px bg-white/20 mx-0.5" />
         <button
           type="button"
           onClick={() => {
