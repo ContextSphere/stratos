@@ -37,52 +37,59 @@ import {
 } from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 import { resolveClaudePathOrUndefined } from "./integrations/claude-path";
-import { getScheduleCliPath } from "./scheduler/scheduler";
+import { getScheduleMcpServerPath } from "./scheduler/scheduler";
 
 /**
  * Build explicit MCP servers for an agent session.
  *
  * Project-level (.mcp.json) and user-level (~/.claude/.mcp.json) servers are
- * auto-discovered by the SDK via `settingSources`, so we
- * only need to inject servers that can't be statically configured — currently
- * just chrome-devtools for cross-worktree debugging.
+ * auto-discovered by the SDK via `settingSources`, so we only need to inject
+ * servers that can't be statically configured:
+ *   - stratos-schedule: always injected so agents can manage scheduled prompts
+ *   - chrome-devtools: injected for cross-worktree debugging
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildMcpServers(cwd: string): Record<string, any> | undefined {
+function buildMcpServers(cwd: string): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const servers: Record<string, any> = {
+    "stratos-schedule": {
+      command: "node",
+      args: [getScheduleMcpServerPath()],
+    },
+  };
+
   // Add chrome-devtools for cross-worktree debugging (ContextSphere pattern)
-  if (!process.env.STRATOS_WORKTREE) return undefined;
-
-  try {
-    let targetRoot: string;
+  if (process.env.STRATOS_WORKTREE) {
     try {
-      targetRoot = execSync("git rev-parse --show-toplevel", {
-        cwd,
-        encoding: "utf-8",
-        timeout: 3000,
-        stdio: ["pipe", "pipe", "pipe"],
-      }).trim();
-    } catch {
-      targetRoot = cwd;
-    }
-    const targetHash = deriveHash(targetRoot);
-    const selfHash = getWorktreeInfo().hash;
+      let targetRoot: string;
+      try {
+        targetRoot = execSync("git rev-parse --show-toplevel", {
+          cwd,
+          encoding: "utf-8",
+          timeout: 3000,
+          stdio: ["pipe", "pipe", "pipe"],
+        }).trim();
+      } catch {
+        targetRoot = cwd;
+      }
+      const targetHash = deriveHash(targetRoot);
+      const selfHash = getWorktreeInfo().hash;
 
-    // Only add chrome-devtools when targeting a different worktree
-    if (targetHash !== selfHash) {
-      const cdpPort = derivePort(targetHash, 9200, 9999);
-      return {
-        "chrome-devtools": {
+      // Only add chrome-devtools when targeting a different worktree
+      if (targetHash !== selfHash) {
+        const cdpPort = derivePort(targetHash, 9200, 9999);
+        servers["chrome-devtools"] = {
           command: "npx",
           args: [
             "chrome-devtools-mcp",
             `--browser-url=http://127.0.0.1:${cdpPort}`,
           ],
-        },
-      };
-    }
-  } catch {}
+        };
+      }
+    } catch {}
+  }
 
-  return undefined;
+  return servers;
 }
 
 function safeLog(fn: (...args: unknown[]) => void, ...args: unknown[]) {
@@ -689,27 +696,6 @@ export class AgentManager {
                   `DO NOT kill, terminate, or signal this process or its parent Electron process.`,
                   `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes — this would kill your own host application.`,
                   `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
-                  ``,
-                  `# Scheduled Prompts`,
-                  `You can create scheduled prompts that run automatically using the \`stratos-schedule\` CLI:`,
-                  `\`\`\`bash`,
-                  `# Create a recurring daily schedule`,
-                  `${getScheduleCliPath()} create --name "Daily review" --prompt "Review recent changes" --every-day --time "09:00"`,
-                  ``,
-                  `# Create a one-shot schedule`,
-                  `${getScheduleCliPath()} create --name "Remind me" --prompt "Check deployment" --once "2025-01-15T14:00"`,
-                  ``,
-                  `# Other schedule intervals: --every-hour, --every-6-hours, --every-12-hours, --every-week, --cron "<expr>"`,
-                  `# Options: --folder <name>, --cwd <path>, --provider <name>, --model <name>, --day <0-6>, --time <HH:mm>`,
-                  ``,
-                  `# Manage schedules`,
-                  `${getScheduleCliPath()} list`,
-                  `${getScheduleCliPath()} delete <id>`,
-                  `${getScheduleCliPath()} enable <id>`,
-                  `${getScheduleCliPath()} disable <id>`,
-                  `${getScheduleCliPath()} folders   # list available folders`,
-                  `\`\`\``,
-                  `Each schedule creates a new thread when it fires. The --folder or --cwd option determines which folder the thread appears in.`,
                 ].join("\n"),
               },
             }
@@ -719,7 +705,7 @@ export class AgentManager {
           : {}),
         model: thread.model,
         cwd: threadCwd,
-        ...(mcpServers ? { mcpServers } : {}),
+        mcpServers,
       });
       session = { provider, sessionId: thread.sessionId };
       this.sessions.set(threadId, session);
@@ -1263,10 +1249,6 @@ export class AgentManager {
                   `DO NOT kill, terminate, or signal this process or its parent Electron process.`,
                   `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes.`,
                   `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
-                  ``,
-                  `# Scheduled Prompts`,
-                  `You can create additional schedules using: ${getScheduleCliPath()} create --name "..." --prompt "..." [options]`,
-                  `Run \`${getScheduleCliPath()} --help\` for full usage.`,
                 ].join("\n"),
               },
             }
@@ -1276,7 +1258,7 @@ export class AgentManager {
           : {}),
         model: thread.model,
         cwd: threadCwd,
-        ...(mcpServers ? { mcpServers } : {}),
+        mcpServers,
       });
       session = { provider, sessionId: thread.sessionId };
       this.sessions.set(threadId, session);

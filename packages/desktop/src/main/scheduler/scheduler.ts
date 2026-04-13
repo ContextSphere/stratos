@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { Notification, BrowserWindow } from "electron";
-import { writeFileSync, existsSync, mkdirSync, watch, chmodSync } from "fs";
+import { existsSync, writeFileSync, chmodSync, mkdirSync, watch } from "fs";
 import type { FSWatcher } from "fs";
 import { join } from "path";
 import { homedir } from "os";
@@ -13,11 +13,11 @@ import {
   FileStorageAdapter,
   scheduleToCron,
 } from "@stratosapp/core";
-import { SCHEDULE_CLI_SOURCE } from "./schedule-cli-source";
+import { SCHEDULE_MCP_SOURCE } from "./schedule-mcp-source";
 
-/** Path to the installed CLI script. */
-export function getScheduleCliPath(): string {
-  return join(homedir(), ".stratos", "bin", "stratos-schedule");
+/** Path where the MCP server script is installed at runtime. */
+export function getScheduleMcpServerPath(): string {
+  return join(homedir(), ".stratos", "bin", "schedule-mcp-server.js");
 }
 
 export class SchedulerManager {
@@ -38,10 +38,9 @@ export class SchedulerManager {
     this.window = window;
   }
 
-  /** Load all enabled schedules from disk, install CLI, and start file watcher. */
+  /** Load all enabled schedules from disk, install MCP server, and start file watcher. */
   initialize(): void {
-    this.installCli();
-
+    this.installMcpServer();
     const prompts = loadScheduledPrompts();
 
     // Recovery: mark any stale "running" entries as "error"
@@ -211,20 +210,7 @@ export class SchedulerManager {
     this.timers.clear();
   }
 
-  /** Install the stratos-schedule CLI to ~/.stratos/bin/ */
-  private installCli(): void {
-    try {
-      const binDir = join(homedir(), ".stratos", "bin");
-      if (!existsSync(binDir)) mkdirSync(binDir, { recursive: true });
-      const cliPath = getScheduleCliPath();
-      writeFileSync(cliPath, SCHEDULE_CLI_SOURCE, "utf-8");
-      chmodSync(cliPath, 0o755);
-    } catch (err) {
-      console.error("[scheduler] Failed to install CLI:", err);
-    }
-  }
-
-  /** Watch scheduled-prompts.json for external changes (e.g. from CLI). */
+  /** Watch scheduled-prompts.json for external changes (e.g. from MCP tool). */
   private watchStoreFile(): void {
     const storePath = join(homedir(), ".stratos", "scheduled-prompts.json");
     // Ensure the file exists so we can watch it
@@ -277,6 +263,15 @@ export class SchedulerManager {
         err,
       );
     }
+  }
+
+  /** Write the MCP server script to ~/.stratos/bin/ so it can be spawned by the SDK. */
+  private installMcpServer(): void {
+    const binDir = join(homedir(), ".stratos", "bin");
+    if (!existsSync(binDir)) mkdirSync(binDir, { recursive: true });
+    const serverPath = getScheduleMcpServerPath();
+    writeFileSync(serverPath, SCHEDULE_MCP_SOURCE, "utf-8");
+    chmodSync(serverPath, 0o755);
   }
 
   private notifyChanged(): void {
