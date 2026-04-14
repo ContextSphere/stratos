@@ -106,6 +106,8 @@ interface ThreadSession {
    *  session detector from auto-retrying after the SDK raises "process exited"
    *  as a result of provider.interrupt() killing the subprocess. */
   interruptRequested?: boolean;
+  /** Timer handle for MCP status watcher — polls pending MCPs until connected. */
+  mcpWatcherTimer?: ReturnType<typeof setTimeout>;
 }
 
 export class AgentManager {
@@ -906,6 +908,9 @@ export class AgentManager {
             },
             threadId,
           );
+          // Start polling for MCP status updates — slow MCPs (e.g. ones that
+          // load tools from external APIs) may still be "pending" at this point.
+          this.startMcpWatcher(threadId);
         }
       }
 
@@ -989,6 +994,61 @@ export class AgentManager {
     }
   }
 
+  /**
+   * Start a persistent MCP health monitor for a session.
+   *
+   * The SDK has no event API for MCP status changes, so we poll. Two speeds:
+   *   - 3 s  while any server is "pending"  (startup / reconnect phase)
+   *   - 15 s once all servers are stable    (crash detection, tool-list changes)
+   *
+   * Runs for the lifetime of the session — stops only when clearSession() fires
+   * (which calls clearTimeout on mcpWatcherTimer). Re-calling startMcpWatcher
+   * on the same thread replaces the existing watcher safely.
+   */
+  private startMcpWatcher(threadId: string): void {
+    const session = this.sessions.get(threadId);
+    if (!session) return;
+
+    // Replace any existing watcher for this thread
+    if (session.mcpWatcherTimer) {
+      clearTimeout(session.mcpWatcherTimer);
+      session.mcpWatcherTimer = undefined;
+    }
+
+    const FAST_INTERVAL_MS = 3_000; // while any MCP is pending
+    const SLOW_INTERVAL_MS = 15_000; // steady-state health check
+
+    const poll = async () => {
+      const s = this.sessions.get(threadId);
+      if (!s) return; // session cleared — stop
+
+      try {
+        const statuses = await this.getMcpStatusForThread(threadId);
+        if (statuses.length > 0) {
+          this.sendToRenderer(IPC_CHANNELS.MCP_STATUS_CHANGED, {
+            threadId,
+            servers: statuses,
+          });
+          const hasPending = (statuses as Array<{ status?: string }>).some(
+            (sv) => sv.status === "pending",
+          );
+          s.mcpWatcherTimer = setTimeout(
+            poll,
+            hasPending ? FAST_INTERVAL_MS : SLOW_INTERVAL_MS,
+          );
+          return;
+        }
+      } catch {
+        // ignore errors — watcher is best-effort
+      }
+      // No servers yet or error — retry at slow rate
+      s.mcpWatcherTimer = setTimeout(poll, SLOW_INTERVAL_MS);
+    };
+
+    // First poll after 2 s to give MCPs time to start their init handshake
+    session.mcpWatcherTimer = setTimeout(poll, 2000);
+  }
+
   private async getMcpStatusForThread(threadId: string): Promise<unknown[]> {
     const session = this.sessions.get(threadId);
     if (!session?.provider.getMcpServerStatus) return [];
@@ -1004,7 +1064,9 @@ export class AgentManager {
               s.configPath = join(cwd, ".mcp.json");
               break;
             case "user":
-              s.configPath = join(home, ".claude", ".mcp.json");
+              // User-level MCPs are stored in ~/.claude.json (Claude Code settings),
+              // not ~/.claude/.mcp.json
+              s.configPath = join(home, ".claude.json");
               break;
             case "local":
               s.configPath = join(cwd, ".claude", ".mcp.json");
@@ -1335,6 +1397,7 @@ export class AgentManager {
           try {
             this.storage.updateThread(threadId, { sessionId: msg.sessionId });
           } catch {}
+          this.startMcpWatcher(threadId);
         }
       }
     } catch (err: any) {
@@ -1365,6 +1428,10 @@ export class AgentManager {
 
     const session = this.sessions.get(threadId);
     if (session) {
+      if (session.mcpWatcherTimer) {
+        clearTimeout(session.mcpWatcherTimer);
+        session.mcpWatcherTimer = undefined;
+      }
       session.provider.dispose().catch(() => {});
       this.sessions.delete(threadId);
     }
