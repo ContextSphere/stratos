@@ -13,11 +13,11 @@ import {
   FileStorageAdapter,
   scheduleToCron,
 } from "@stratosapp/core";
-import { SCHEDULE_CLI_SOURCE } from "./schedule-cli-source";
+import { SCHEDULE_MCP_SOURCE } from "./schedule-mcp-source";
 
-/** Path to the installed CLI script. */
-export function getScheduleCliPath(): string {
-  return join(homedir(), ".stratos", "bin", "stratos-schedule");
+/** Path to the installed MCP server script. */
+export function getScheduleMcpPath(): string {
+  return join(homedir(), ".stratos", "bin", "stratos-schedule-mcp");
 }
 
 export class SchedulerManager {
@@ -40,7 +40,7 @@ export class SchedulerManager {
 
   /** Load all enabled schedules from disk, install CLI, and start file watcher. */
   initialize(): void {
-    this.installCli();
+    this.installMcpServer();
 
     const prompts = loadScheduledPrompts();
 
@@ -211,16 +211,16 @@ export class SchedulerManager {
     this.timers.clear();
   }
 
-  /** Install the stratos-schedule CLI to ~/.stratos/bin/ */
-  private installCli(): void {
+  /** Install the stratos-schedule-mcp server to ~/.stratos/bin/ */
+  private installMcpServer(): void {
     try {
       const binDir = join(homedir(), ".stratos", "bin");
       if (!existsSync(binDir)) mkdirSync(binDir, { recursive: true });
-      const cliPath = getScheduleCliPath();
-      writeFileSync(cliPath, SCHEDULE_CLI_SOURCE, "utf-8");
-      chmodSync(cliPath, 0o755);
+      const mcpPath = getScheduleMcpPath();
+      writeFileSync(mcpPath, SCHEDULE_MCP_SOURCE, "utf-8");
+      chmodSync(mcpPath, 0o755);
     } catch (err) {
-      console.error("[scheduler] Failed to install CLI:", err);
+      console.error("[scheduler] Failed to install MCP server:", err);
     }
   }
 
