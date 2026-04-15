@@ -25,6 +25,8 @@ const darkTheme = {
   background: "#0d0d0d",
   foreground: "#d4d4d4",
   cursor: "#d4d4d4",
+  selectionBackground: "#264f78",
+  selectionInactiveBackground: "#3a5f8a",
   black: "#1e1e1e",
   red: "#f44747",
   green: "#4ec9b0",
@@ -47,6 +49,9 @@ const lightTheme = {
   background: "#ffffff",
   foreground: "#1a1a1a",
   cursor: "#1a1a1a",
+  // Explicit blue selection so text is visible against white background
+  selectionBackground: "#add6ff",
+  selectionInactiveBackground: "#c8dff7",
   black: "#1a1a1a",
   red: "#cd3131",
   green: "#008000",
@@ -106,20 +111,28 @@ function TerminalInstance({
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
-    // Single paste handler in capture phase — intercepts before xterm's internal
-    // textarea listener so the clipboard text is written to PTY exactly once.
-    // This covers both Cmd+V and right-click → Paste.
-    containerRef.current.addEventListener(
-      "paste",
-      (e: ClipboardEvent) => {
-        e.preventDefault();
-        const text = e.clipboardData?.getData("text/plain") ?? "";
-        if (text && terminalIdRef.current) {
-          api().terminalWrite(terminalIdRef.current, text);
-        }
-      },
-      true,
-    );
+    // Register onData immediately (before terminalCreate resolves) so keystrokes
+    // typed right after mount are not silently dropped. Uses ref so we don't
+    // need to wait for the async id.
+    terminal.onData((data: string) => {
+      if (terminalIdRef.current) {
+        api().terminalWrite(terminalIdRef.current, data);
+      }
+    });
+
+    // Paste handler in capture phase — stopPropagation prevents xterm's own
+    // textarea paste listener from also firing and writing to PTY a second time.
+    // terminal.paste() handles bracketed-paste-mode wrapping automatically.
+    const container = containerRef.current;
+    const pasteHandler = (e: ClipboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (text) {
+        terminal.paste(text);
+      }
+    };
+    container.addEventListener("paste", pasteHandler, true);
 
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       // Cmd+C (or Ctrl+C on non-Mac) with selection → copy, don't send SIGINT
@@ -133,7 +146,7 @@ function TerminalInstance({
         }
         return false;
       }
-      // Cmd+V (or Ctrl+V) → let the paste event handler above deal with it
+      // Cmd+V (or Ctrl+V) → handled by the paste event above, not as a keypress
       if ((e.metaKey || e.ctrlKey) && e.key === "v") {
         return false;
       }
@@ -149,10 +162,6 @@ function TerminalInstance({
           if (dataId === id) terminal.write(data);
         });
         cleanupDataListenerRef.current = cleanup;
-
-        terminal.onData((data: string) => {
-          api().terminalWrite(id, data);
-        });
       });
 
     const resizeObserver = new ResizeObserver(() => {
@@ -165,10 +174,11 @@ function TerminalInstance({
         );
       }
     });
-    resizeObserver.observe(containerRef.current);
+    resizeObserver.observe(container);
 
     return () => {
       resizeObserver.disconnect();
+      container.removeEventListener("paste", pasteHandler, true);
       cleanupDataListenerRef.current?.();
       if (terminalIdRef.current) api().terminalDestroy(terminalIdRef.current);
       terminal.dispose();
