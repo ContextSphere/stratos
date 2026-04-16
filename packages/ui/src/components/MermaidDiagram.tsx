@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState, useId, useCallback } from "react";
 import mermaid from "mermaid";
 
+function triggerDownload(href: string, filename: string): void {
+  const a = document.createElement("a");
+  a.download = filename;
+  a.href = href;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 async function downloadSvgAsPng(svgHtml: string): Promise<void> {
   // Parse the SVG to extract width/height for the canvas
   const parser = new DOMParser();
@@ -26,8 +35,12 @@ async function downloadSvgAsPng(svgHtml: string): Promise<void> {
   svgEl.setAttribute("height", String(h));
 
   const serialized = new XMLSerializer().serializeToString(svgEl);
-  const blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
+
+  // Use a data: URL rather than blob: to avoid the null-origin taint issue
+  // that occurs when Electron loads pages from file:// in production.
+  // blob:null/... URLs are treated as cross-origin by Chromium, causing
+  // canvas.toDataURL() to throw SecurityError.
+  const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(serialized)}`;
 
   await new Promise<void>((resolve) => {
     const img = new Image();
@@ -39,19 +52,17 @@ async function downloadSvgAsPng(svgHtml: string): Promise<void> {
       const ctx = canvas.getContext("2d")!;
       ctx.scale(scale, scale);
       ctx.drawImage(img, 0, 0, w, h);
-      URL.revokeObjectURL(url);
 
-      const a = document.createElement("a");
-      a.download = "diagram.png";
-      a.href = canvas.toDataURL("image/png");
-      a.click();
+      try {
+        triggerDownload(canvas.toDataURL("image/png"), "diagram.png");
+      } catch {
+        // Canvas tainted (SVG has external resources) — fall back to SVG download
+        triggerDownload(dataUrl, "diagram.svg");
+      }
       resolve();
     };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve();
-    };
-    img.src = url;
+    img.onerror = () => resolve();
+    img.src = dataUrl;
   });
 }
 
@@ -78,10 +89,26 @@ export function MermaidDiagram({
   const [copied, setCopied] = useState(false);
 
   const copyCode = useCallback(() => {
-    navigator.clipboard.writeText(chart).then(() => {
+    const markCopied = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    });
+    };
+    const execFallback = () => {
+      const ta = document.createElement("textarea");
+      ta.value = chart;
+      ta.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      markCopied();
+    };
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(chart).then(markCopied).catch(execFallback);
+    } else {
+      execFallback();
+    }
   }, [chart]);
 
   const downloadPng = useCallback(() => {
