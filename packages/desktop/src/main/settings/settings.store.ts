@@ -15,6 +15,27 @@ export interface OpencodeProviderKey {
   baseURL?: string;
 }
 
+/** Per-model metadata discovered from Ollama's /api/show endpoint */
+export interface OllamaModelInfo {
+  name: string;
+  size: number;
+  parameterSize: string;
+  family: string;
+  quantization: string;
+  capabilities: {
+    vision: boolean;
+    tools: boolean;
+    thinking: boolean;
+  };
+  contextLength: number;
+}
+
+/** Ollama configuration persisted in app-settings.json */
+export interface OllamaConfig {
+  baseURL: string;
+  models: Record<string, OllamaModelInfo>;
+}
+
 export interface AppSettings {
   theme?: AppTheme;
   providers?: Record<string, ProviderPrefs>;
@@ -23,6 +44,8 @@ export interface AppSettings {
   /** Allowlist of opencode sub-provider IDs whose models are shown in the picker.
    *  If undefined, DEFAULT_OPENCODE_MODEL_ALLOWLIST is used. */
   opencodeModelAllowlist?: string[];
+  /** Ollama local model server configuration */
+  ollamaConfig?: OllamaConfig;
   [key: string]: unknown;
 }
 
@@ -131,4 +154,20 @@ export function getOpencodeModelAllowlist(): string[] {
 export function setOpencodeModelAllowlist(allowlist: string[]): void {
   const current = loadSettings();
   saveSettings({ ...current, opencodeModelAllowlist: allowlist });
+}
+
+export function getOllamaConfig(): OllamaConfig | undefined {
+  const settings = loadSettings();
+  return settings.ollamaConfig;
+}
+
+export function setOllamaConfig(config: OllamaConfig): void {
+  const current = loadSettings();
+  saveSettings({ ...current, ollamaConfig: config });
+}
+
+export function clearOllamaConfig(): void {
+  const current = loadSettings();
+  const { ollamaConfig: _, ...rest } = current;
+  saveSettings(rest as AppSettings);
 }

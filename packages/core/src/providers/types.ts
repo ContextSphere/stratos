@@ -172,11 +172,39 @@ export interface ProviderConfig {
   opencodeConfig?: {
     /** Per-sub-provider API keys injected via OPENCODE_CONFIG_CONTENT env var */
     providers?: Record<string, { apiKey: string; baseURL?: string }>;
+    /** Custom provider definitions (e.g. Ollama) injected into OPENCODE_CONFIG_CONTENT */
+    customProviders?: Record<string, OpencodeCustomProvider>;
     /** Port override (default: derived from cwd hash, range 8200–8998) */
     port?: number;
     /** Path to opencode binary (defaults to PATH lookup) */
     binaryPath?: string;
   };
+}
+
+/** Full provider definition for opencode providers not in the built-in registry (e.g. Ollama) */
+export interface OpencodeCustomProvider {
+  id: string;
+  name: string;
+  /** npm package for the AI SDK adapter (e.g. "@ai-sdk/openai-compatible") */
+  npm: string;
+  /** Base API URL (e.g. "http://localhost:11434/v1") */
+  api: string;
+  /** API key (dummy for local providers like Ollama) */
+  apiKey?: string;
+  /** Model definitions keyed by model ID */
+  models: Record<
+    string,
+    {
+      id: string;
+      name: string;
+      tool_call?: boolean;
+      temperature?: boolean;
+      reasoning?: boolean;
+      /** Vision/image input support */
+      attachment?: boolean;
+      limit?: { context?: number; output?: number };
+    }
+  >;
 }
 
 export interface TokenUsage {
