@@ -235,10 +235,20 @@ export function ThreadList({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [menuOpenFolderId, setMenuOpenFolderId] = useState<string | null>(null);
 
+  // Separate manager thread from regular threads
+  const managerThread = useMemo(
+    () => threads.find((t) => t.isManagerThread),
+    [threads],
+  );
+  const regularThreads = useMemo(
+    () => threads.filter((t) => !t.isManagerThread),
+    [threads],
+  );
+
   // Group threads by folder path
   const threadsByFolderPath = useMemo(() => {
     const map = new Map<string, Thread[]>();
-    for (const thread of threads) {
+    for (const thread of regularThreads) {
       if (!thread.cwd) continue;
       // Worktree threads should group under their source repo, not the worktree path
       const groupPath = thread.worktree?.sourceRepoPath ?? thread.cwd;
@@ -247,7 +257,7 @@ export function ThreadList({
       map.set(groupPath, existing);
     }
     return map;
-  }, [threads]);
+  }, [regularThreads]);
 
   return (
     <div className="flex flex-col h-full">
@@ -276,6 +286,57 @@ export function ThreadList({
           </svg>
         </button>
       </div>
+
+      {/* Pinned Manager thread */}
+      {managerThread && (
+        <div className="px-1 pb-1 border-b border-[var(--border)] mb-1">
+          <div
+            className={`group no-drag flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors text-sm ${
+              managerThread.id === activeThreadId
+                ? "bg-[var(--border)] text-[var(--text-primary)]"
+                : "text-[var(--text-control)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]"
+            }`}
+            onClick={() => onThreadClick(managerThread.id)}
+          >
+            {/* Manager icon */}
+            <svg
+              className="w-4 h-4 flex-shrink-0 text-blue-400"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"
+              />
+            </svg>
+            {(() => {
+              const status = getThreadStatus(
+                managerThread.id,
+                managerThread.id === activeThreadId,
+                runningThreadIds,
+                pendingPermissionThreadIds,
+                threadNotifications,
+              );
+              return status ? (
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div
+                    className={`w-1.5 h-1.5 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`}
+                  />
+                  <span
+                    className={`text-[10px] font-medium ${status.colorClass}`}
+                  >
+                    {status.label}
+                  </span>
+                </div>
+              ) : null;
+            })()}
+            <span className="flex-1 truncate font-medium">Manager</span>
+          </div>
+        </div>
+      )}
 
       {/* Folder list */}
       <div className="flex-1 overflow-y-auto space-y-0.5 px-1">

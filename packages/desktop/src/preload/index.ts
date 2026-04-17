@@ -486,6 +486,30 @@ const api = {
       ipcRenderer.removeListener(IPC_CHANNELS.SCHEDULED_CHANGED, listener);
   },
 
+  // Manager Agent
+  managerSend: (
+    prompt: string,
+    images?: { dataUrl: string; mimeType: string }[],
+  ): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.MANAGER_SEND, prompt, images),
+
+  managerInterrupt: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.MANAGER_INTERRUPT),
+
+  managerStatus: (): Promise<{
+    isActive: boolean;
+    threadId: string | null;
+  }> => ipcRenderer.invoke(IPC_CHANNELS.MANAGER_STATUS),
+
+  managerGetThreadId: (): Promise<string> =>
+    ipcRenderer.invoke(IPC_CHANNELS.MANAGER_THREAD_ID),
+
+  managerSwitchProvider: (
+    provider: string,
+    model?: string,
+  ): Promise<{ status: string; provider: string }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.MANAGER_SWITCH_PROVIDER, provider, model),
+
   // Skills
   skills: {
     list: (): Promise<

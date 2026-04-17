@@ -79,6 +79,8 @@ export interface Thread {
   sessionTools?: string[];
   /** If this thread was created by a scheduled prompt, its ID */
   scheduledPromptId?: string;
+  /** True if this is the Manager Agent's singleton thread (pinned, non-deletable) */
+  isManagerThread?: boolean;
 }
 
 export interface WorktreeProgressStep {

@@ -73,6 +73,11 @@ import {
   registerSchedulerIpc,
   unregisterSchedulerIpc,
 } from "./scheduler/scheduler.ipc";
+import { ManagerSession } from "./manager/manager-session";
+import {
+  registerManagerIpc,
+  unregisterManagerIpc,
+} from "./manager/manager.ipc";
 import { statSync } from "fs";
 import { FileStorageAdapter, getWorktreeInfo } from "@stratosapp/core";
 import { generateDockIcon } from "./dock-icon";
@@ -124,6 +129,7 @@ if (!gotLock) {
   let mainWindow: BrowserWindow | null = null;
   let agentManager: AgentManager | null = null;
   let schedulerManager: SchedulerManager | null = null;
+  let managerSession: ManagerSession | null = null;
 
   function createWindow(): void {
     mainWindow = new BrowserWindow({
@@ -226,6 +232,14 @@ if (!gotLock) {
     schedulerManager = new SchedulerManager(agentManager, storage, mainWindow);
     registerSchedulerIpc(schedulerManager);
     schedulerManager.initialize();
+
+    // Manager Agent
+    managerSession = ManagerSession.initialize(
+      agentManager,
+      storage,
+      mainWindow,
+    );
+    registerManagerIpc(managerSession);
   }
 
   app.on("web-contents-created", (_event, contents) => {
@@ -249,9 +263,11 @@ if (!gotLock) {
   });
 
   app.on("window-all-closed", () => {
+    managerSession?.dispose();
     schedulerManager?.dispose();
     agentManager?.dispose();
     ipcMain.removeHandler(IPC_CHANNELS.APP_INFO);
+    unregisterManagerIpc();
     unregisterSchedulerIpc();
     unregisterThreadIpc();
     unregisterGitHubIpc();

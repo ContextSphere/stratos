@@ -88,9 +88,22 @@ function AppInner(): React.ReactElement {
 
   const { folders, addFolder, removeFolder, updateFolder } = useFolders();
 
-  // Reset activeThreadId if it points to a thread not visible in any folder
+  // Manager thread ID
+  const [managerThreadId, setManagerThreadId] = useState<string | null>(null);
   useEffect(() => {
-    if (activeThreadId && activeThread) {
+    window.api
+      .managerGetThreadId()
+      .then(setManagerThreadId)
+      .catch(() => {});
+  }, []);
+
+  const isManagerActive =
+    activeThreadId != null && activeThreadId === managerThreadId;
+
+  // Reset activeThreadId if it points to a thread not visible in any folder
+  // (but never reset if it's the manager thread)
+  useEffect(() => {
+    if (activeThreadId && activeThread && !activeThread.isManagerThread) {
       const folderPaths = new Set(folders.map((f) => f.path));
       const threadFolder =
         activeThread.worktree?.sourceRepoPath ?? activeThread.cwd;
@@ -444,6 +457,8 @@ function AppInner(): React.ReactElement {
 
   const handleDeleteThread = useCallback(
     async (id: string) => {
+      // Prevent deletion of the Manager thread
+      if (id === managerThreadId) return;
       draftsRef.current.delete(id);
       setDraftThreadIds((prev) => {
         const next = new Set(prev);
@@ -452,7 +467,7 @@ function AppInner(): React.ReactElement {
       });
       await deleteThread(id);
     },
-    [deleteThread],
+    [deleteThread, managerThreadId],
   );
 
   const handleSend = useCallback(
@@ -462,6 +477,22 @@ function AppInner(): React.ReactElement {
       fileAttachments?: FileAttachment[],
     ) => {
       let threadId = activeThreadId;
+
+      // Route to Manager Agent if active thread is the manager
+      if (threadId && threadId === managerThreadId) {
+        const ipcImages = images?.map((img) => ({
+          dataUrl: img.dataUrl,
+          mimeType: img.mimeType,
+        }));
+        await window.api.managerSend(prompt, ipcImages);
+        draftsRef.current.delete(threadId);
+        setDraftThreadIds((prev) => {
+          const next = new Set(prev);
+          next.delete(threadId);
+          return next;
+        });
+        return;
+      }
 
       if (!threadId) {
         // Open folder picker
@@ -512,6 +543,7 @@ function AppInner(): React.ReactElement {
     },
     [
       activeThreadId,
+      managerThreadId,
       sendMessage,
       folders,
       addFolder,
@@ -525,6 +557,15 @@ function AppInner(): React.ReactElement {
       threadsBridge,
     ],
   );
+
+  // Wrap interrupt to route manager thread through manager IPC
+  const handleInterrupt = useCallback(() => {
+    if (isManagerActive) {
+      window.api.managerInterrupt();
+    } else {
+      interrupt();
+    }
+  }, [isManagerActive, interrupt]);
 
   const handleModelChange = useCallback(
     async (model: string) => {
@@ -1097,7 +1138,7 @@ function AppInner(): React.ReactElement {
                   <InputBar
                     ref={inputRef}
                     onSend={handleSend}
-                    onInterrupt={interrupt}
+                    onInterrupt={handleInterrupt}
                     isStreaming={isStreaming}
                     interactiveMode={interactiveMode}
                     onInteractiveResponse={handleInteractiveResponse}

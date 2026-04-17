@@ -131,6 +131,14 @@ export const IPC_CHANNELS = {
   SCHEDULED_RUN_NOW: "schedule:run-now",
   SCHEDULED_CHANGED: "schedule:changed",
 
+  // Manager Agent
+  MANAGER_SEND: "manager:send",
+  MANAGER_STREAM: "manager:stream",
+  MANAGER_STATUS: "manager:status",
+  MANAGER_INTERRUPT: "manager:interrupt",
+  MANAGER_THREAD_ID: "manager:thread-id",
+  MANAGER_SWITCH_PROVIDER: "manager:switch-provider",
+
   // Terminal
   TERMINAL_CREATE: "terminal:create",
   TERMINAL_WRITE: "terminal:write",

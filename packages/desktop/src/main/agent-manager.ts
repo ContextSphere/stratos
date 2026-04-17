@@ -1430,10 +1430,14 @@ export class AgentManager {
 
   /** Evict idle sessions beyond MAX_IDLE_SESSIONS to prevent OOM. */
   private evictIdleSessions(): void {
-    // Count idle sessions (not actively streaming)
-    const idleIds = this.sessionAccessOrder.filter(
-      (id) => !this.activeStreams.has(id) && this.sessions.has(id),
-    );
+    // Count idle sessions (not actively streaming, not the manager thread)
+    const idleIds = this.sessionAccessOrder.filter((id) => {
+      if (this.activeStreams.has(id) || !this.sessions.has(id)) return false;
+      // Exempt manager thread from eviction
+      const thread = this.storage.getThread(id);
+      if (thread?.isManagerThread) return false;
+      return true;
+    });
     const toEvict = idleIds.length - AgentManager.MAX_IDLE_SESSIONS;
     if (toEvict <= 0) return;
 
@@ -1614,6 +1618,33 @@ export class AgentManager {
 
   getRunningThreadIds(): string[] {
     return Array.from(this.activeStreams);
+  }
+
+  /** Check if a thread is currently streaming. */
+  isStreaming(threadId: string): boolean {
+    return this.activeStreams.has(threadId);
+  }
+
+  /** Start a stream for a thread (used by ManagerSession bridge). */
+  async startStream(
+    threadId: string,
+    prompt: string,
+    images?: { dataUrl: string; mimeType: string }[],
+  ): Promise<void> {
+    return this.runStream(threadId, prompt, images);
+  }
+
+  /** Interrupt a running session (used by ManagerSession bridge). */
+  async interruptSession(threadId: string): Promise<void> {
+    const session = this.sessions.get(threadId);
+    if (session) {
+      session.interruptRequested = true;
+      try {
+        await session.provider.interrupt();
+      } catch {
+        // Session may already be dead
+      }
+    }
   }
 
   getSlashCommands(): { name: string; description?: string }[] {
