@@ -2,7 +2,7 @@ import { execFileSync } from "child_process";
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { join } from "path";
 
-// Fix PATH for packaged macOS apps
+// Fix PATH and environment for packaged macOS apps
 // Always strip CLAUDECODE to prevent nested-session detection by the SDK
 delete process.env.CLAUDECODE;
 
@@ -12,12 +12,24 @@ const isDev = !!process.defaultApp || !app.isPackaged;
 if (!isDev && process.platform === "darwin") {
   try {
     const userShell = process.env.SHELL || "/bin/zsh";
-    const result = execFileSync(userShell, ["-ilc", 'echo -n "$PATH"'], {
+    // Get PATH and other important env vars from the user's shell
+    const envScript = `echo "PATH=$PATH"; echo "HOME=$HOME"; echo "GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS"; echo "CLOUDSDK_PYTHON=$CLOUDSDK_PYTHON"; echo "CLOUDSDK_CONFIG=$CLOUDSDK_CONFIG"`;
+    const result = execFileSync(userShell, ["-ilc", envScript], {
       encoding: "utf8",
       timeout: 5000,
       env: { ...process.env, DISABLE_AUTO_UPDATE: "true" },
     });
-    if (result.trim()) process.env.PATH = result.trim();
+    // Parse and apply environment variables
+    for (const line of result.trim().split("\n")) {
+      const eqIndex = line.indexOf("=");
+      if (eqIndex > 0) {
+        const key = line.slice(0, eqIndex);
+        const value = line.slice(eqIndex + 1);
+        if (value && value !== "undefined" && value !== "null") {
+          process.env[key] = value;
+        }
+      }
+    }
   } catch {}
 }
 
