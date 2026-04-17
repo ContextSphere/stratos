@@ -65,6 +65,12 @@ export const IPC_CHANNELS = {
   OPENCODE_GET_MODEL_ALLOWLIST: "integration:opencode:get-model-allowlist",
   OPENCODE_SET_MODEL_ALLOWLIST: "integration:opencode:set-model-allowlist",
 
+  // Ollama — local model server
+  OLLAMA_GET_CONFIG: "integration:ollama:get-config",
+  OLLAMA_SET_CONFIG: "integration:ollama:set-config",
+  OLLAMA_CLEAR_CONFIG: "integration:ollama:clear-config",
+  OLLAMA_DISCOVER_MODELS: "integration:ollama:discover-models",
+
   // Interactive tool events (AskUserQuestion, plan mode)
   ASK_USER_QUESTION: "chat:ask-user-question",
   ASK_USER_RESPONSE: "chat:ask-user-response",

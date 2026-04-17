@@ -34,7 +34,11 @@ import {
   deleteOpencodeProviderKey,
   getOpencodeModelAllowlist,
   setOpencodeModelAllowlist,
+  getOllamaConfig,
+  setOllamaConfig,
+  clearOllamaConfig,
 } from "./settings/settings.store";
+import type { OllamaConfig, OllamaModelInfo } from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 import { resolveClaudePathOrUndefined } from "./integrations/claude-path";
 import { getScheduleMcpPath } from "./scheduler/scheduler";
@@ -98,6 +102,136 @@ function safeLog(fn: (...args: unknown[]) => void, ...args: unknown[]) {
   } catch (e: any) {
     if (e?.code !== "EPIPE") throw e;
   }
+}
+
+// ─── Ollama helpers ─────────────────────────────────────────────────────────
+
+function extractContextLength(
+  modelInfo: Record<string, unknown>,
+  family: string,
+): number | undefined {
+  // Try family-specific key first (e.g. "gemma4.context_length")
+  const familyKey = `${family}.context_length`;
+  if (typeof modelInfo[familyKey] === "number") {
+    return modelInfo[familyKey] as number;
+  }
+  // Fallback: search for any key ending in ".context_length"
+  for (const [key, value] of Object.entries(modelInfo)) {
+    if (key.endsWith(".context_length") && typeof value === "number") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Discover Ollama models via /api/tags + /api/show per model.
+ * Returns enriched model info with capabilities and context window.
+ */
+async function discoverOllamaModels(
+  baseURL: string,
+): Promise<OllamaModelInfo[]> {
+  const tagsResp = await fetch(`${baseURL}/api/tags`, {
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!tagsResp.ok) {
+    throw new Error(`Ollama not reachable at ${baseURL} (${tagsResp.status})`);
+  }
+  const { models } = (await tagsResp.json()) as {
+    models: {
+      name: string;
+      size: number;
+      details?: {
+        family?: string;
+        parameter_size?: string;
+        quantization_level?: string;
+      };
+    }[];
+  };
+
+  // Enrich each model with capabilities + context window from /api/show
+  return Promise.all(
+    models.map(async (m) => {
+      const family = m.details?.family ?? "";
+      try {
+        const showResp = await fetch(`${baseURL}/api/show`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: m.name }),
+          signal: AbortSignal.timeout(5000),
+        });
+        const show = (await showResp.json()) as {
+          capabilities?: string[];
+          model_info?: Record<string, unknown>;
+        };
+        const caps: string[] = show.capabilities ?? [];
+        const ctxLen = extractContextLength(show.model_info ?? {}, family);
+
+        return {
+          name: m.name,
+          size: m.size,
+          parameterSize: m.details?.parameter_size ?? "unknown",
+          family,
+          quantization: m.details?.quantization_level ?? "unknown",
+          capabilities: {
+            vision: caps.includes("vision"),
+            tools: caps.includes("tools"),
+            thinking: caps.includes("thinking"),
+          },
+          contextLength: ctxLen ?? 131072,
+        };
+      } catch {
+        // If /api/show fails for a model, return with safe defaults
+        return {
+          name: m.name,
+          size: m.size,
+          parameterSize: m.details?.parameter_size ?? "unknown",
+          family,
+          quantization: m.details?.quantization_level ?? "unknown",
+          capabilities: { vision: false, tools: true, thinking: false },
+          contextLength: 131072,
+        };
+      }
+    }),
+  );
+}
+
+/**
+ * Build custom opencode provider definition for Ollama, if configured.
+ */
+function buildOllamaCustomProvider(): Record<
+  string,
+  import("@stratosapp/core").OpencodeCustomProvider
+> {
+  const config = getOllamaConfig();
+  if (!config || Object.keys(config.models).length === 0) return {};
+
+  return {
+    ollama: {
+      id: "ollama",
+      name: "Ollama",
+      npm: "@ai-sdk/openai-compatible",
+      api: `${config.baseURL}/v1`,
+      apiKey: "ollama",
+      models: Object.fromEntries(
+        Object.entries(config.models).map(([id, m]) => [
+          id,
+          {
+            id,
+            name: `${m.name} (${m.parameterSize})`,
+            tool_call: m.capabilities.tools,
+            temperature: true,
+            reasoning: m.capabilities.thinking,
+            attachment: m.capabilities.vision,
+            limit: {
+              context: m.contextLength,
+              output: 8192,
+            },
+          },
+        ]),
+      ),
+    },
+  };
 }
 
 interface ThreadSession {
@@ -251,7 +385,10 @@ export class AgentManager {
             : undefined;
         const opencodeConfig =
           key === "opencode"
-            ? { providers: getOpencodeProviderKeys() }
+            ? {
+                providers: getOpencodeProviderKeys(),
+                customProviders: buildOllamaCustomProvider(),
+              }
             : undefined;
         await provider.initialize({
           cliPath,
@@ -557,6 +694,34 @@ export class AgentManager {
         this.modelsCache.delete("opencode");
       },
     );
+
+    // Ollama — local model server
+    ipcMain.handle(IPC_CHANNELS.OLLAMA_GET_CONFIG, async () => {
+      return getOllamaConfig();
+    });
+
+    ipcMain.handle(
+      IPC_CHANNELS.OLLAMA_SET_CONFIG,
+      async (_event, config: OllamaConfig) => {
+        setOllamaConfig(config);
+        // Restart opencode server so it picks up the new Ollama provider
+        OpencodeProvider.restartServer();
+        this.modelsCache.delete("opencode");
+      },
+    );
+
+    ipcMain.handle(IPC_CHANNELS.OLLAMA_CLEAR_CONFIG, async () => {
+      clearOllamaConfig();
+      OpencodeProvider.restartServer();
+      this.modelsCache.delete("opencode");
+    });
+
+    ipcMain.handle(
+      IPC_CHANNELS.OLLAMA_DISCOVER_MODELS,
+      async (_event, baseURL: string) => {
+        return discoverOllamaModels(baseURL);
+      },
+    );
   }
 
   private async runStream(
@@ -712,7 +877,12 @@ export class AgentManager {
             }
           : {}),
         ...(providerName === "opencode"
-          ? { opencodeConfig: { providers: getOpencodeProviderKeys() } }
+          ? {
+              opencodeConfig: {
+                providers: getOpencodeProviderKeys(),
+                customProviders: buildOllamaCustomProvider(),
+              },
+            }
           : {}),
         model: thread.model,
         cwd: threadCwd,
@@ -1331,7 +1501,12 @@ export class AgentManager {
             }
           : {}),
         ...(providerName === "opencode"
-          ? { opencodeConfig: { providers: getOpencodeProviderKeys() } }
+          ? {
+              opencodeConfig: {
+                providers: getOpencodeProviderKeys(),
+                customProviders: buildOllamaCustomProvider(),
+              },
+            }
           : {}),
         model: thread.model,
         cwd: threadCwd,

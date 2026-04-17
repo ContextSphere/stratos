@@ -234,6 +234,16 @@ const api = {
   opencodeSetModelAllowlist: (allowlist: string[]): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_SET_MODEL_ALLOWLIST, allowlist),
 
+  // Ollama — local model server
+  ollamaGetConfig: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OLLAMA_GET_CONFIG),
+  ollamaSetConfig: (config: unknown): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OLLAMA_SET_CONFIG, config),
+  ollamaClearConfig: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OLLAMA_CLEAR_CONFIG),
+  ollamaDiscoverModels: (baseURL: string): Promise<unknown[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OLLAMA_DISCOVER_MODELS, baseURL),
+
   // Folders
   foldersList: (): Promise<Folder[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.FOLDERS_LIST),

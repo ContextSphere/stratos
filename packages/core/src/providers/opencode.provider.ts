@@ -146,30 +146,40 @@ function resolveOpencodeBinary(binaryPath?: string): string {
 
 function buildOpencodeEnv(config: ProviderConfig): NodeJS.ProcessEnv {
   const providers = config.opencodeConfig?.providers ?? {};
-  const providerEntries = Object.entries(providers).filter(([, v]) => v.apiKey);
+  const customProviders = config.opencodeConfig?.customProviders ?? {};
 
-  const opencodeConfigContent =
-    providerEntries.length > 0
-      ? {
-          provider: Object.fromEntries(
-            providerEntries.map(([id, { apiKey, baseURL }]) => [
-              id,
-              {
-                options: {
-                  apiKey,
-                  ...(baseURL ? { baseURL } : {}),
-                },
-              },
-            ]),
-          ),
-        }
-      : undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const providerConfig: Record<string, any> = {};
+
+  // Standard providers: inject apiKey + optional baseURL
+  for (const [id, { apiKey, baseURL }] of Object.entries(providers)) {
+    if (!apiKey) continue;
+    providerConfig[id] = {
+      options: { apiKey, ...(baseURL ? { baseURL } : {}) },
+    };
+  }
+
+  // Custom providers (e.g. Ollama): inject full definition with npm, api, models
+  for (const [id, def] of Object.entries(customProviders)) {
+    providerConfig[id] = {
+      id: def.id,
+      name: def.name,
+      npm: def.npm,
+      api: def.api,
+      options: { apiKey: def.apiKey ?? "none" },
+      models: def.models,
+    };
+  }
+
+  const hasEntries = Object.keys(providerConfig).length > 0;
 
   return {
     ...process.env,
-    ...(opencodeConfigContent
+    ...(hasEntries
       ? {
-          OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfigContent),
+          OPENCODE_CONFIG_CONTENT: JSON.stringify({
+            provider: providerConfig,
+          }),
         }
       : {}),
   };
