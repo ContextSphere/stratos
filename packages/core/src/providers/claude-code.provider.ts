@@ -70,7 +70,10 @@ export class ClaudeCodeProvider implements AgentProvider {
       ...(params.additionalDirectories?.length
         ? { additionalDirectories: params.additionalDirectories }
         : {}),
-      thinking: { type: "adaptive" as const },
+      // Opus 4.7 changed the default display to "omitted" (empty thinking field).
+      // Explicitly request "summarized" so thinking blocks have content on all models.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      thinking: { type: "adaptive", display: "summarized" } as any,
       ...(params.thinkingEffort ? { effort: params.thinkingEffort } : {}),
       includePartialMessages: true,
       ...(this.config.maxBudgetUsd
@@ -95,7 +98,7 @@ export class ClaudeCodeProvider implements AgentProvider {
       ...(isBypass ? { allowDangerouslySkipPermissions: true } : {}),
       ...(params.onElicitation
         ? {
-            onElicitation: async (
+            onElicitation: (async (
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               request: any,
             ) => {
@@ -107,7 +110,8 @@ export class ClaudeCodeProvider implements AgentProvider {
                 elicitationId: request.elicitationId,
                 requestedSchema: request.requestedSchema,
               });
-            },
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            }) as any,
           }
         : {}),
       canUseTool: async (
@@ -257,7 +261,7 @@ export class ClaudeCodeProvider implements AgentProvider {
         ...(elicitationHandler
           ? {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              onElicitation: async (request: any) => {
+              onElicitation: (async (request: any) => {
                 return elicitationHandler({
                   serverName: request.serverName,
                   message: request.message,
@@ -266,7 +270,8 @@ export class ClaudeCodeProvider implements AgentProvider {
                   elicitationId: request.elicitationId,
                   requestedSchema: request.requestedSchema,
                 });
-              },
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              }) as any,
             }
           : {}),
       },

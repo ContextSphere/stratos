@@ -81,6 +81,7 @@ import {
 import { statSync } from "fs";
 import { FileStorageAdapter, getWorktreeInfo } from "@stratosapp/core";
 import { generateDockIcon } from "./dock-icon";
+import { ensureClaudeCodeThinkingSummaries } from "./claude-settings";
 
 // Worktree instance isolation (automatic in dev mode, like ContextSphere)
 const worktree = isDev ? getWorktreeInfo() : null;
@@ -252,6 +253,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    ensureClaudeCodeThinkingSummaries();
     if (process.platform === "darwin" && worktree) {
       const isLinked = !statSync(join(worktree.root, ".git")).isDirectory();
       app.dock?.setIcon(generateDockIcon(worktree.hash, isLinked));

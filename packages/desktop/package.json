@@ -32,7 +32,7 @@
     "postinstall": "bash scripts/patch-electron-name.sh && chmod +x ../../node_modules/.pnpm/node-pty@*/node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null || true"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.66",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.114",
     "@monaco-editor/react": "^4.7.0",
     "@openai/codex-sdk": "0.111.0",
     "@stratosapp/core": "workspace:*",
