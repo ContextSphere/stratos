@@ -67,3 +67,41 @@ describe("sdkMessagesToStored — TodoWrite handling", () => {
     expect(result[0].todoData).toEqual(input);
   });
 });
+
+describe("sdkMessagesToStored — user message content shapes", () => {
+  beforeEach(() => {
+    mockGetSessionMessages.mockReset();
+  });
+
+  it("preserves user messages where content is a plain string (Claude's default shape)", async () => {
+    mockGetSessionMessages.mockResolvedValue([
+      {
+        type: "user",
+        uuid: "u1",
+        message: { role: "user", content: "hello world" },
+      },
+    ]);
+
+    const result = await sdkMessagesToStored("session-1", 0);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("user");
+    expect(result[0].content).toBe("hello world");
+  });
+
+  it("preserves user messages where content is an array of text blocks", async () => {
+    mockGetSessionMessages.mockResolvedValue([
+      {
+        type: "user",
+        uuid: "u1",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "hello world" }],
+        },
+      },
+    ]);
+
+    const result = await sdkMessagesToStored("session-1", 0);
+    expect(result).toHaveLength(1);
+    expect(result[0].content).toBe("hello world");
+  });
+});

@@ -42,6 +42,15 @@ function shouldSkip(text: string): boolean {
   return SKIP_TEXT.has(t) || SKIP_TEXT_PREFIXES.some((p) => t.startsWith(p));
 }
 
+// MessageParam.content may be either a string (typed user input) or an array of
+// content blocks. Normalize string → single text block so downstream code can
+// always iterate blocks.
+function normalizeContent(content: unknown): ContentBlock[] | null {
+  if (Array.isArray(content)) return content as ContentBlock[];
+  if (typeof content === "string") return [{ type: "text", text: content }];
+  return null;
+}
+
 /**
  * Loads messages for a session from the Claude Code SDK and maps them to
  * StoredMessage format for use in the Stratos UI.
@@ -79,9 +88,10 @@ export async function sdkMessagesToStored(
   const toolResults = new Map<string, string>();
   for (const msg of sdkMessages) {
     if (msg.type !== "user") continue;
-    const m = msg.message as { role: string; content: ContentBlock[] } | null;
-    if (!m?.content || !Array.isArray(m.content)) continue;
-    for (const block of m.content) {
+    const m = msg.message as { role: string; content: unknown } | null;
+    const blocks = m ? normalizeContent(m.content) : null;
+    if (!blocks) continue;
+    for (const block of blocks) {
       if (block.type === "tool_result") {
         toolResults.set(block.tool_use_id, getToolResultText(block.content));
       }
@@ -98,14 +108,15 @@ export async function sdkMessagesToStored(
     const msg = sdkMessages[i];
 
     if (msg.type === "user") {
-      const m = msg.message as { role: string; content: ContentBlock[] } | null;
-      if (!m?.content || !Array.isArray(m.content)) {
+      const m = msg.message as { role: string; content: unknown } | null;
+      const blocks = m ? normalizeContent(m.content) : null;
+      if (!blocks) {
         i++;
         continue;
       }
 
       // Skip pure tool_result messages (already folded into assistant toolCalls)
-      const nonToolResultBlocks = m.content.filter(
+      const nonToolResultBlocks = blocks.filter(
         (b) => b.type !== "tool_result",
       );
       if (nonToolResultBlocks.length === 0) {
@@ -163,11 +174,12 @@ export async function sdkMessagesToStored(
         const aMsg = sdkMessages[i];
         const m = aMsg.message as {
           role: string;
-          content: ContentBlock[];
+          content: unknown;
           stop_reason?: string;
         } | null;
-        if (m?.content && Array.isArray(m.content)) {
-          for (const block of m.content) {
+        const blocks = m ? normalizeContent(m.content) : null;
+        if (blocks) {
+          for (const block of blocks) {
             if (block.type === "thinking") {
               thinking = thinking
                 ? `${thinking}\n${block.thinking}`
