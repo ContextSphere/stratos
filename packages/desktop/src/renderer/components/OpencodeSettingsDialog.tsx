@@ -446,9 +446,15 @@ function AddProviderPanel({
 
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [ollamaModels, setOllamaModels] = useState<OllamaModelInfo[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(
-    new Set(existingSelection),
-  );
+  // Ollama rows toggle on bare model name (e.g. "gemma4:latest") while the
+  // stored selection uses fully-qualified values (e.g. "ollama/gemma4:latest").
+  // Strip the provider prefix so the checkbox reflects the saved state.
+  const [selected, setSelected] = useState<Set<string>>(() => {
+    if (editing && fixedProviderId === "ollama") {
+      return new Set(existingSelection.map((v) => v.replace(/^ollama\//, "")));
+    }
+    return new Set(existingSelection);
+  });
   const [fetching, setFetching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
