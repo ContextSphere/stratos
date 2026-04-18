@@ -46,6 +46,7 @@ import type { NavEntry, NavAnchor } from "./navigation/types";
 import { useGitHub } from "./hooks/useGitHub";
 import { useClaude } from "./hooks/useClaude";
 import { useCodex } from "./hooks/useCodex";
+import { useOpencodeStatus } from "./hooks/useOpencodeStatus";
 import { usePreview } from "./hooks/usePreview";
 import { ConnectGitHubDialog } from "./components/ConnectGitHubDialog";
 import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
@@ -137,6 +138,7 @@ function AppInner(): React.ReactElement {
   const github = useGitHub();
   const claude = useClaude();
   const codex = useCodex();
+  const opencode = useOpencodeStatus();
   const {
     preview,
     openUrl,
@@ -1025,10 +1027,24 @@ function AppInner(): React.ReactElement {
                       <button
                         onClick={() => setShowOpencodeDialog(true)}
                         className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                        title="Opencode settings"
+                        title={
+                          opencode.configured
+                            ? `Opencode — ${opencode.providerLabels.join(", ")}`
+                            : "Opencode — no providers configured. Click to add."
+                        }
                       >
-                        <div className="w-1.5 h-1.5 rounded-full bg-gray-600" />
-                        <span className="text-[var(--text-muted)]">
+                        <div
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            opencode.configured ? "bg-green-500" : "bg-gray-600"
+                          }`}
+                        />
+                        <span
+                          className={
+                            opencode.configured
+                              ? "text-[var(--text-control)]"
+                              : "text-[var(--text-muted)]"
+                          }
+                        >
                           Opencode
                         </span>
                       </button>
@@ -1285,7 +1301,10 @@ function AppInner(): React.ReactElement {
         {/* Opencode settings dialog (also hosts Ollama) */}
         <OpencodeSettingsDialog
           isOpen={showOpencodeDialog}
-          onClose={() => setShowOpencodeDialog(false)}
+          onClose={() => {
+            setShowOpencodeDialog(false);
+            opencode.refresh();
+          }}
         />
 
         {/* GitHub connect dialog */}
