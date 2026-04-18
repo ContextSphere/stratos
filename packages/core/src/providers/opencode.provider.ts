@@ -54,6 +54,71 @@ const OPENCODE_BUILTIN_TOOLS = [
   "todowrite",
 ];
 
+/**
+ * Map opencode's lowercase tool names to the Title-Case names the Stratos UI
+ * routes on (ToolCallCard / FileChangeViewer / MemoryOperationCard).
+ *
+ * Intentionally NOT mapped (pass through lowercase):
+ *   - "todowrite" — would be filtered by INTERACTIVE_TOOLS in useChat.ts
+ *   - "task"      — would trigger TaskInfo machinery that expects
+ *                   parentToolUseId, which opencode doesn't emit
+ *   - "multiedit" — input shape is `edits: [...]`, incompatible with
+ *                   FileChangeViewer's flat old_string/new_string
+ *   - "plan", "todo", "lsp" — no dedicated UI
+ */
+const OPENCODE_TOOL_NAME_MAP: Record<string, string> = {
+  bash: "Bash",
+  read: "Read",
+  write: "Write",
+  edit: "Edit",
+  glob: "Glob",
+  grep: "Grep",
+  ls: "LS",
+  webfetch: "WebFetch",
+  websearch: "WebSearch",
+};
+
+export function normalizeOpencodeToolName(tool: string): string {
+  return OPENCODE_TOOL_NAME_MAP[tool] ?? tool;
+}
+
+/**
+ * Normalize opencode's camelCase input keys to the snake_case keys
+ * FileChangeViewer consumes. Non-destructive: preserves originals.
+ */
+export function normalizeFileToolInput(
+  titleCaseName: string,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!["Edit", "Write", "Read", "Delete"].includes(titleCaseName)) {
+    return input;
+  }
+
+  const out: Record<string, unknown> = { ...input };
+
+  if (out.file_path === undefined) {
+    if (typeof out.filePath === "string") out.file_path = out.filePath;
+    else if (typeof out.path === "string") out.file_path = out.path;
+  }
+
+  if (titleCaseName === "Edit") {
+    if (out.old_string === undefined && typeof out.oldString === "string") {
+      out.old_string = out.oldString;
+    }
+    if (out.new_string === undefined && typeof out.newString === "string") {
+      out.new_string = out.newString;
+    }
+  }
+
+  if (titleCaseName === "Write") {
+    if (out.content === undefined && typeof out.text === "string") {
+      out.content = out.text;
+    }
+  }
+
+  return out;
+}
+
 // ─── Internal types ───────────────────────────────────────────────────────────
 
 interface ServerEntry {
@@ -90,7 +155,7 @@ interface OpencodePart {
   time?: { start?: number; end?: number };
 }
 
-interface OpencodeToolState {
+export interface OpencodeToolState {
   status: "pending" | "running" | "completed" | "error";
   input?: Record<string, unknown>;
   output?: string;
@@ -98,7 +163,7 @@ interface OpencodeToolState {
   title?: string;
 }
 
-interface OpencodeToolPart extends OpencodePart {
+export interface OpencodeToolPart extends OpencodePart {
   type: "tool";
   callID: string;
   tool: string;
@@ -300,21 +365,37 @@ async function* parseSSE(
   }
 }
 
-function* transformToolPart(part: OpencodeToolPart): Generator<AgentMessage> {
+/**
+ * Transform a tool part's current state into zero-or-more AgentMessage
+ * events. Opencode emits `message.part.updated` multiple times per tool
+ * call (pending → running → running → completed), so `emittedToolUses`
+ * dedupes the `tool_use` emission across frames. `tool_result` fires
+ * exactly once per call (on completed/error).
+ */
+export function* transformToolPart(
+  part: OpencodeToolPart,
+  emittedToolUses: Set<string>,
+): Generator<AgentMessage> {
   const { callID, tool, state } = part;
-  const input = state.input ?? {};
 
-  if (state.status === "running") {
-    yield { type: "tool_use", toolName: tool, toolCallId: callID, input };
-  } else if (state.status === "completed") {
-    yield { type: "tool_use", toolName: tool, toolCallId: callID, input };
+  // Skip pending: input is empty, card would flash with "(no args)".
+  if (state.status === "pending") return;
+
+  const toolName = normalizeOpencodeToolName(tool);
+  const input = normalizeFileToolInput(toolName, state.input ?? {});
+
+  if (!emittedToolUses.has(callID)) {
+    yield { type: "tool_use", toolName, toolCallId: callID, input };
+    emittedToolUses.add(callID);
+  }
+
+  if (state.status === "completed") {
     yield {
       type: "tool_result",
       toolCallId: callID,
       output: state.output ?? "",
     };
   } else if (state.status === "error") {
-    yield { type: "tool_use", toolName: tool, toolCallId: callID, input };
     yield {
       type: "tool_result",
       toolCallId: callID,
@@ -626,6 +707,10 @@ export class OpencodeProvider implements AgentProvider {
     // as "text"; the settled "message.part.updated" event corrects the type.
     const partTypeMap = new Map<string, "text" | "reasoning">();
 
+    // Dedups tool_use emissions across the multiple "message.part.updated"
+    // frames opencode fires per tool call (pending → running → completed).
+    const emittedToolUses = new Set<string>();
+
     for await (const event of parseSSE(sseResponse.body)) {
       if (this.abortController.signal.aborted) break;
 
@@ -660,18 +745,23 @@ export class OpencodeProvider implements AgentProvider {
           const part = props.part as OpencodePart | undefined;
           if (!part) break;
 
+          // Tool parts: lifecycle is tracked on part.state.status (not
+          // part.time). Dispatch every frame; transformToolPart dedupes.
+          if (part.type === "tool") {
+            yield* transformToolPart(
+              part as unknown as OpencodeToolPart,
+              emittedToolUses,
+            );
+            break;
+          }
+
+          // Text/reasoning: record type on creation (no time.end) so later
+          // deltas resolve to the right message type. Completion is a
+          // no-op — content was already streamed via message.part.delta.
           if (!part.time?.end) {
-            // Part just created — record its type so future deltas know
-            // whether to yield "text" or "thinking". No content to emit yet.
             if (part.type === "text") partTypeMap.set(part.id, "text");
             else if (part.type === "reasoning")
               partTypeMap.set(part.id, "reasoning");
-          } else {
-            // Part completed — text/reasoning content was already streamed
-            // via "message.part.delta" events; only handle tool parts here.
-            if (part.type === "tool") {
-              yield* transformToolPart(part as unknown as OpencodeToolPart);
-            }
           }
           break;
         }
