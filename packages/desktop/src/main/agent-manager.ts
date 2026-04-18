@@ -111,17 +111,31 @@ function safeLog(fn: (...args: unknown[]) => void, ...args: unknown[]) {
 
 // ─── Ollama helpers ─────────────────────────────────────────────────────────
 
+/**
+ * Reads `{family}.context_length` out of Ollama's model_info bag. The field
+ * may arrive as a plain object (Ollama REST JSON) or a Map (ollama-js typing);
+ * handle both.
+ */
 function extractContextLength(
-  modelInfo: Record<string, unknown>,
+  modelInfo: unknown,
   family: string,
 ): number | undefined {
-  // Try family-specific key first (e.g. "gemma4.context_length")
-  const familyKey = `${family}.context_length`;
-  if (typeof modelInfo[familyKey] === "number") {
-    return modelInfo[familyKey] as number;
-  }
-  // Fallback: search for any key ending in ".context_length"
-  for (const [key, value] of Object.entries(modelInfo)) {
+  const read = (key: string): unknown => {
+    if (modelInfo instanceof Map) return modelInfo.get(key);
+    if (modelInfo && typeof modelInfo === "object") {
+      return (modelInfo as Record<string, unknown>)[key];
+    }
+    return undefined;
+  };
+  const direct = read(`${family}.context_length`);
+  if (typeof direct === "number") return direct;
+  const entries =
+    modelInfo instanceof Map
+      ? Array.from(modelInfo.entries())
+      : modelInfo && typeof modelInfo === "object"
+        ? Object.entries(modelInfo as Record<string, unknown>)
+        : [];
+  for (const [key, value] of entries) {
     if (key.endsWith(".context_length") && typeof value === "number") {
       return value;
     }
@@ -130,69 +144,45 @@ function extractContextLength(
 }
 
 /**
- * Discover Ollama models via /api/tags + /api/show per model.
- * Returns enriched model info with capabilities and context window.
+ * Discover Ollama models via the official `ollama` SDK (typed wrapper around
+ * `/api/tags` + `/api/show`). Returns enriched model info with capabilities
+ * and context window.
  */
 async function discoverOllamaModels(
   baseURL: string,
 ): Promise<OllamaModelInfo[]> {
-  const tagsResp = await fetch(`${baseURL}/api/tags`, {
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!tagsResp.ok) {
-    throw new Error(`Ollama not reachable at ${baseURL} (${tagsResp.status})`);
-  }
-  const { models } = (await tagsResp.json()) as {
-    models: {
-      name: string;
-      size: number;
-      details?: {
-        family?: string;
-        parameter_size?: string;
-        quantization_level?: string;
-      };
-    }[];
-  };
+  const { Ollama } = await import("ollama");
+  const client = new Ollama({ host: baseURL });
 
-  // Enrich each model with capabilities + context window from /api/show
+  const { models } = await client.list();
+
   return Promise.all(
     models.map(async (m) => {
       const family = m.details?.family ?? "";
+      const base = {
+        name: m.name,
+        size: m.size,
+        parameterSize: m.details?.parameter_size ?? "unknown",
+        family,
+        quantization: m.details?.quantization_level ?? "unknown",
+      };
       try {
-        const showResp = await fetch(`${baseURL}/api/show`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: m.name }),
-          signal: AbortSignal.timeout(5000),
-        });
-        const show = (await showResp.json()) as {
-          capabilities?: string[];
-          model_info?: Record<string, unknown>;
-        };
-        const caps: string[] = show.capabilities ?? [];
-        const ctxLen = extractContextLength(show.model_info ?? {}, family);
-
+        const show = await client.show({ model: m.name });
+        const caps = show.capabilities ?? [];
         return {
-          name: m.name,
-          size: m.size,
-          parameterSize: m.details?.parameter_size ?? "unknown",
-          family,
-          quantization: m.details?.quantization_level ?? "unknown",
+          ...base,
           capabilities: {
             vision: caps.includes("vision"),
             tools: caps.includes("tools"),
             thinking: caps.includes("thinking"),
           },
-          contextLength: ctxLen ?? 131072,
+          contextLength:
+            extractContextLength(show.model_info, family) ?? 131072,
         };
       } catch {
-        // If /api/show fails for a model, return with safe defaults
+        // If show() fails for a model, return with safe defaults
         return {
-          name: m.name,
-          size: m.size,
-          parameterSize: m.details?.parameter_size ?? "unknown",
-          family,
-          quantization: m.details?.quantization_level ?? "unknown",
+          ...base,
           capabilities: { vision: false, tools: true, thinking: false },
           contextLength: 131072,
         };
