@@ -24,10 +24,7 @@ import { ManagerBridge } from "./manager-bridge";
 import { MANAGER_MCP_SOURCE } from "./manager-mcp-source";
 import { resolveClaudePathOrUndefined } from "../integrations/claude-path";
 import { loadSettings } from "../settings/settings.store";
-import {
-  getOpencodeProviderKeys,
-  getOpencodeModelAllowlist,
-} from "../settings/settings.store";
+import { getOpencodeProviderKeys } from "../settings/settings.store";
 import { getScheduleMcpPath } from "../scheduler/scheduler";
 
 const MANAGER_DIR = join(homedir(), ".stratos", "manager");

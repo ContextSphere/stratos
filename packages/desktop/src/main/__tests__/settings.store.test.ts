@@ -17,9 +17,8 @@ describe("settings.store", () => {
 
   describe("getProviderSettings", () => {
     it("returns {} for unknown provider when no settings file exists", async () => {
-      const { getProviderSettings } = await import(
-        "../settings/settings.store"
-      );
+      const { getProviderSettings } =
+        await import("../settings/settings.store");
       expect(getProviderSettings("claude-code")).toEqual({});
     });
 
@@ -29,13 +28,15 @@ describe("settings.store", () => {
         JSON.stringify({
           theme: "dark",
           providers: {
-            "claude-code": { lastUsedModel: "claude-sonnet-4-6", lastUsedEffort: "medium" },
+            "claude-code": {
+              lastUsedModel: "claude-sonnet-4-6",
+              lastUsedEffort: "medium",
+            },
           },
         }),
       );
-      const { getProviderSettings } = await import(
-        "../settings/settings.store"
-      );
+      const { getProviderSettings } =
+        await import("../settings/settings.store");
       expect(getProviderSettings("claude-code")).toEqual({
         lastUsedModel: "claude-sonnet-4-6",
         lastUsedEffort: "medium",
@@ -45,9 +46,8 @@ describe("settings.store", () => {
     it("returns {} when providers key is missing", async () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue(JSON.stringify({ theme: "dark" }));
-      const { getProviderSettings } = await import(
-        "../settings/settings.store"
-      );
+      const { getProviderSettings } =
+        await import("../settings/settings.store");
       expect(getProviderSettings("codex")).toEqual({});
     });
   });
@@ -63,14 +63,13 @@ describe("settings.store", () => {
           },
         }),
       );
-      const { setProviderSettings } = await import(
-        "../settings/settings.store"
-      );
-      setProviderSettings("claude-code", { lastUsedModel: "claude-sonnet-4-6" });
+      const { setProviderSettings } =
+        await import("../settings/settings.store");
+      setProviderSettings("claude-code", {
+        lastUsedModel: "claude-sonnet-4-6",
+      });
 
-      const written = JSON.parse(
-        (mockWriteFileSync.mock.calls[0][1] as string),
-      );
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
       expect(written.providers["claude-code"]).toEqual({
         lastUsedModel: "claude-sonnet-4-6",
       });
@@ -92,14 +91,13 @@ describe("settings.store", () => {
           },
         }),
       );
-      const { setProviderSettings } = await import(
-        "../settings/settings.store"
-      );
-      setProviderSettings("claude-code", { lastUsedModel: "claude-sonnet-4-6" });
+      const { setProviderSettings } =
+        await import("../settings/settings.store");
+      setProviderSettings("claude-code", {
+        lastUsedModel: "claude-sonnet-4-6",
+      });
 
-      const written = JSON.parse(
-        (mockWriteFileSync.mock.calls[0][1] as string),
-      );
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
       expect(written.providers["claude-code"]).toEqual({
         lastUsedModel: "claude-sonnet-4-6",
         lastUsedEffort: "high", // must be preserved
@@ -109,14 +107,13 @@ describe("settings.store", () => {
     it("initializes providers from scratch when key is absent (first-launch write path)", async () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue(JSON.stringify({ theme: "dark" }));
-      const { setProviderSettings } = await import(
-        "../settings/settings.store"
-      );
-      setProviderSettings("claude-code", { lastUsedModel: "claude-sonnet-4-6" });
+      const { setProviderSettings } =
+        await import("../settings/settings.store");
+      setProviderSettings("claude-code", {
+        lastUsedModel: "claude-sonnet-4-6",
+      });
 
-      const written = JSON.parse(
-        (mockWriteFileSync.mock.calls[0][1] as string),
-      );
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
       expect(written.providers).toEqual({
         "claude-code": { lastUsedModel: "claude-sonnet-4-6" },
       });
@@ -126,9 +123,8 @@ describe("settings.store", () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue(JSON.stringify({ theme: "dark" }));
 
-      const { setProviderSettings, getProviderSettings } = await import(
-        "../settings/settings.store"
-      );
+      const { setProviderSettings, getProviderSettings } =
+        await import("../settings/settings.store");
 
       setProviderSettings("claude-code", {
         lastUsedModel: "claude-sonnet-4-6",
@@ -142,6 +138,102 @@ describe("settings.store", () => {
         lastUsedModel: "claude-sonnet-4-6",
         lastUsedEffort: "medium",
       });
+    });
+  });
+
+  describe("opencodeEnabledModels", () => {
+    it("returns default allowlist as empty-array entries when no settings file exists", async () => {
+      const { getOpencodeEnabledModels } =
+        await import("../settings/settings.store");
+      expect(getOpencodeEnabledModels()).toEqual({
+        anthropic: [],
+        openai: [],
+      });
+    });
+
+    it("migrates legacy opencodeModelAllowlist to enabled-models map (empty arrays)", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({
+          opencodeModelAllowlist: ["anthropic", "groq"],
+        }),
+      );
+      const { getOpencodeEnabledModels } =
+        await import("../settings/settings.store");
+      expect(getOpencodeEnabledModels()).toEqual({
+        anthropic: [],
+        groq: [],
+      });
+    });
+
+    it("setOpencodeEnabledModels writes both enabled map and legacy allowlist mirror", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(JSON.stringify({}));
+      const { setOpencodeEnabledModels } =
+        await import("../settings/settings.store");
+      setOpencodeEnabledModels("anthropic", [
+        "anthropic/claude-opus-4",
+        "anthropic/claude-sonnet-4",
+      ]);
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
+      expect(written.opencodeEnabledModels).toEqual({
+        anthropic: ["anthropic/claude-opus-4", "anthropic/claude-sonnet-4"],
+      });
+      expect(written.opencodeModelAllowlist).toEqual(["anthropic"]);
+    });
+
+    it("setOpencodeEnabledModels with empty array removes the provider", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({
+          opencodeEnabledModels: {
+            anthropic: ["anthropic/x"],
+            openai: ["openai/y"],
+          },
+        }),
+      );
+      const { setOpencodeEnabledModels } =
+        await import("../settings/settings.store");
+      setOpencodeEnabledModels("anthropic", []);
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
+      expect(written.opencodeEnabledModels).toEqual({
+        openai: ["openai/y"],
+      });
+    });
+
+    it("disableOpencodeProvider archives and removes", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({
+          opencodeEnabledModels: {
+            anthropic: ["anthropic/claude-opus"],
+          },
+        }),
+      );
+      const { disableOpencodeProvider } =
+        await import("../settings/settings.store");
+      disableOpencodeProvider("anthropic");
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
+      expect(written.opencodeEnabledModels).toEqual({});
+      expect(written.opencodeEnabledModelsArchive).toEqual({
+        anthropic: ["anthropic/claude-opus"],
+      });
+    });
+
+    it("clearOpencodeProvider wipes enabled and archive", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({
+          opencodeEnabledModels: { anthropic: ["x"] },
+          opencodeEnabledModelsArchive: { anthropic: ["y"] },
+        }),
+      );
+      const { clearOpencodeProvider } =
+        await import("../settings/settings.store");
+      clearOpencodeProvider("anthropic");
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
+      expect(written.opencodeEnabledModels).toEqual({});
+      expect(written.opencodeEnabledModelsArchive).toEqual({});
     });
   });
 
@@ -161,9 +253,7 @@ describe("settings.store", () => {
         providers: { "claude-code": { lastUsedModel: "claude-sonnet-4-6" } },
       });
 
-      const written = JSON.parse(
-        (mockWriteFileSync.mock.calls[0][1] as string),
-      );
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
       expect(written.providers["codex"]).toEqual({
         lastUsedModel: "gpt-5.2-codex",
       });

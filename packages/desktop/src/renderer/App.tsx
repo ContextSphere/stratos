@@ -51,7 +51,6 @@ import { ConnectGitHubDialog } from "./components/ConnectGitHubDialog";
 import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
 import { ConnectCodexDialog } from "./components/ConnectCodexDialog";
 import { OpencodeSettingsDialog } from "./components/OpencodeSettingsDialog";
-import { OllamaSettingsDialog } from "./components/OllamaSettingsDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ScheduledPromptsDialog } from "./components/ScheduledPromptsDialog";
 import { NewThreadDialog } from "./components/NewThreadDialog";
@@ -153,7 +152,9 @@ function AppInner(): React.ReactElement {
   const [showGitHubDialog, setShowGitHubDialog] = useState(false);
   const [showCodexDialog, setShowCodexDialog] = useState(false);
   const [showOpencodeDialog, setShowOpencodeDialog] = useState(false);
-  const [showOllamaDialog, setShowOllamaDialog] = useState(false);
+  const [opencodeInitialAddId, setOpencodeInitialAddId] = useState<
+    string | undefined
+  >(undefined);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [showSchedulesDialog, setShowSchedulesDialog] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -1025,7 +1026,10 @@ function AppInner(): React.ReactElement {
                         </span>
                       </button>
                       <button
-                        onClick={() => setShowOpencodeDialog(true)}
+                        onClick={() => {
+                          setOpencodeInitialAddId(undefined);
+                          setShowOpencodeDialog(true);
+                        }}
                         className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
                         title="Opencode settings"
                       >
@@ -1035,7 +1039,10 @@ function AppInner(): React.ReactElement {
                         </span>
                       </button>
                       <button
-                        onClick={() => setShowOllamaDialog(true)}
+                        onClick={() => {
+                          setOpencodeInitialAddId("ollama");
+                          setShowOpencodeDialog(true);
+                        }}
                         className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
                         title="Ollama local models"
                       >
@@ -1292,16 +1299,11 @@ function AppInner(): React.ReactElement {
           onDisconnect={codex.disconnect}
         />
 
-        {/* Opencode settings dialog */}
+        {/* Opencode settings dialog (also hosts Ollama) */}
         <OpencodeSettingsDialog
           isOpen={showOpencodeDialog}
           onClose={() => setShowOpencodeDialog(false)}
-        />
-
-        {/* Ollama settings dialog */}
-        <OllamaSettingsDialog
-          isOpen={showOllamaDialog}
-          onClose={() => setShowOllamaDialog(false)}
+          initialAddProviderId={opencodeInitialAddId}
         />
 
         {/* GitHub connect dialog */}

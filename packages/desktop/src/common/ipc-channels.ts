@@ -61,9 +61,17 @@ export const IPC_CHANNELS = {
   OPENCODE_SET_PROVIDER_KEY: "integration:opencode:set-provider-key",
   OPENCODE_DELETE_PROVIDER_KEY: "integration:opencode:delete-provider-key",
 
-  // Opencode — model allowlist
+  // Opencode — model allowlist (deprecated — kept for one release)
   OPENCODE_GET_MODEL_ALLOWLIST: "integration:opencode:get-model-allowlist",
   OPENCODE_SET_MODEL_ALLOWLIST: "integration:opencode:set-model-allowlist",
+
+  // Opencode — per-provider enabled models + raw model discovery
+  OPENCODE_LIST_PROVIDER_MODELS: "integration:opencode:list-provider-models",
+  OPENCODE_GET_ENABLED_MODELS: "integration:opencode:get-enabled-models",
+  OPENCODE_SET_ENABLED_MODELS: "integration:opencode:set-enabled-models",
+  OPENCODE_DISABLE_PROVIDER: "integration:opencode:disable-provider",
+  OPENCODE_CLEAR_PROVIDER: "integration:opencode:clear-provider",
+  OPENCODE_RESTORE_PROVIDER: "integration:opencode:restore-provider",
 
   // Ollama — local model server
   OLLAMA_GET_CONFIG: "integration:ollama:get-config",
