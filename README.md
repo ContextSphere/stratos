@@ -18,7 +18,7 @@ Stratos gives you everything you need to create a personalized, visual interface
 
 It ships with a fully functional desktop app out of the box, and its modular architecture means you can extend, embed, or rebuild any layer. Stratos is also fully vibe-codable — it can build new features for itself. An app that builds itself.
 
-**Supported providers:** Claude Code, Codex. More coming (OpenCode, etc.).
+**Supported providers:** Claude Code, Codex, Opencode — plus **local, offline models** via Ollama (Gemma, Qwen, and any Ollama-installed model) through the Opencode provider.
 
 ---
 
@@ -28,7 +28,8 @@ AI agents are powerful, but the interfaces around them are either locked inside 
 
 - **For everyone, not just developers.** A clean, intuitive interface that makes AI agents accessible to anyone who wants to get work done.
 - **Framework, not just an app.** A layered architecture with a provider-agnostic core, a portable React UI, and a reference desktop shell. Use the pieces you need.
-- **Multi-agent, multi-provider.** Run Claude Code and Codex side by side. Switch providers without rewriting your UI.
+- **Multi-agent, multi-provider.** Run Claude Code, Codex, and Opencode side by side. Switch providers without rewriting your UI.
+- **Cloud or fully local.** Point Opencode at Ollama and run everything on your own machine — no API keys, no data leaving your laptop.
 - **Full visibility.** Watch tool calls, file changes, diffs, and reasoning in real time. Approve, plan, or let agents run autonomously.
 - **An app that builds itself.** Stratos includes full harness engineering support — use one instance to vibe-code new features into another. Anyone can customize their own experience.
 
@@ -102,12 +103,13 @@ pnpm add @stratosapp/core
 - Cost and token tracking per session
 - Worktree isolation for parallel development
 - Provider-agnostic — swap agents without changing UI code
+- **Local models via Ollama** — run Gemma, Qwen, and other open models entirely offline through the bundled Opencode provider
 
 ---
 
 ## Roadmap
 
-- **More providers** — OpenCode support and a plugin interface for third-party agents
+- **More providers** — plugin interface for third-party agents
 - **Multi-agent orchestration** — coordinate multiple agents across tasks
 - **Extension surface** — let the community build and share integrations
 - **Cross-platform** — Windows and Linux desktop builds
