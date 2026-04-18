@@ -34,6 +34,11 @@ import {
   deleteOpencodeProviderKey,
   getOpencodeModelAllowlist,
   setOpencodeModelAllowlist,
+  getOpencodeEnabledModels,
+  setOpencodeEnabledModels,
+  disableOpencodeProvider,
+  clearOpencodeProvider,
+  getArchivedOpencodeEnabledModels,
   getOllamaConfig,
   setOllamaConfig,
   clearOllamaConfig,
@@ -397,10 +402,14 @@ export class AgentManager {
         try {
           let models = await provider.getAvailableModels();
           if (key === "opencode") {
-            const allowlist = getOpencodeModelAllowlist();
-            models = models.filter((m) =>
-              allowlist.includes(m.value.split("/")[0]),
-            );
+            const enabled = getOpencodeEnabledModels();
+            models = models.filter((m) => {
+              const providerId = m.value.split("/")[0];
+              const picks = enabled[providerId];
+              if (!picks) return false;
+              if (picks.length === 0) return true; // legacy: all models
+              return picks.includes(m.value);
+            });
           }
           this.modelsCache.set(key, { models, ts: Date.now() });
           return models;
@@ -692,6 +701,66 @@ export class AgentManager {
       async (_event, allowlist: string[]) => {
         setOpencodeModelAllowlist(allowlist);
         this.modelsCache.delete("opencode");
+      },
+    );
+
+    // Opencode — raw per-provider model list (bypasses the enabled-models filter)
+    ipcMain.handle(
+      IPC_CHANNELS.OPENCODE_LIST_PROVIDER_MODELS,
+      async (_event, providerId: string) => {
+        const provider = createProvider("opencode");
+        const opencodeConfig = {
+          providers: getOpencodeProviderKeys(),
+          customProviders: buildOllamaCustomProvider(),
+        };
+        await provider.initialize({ opencodeConfig });
+        try {
+          const all = await provider.getAvailableModels();
+          return all.filter((m) => m.value.split("/")[0] === providerId);
+        } finally {
+          await provider.dispose();
+        }
+      },
+    );
+
+    ipcMain.handle(IPC_CHANNELS.OPENCODE_GET_ENABLED_MODELS, async () => {
+      return getOpencodeEnabledModels();
+    });
+
+    ipcMain.handle(
+      IPC_CHANNELS.OPENCODE_SET_ENABLED_MODELS,
+      async (_event, providerId: string, modelValues: string[]) => {
+        setOpencodeEnabledModels(providerId, modelValues);
+        this.modelsCache.delete("opencode");
+      },
+    );
+
+    ipcMain.handle(
+      IPC_CHANNELS.OPENCODE_DISABLE_PROVIDER,
+      async (_event, providerId: string) => {
+        disableOpencodeProvider(providerId);
+        this.modelsCache.delete("opencode");
+      },
+    );
+
+    ipcMain.handle(
+      IPC_CHANNELS.OPENCODE_CLEAR_PROVIDER,
+      async (_event, providerId: string) => {
+        clearOpencodeProvider(providerId);
+        this.modelsCache.delete("opencode");
+      },
+    );
+
+    ipcMain.handle(
+      IPC_CHANNELS.OPENCODE_RESTORE_PROVIDER,
+      async (_event, providerId: string) => {
+        const archived = getArchivedOpencodeEnabledModels(providerId);
+        if (archived && archived.length > 0) {
+          setOpencodeEnabledModels(providerId, archived);
+          this.modelsCache.delete("opencode");
+          return archived;
+        }
+        return null;
       },
     );
 

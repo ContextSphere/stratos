@@ -41,9 +41,20 @@ export interface AppSettings {
   providers?: Record<string, ProviderPrefs>;
   /** Opencode sub-provider API keys keyed by opencode provider ID (e.g. "anthropic", "openai") */
   opencodeProviderKeys?: Record<string, OpencodeProviderKey>;
-  /** Allowlist of opencode sub-provider IDs whose models are shown in the picker.
-   *  If undefined, DEFAULT_OPENCODE_MODEL_ALLOWLIST is used. */
+  /** @deprecated Use `opencodeEnabledModels`. Retained for migration. */
   opencodeModelAllowlist?: string[];
+  /**
+   * Per-provider enabled model values, e.g.
+   * `{ anthropic: ["anthropic/claude-sonnet-4-5"], ollama: ["ollama/llama3.1:8b"] }`.
+   * A provider is "enabled" iff it has an entry in this map with >= 1 value.
+   * An empty array is treated as a legacy migration marker (means "all models").
+   */
+  opencodeEnabledModels?: Record<string, string[]>;
+  /**
+   * Last selection stash so toggling a provider off then on restores picks
+   * without forcing the user to re-select. Cleared on Remove.
+   */
+  opencodeEnabledModelsArchive?: Record<string, string[]>;
   /** Ollama local model server configuration */
   ollamaConfig?: OllamaConfig;
   [key: string]: unknown;
@@ -154,6 +165,92 @@ export function getOpencodeModelAllowlist(): string[] {
 export function setOpencodeModelAllowlist(allowlist: string[]): void {
   const current = loadSettings();
   saveSettings({ ...current, opencodeModelAllowlist: allowlist });
+}
+
+/**
+ * Enabled models per opencode sub-provider.
+ *
+ * Returns an empty array for providers that existed in the legacy
+ * `opencodeModelAllowlist` but have no explicit selection yet — this is the
+ * "all models visible" fallback used for backward compat. Once the user opens
+ * the Manage panel, the explicit selection overwrites this.
+ */
+export function getOpencodeEnabledModels(): Record<string, string[]> {
+  const settings = loadSettings();
+  if (settings.opencodeEnabledModels) return settings.opencodeEnabledModels;
+  const legacy = settings.opencodeModelAllowlist;
+  if (!legacy) {
+    return Object.fromEntries(
+      DEFAULT_OPENCODE_MODEL_ALLOWLIST.map((id) => [id, [] as string[]]),
+    );
+  }
+  return Object.fromEntries(legacy.map((id) => [id, [] as string[]]));
+}
+
+export function setOpencodeEnabledModels(
+  providerId: string,
+  modelValues: string[],
+): void {
+  const current = loadSettings();
+  // Use the persisted map as-is (do not inflate with defaults on write —
+  // users shouldn't have implicit providers added behind their back).
+  const existing = current.opencodeEnabledModels ?? {};
+  const next: Record<string, string[]> = { ...existing };
+  if (modelValues.length === 0) {
+    delete next[providerId];
+  } else {
+    next[providerId] = modelValues;
+  }
+  // Keep the legacy allowlist mirror in sync for one release so any
+  // consumer we haven't migrated still sees a coherent provider set.
+  const allowlist = Object.keys(next);
+  saveSettings({
+    ...current,
+    opencodeEnabledModels: next,
+    opencodeModelAllowlist: allowlist,
+  });
+}
+
+export function disableOpencodeProvider(providerId: string): void {
+  const current = loadSettings();
+  const enabled = current.opencodeEnabledModels ?? {};
+  if (!enabled[providerId]) return;
+  const archive = { ...(current.opencodeEnabledModelsArchive ?? {}) };
+  archive[providerId] = enabled[providerId];
+  const nextEnabled = { ...enabled };
+  delete nextEnabled[providerId];
+  saveSettings({
+    ...current,
+    opencodeEnabledModels: nextEnabled,
+    opencodeEnabledModelsArchive: archive,
+    opencodeModelAllowlist: Object.keys(nextEnabled),
+  });
+}
+
+/**
+ * Returns the archived selection for this provider, if any, or null.
+ * Does not mutate storage — the caller is expected to pass the returned
+ * values back through `setOpencodeEnabledModels`.
+ */
+export function getArchivedOpencodeEnabledModels(
+  providerId: string,
+): string[] | null {
+  const settings = loadSettings();
+  return settings.opencodeEnabledModelsArchive?.[providerId] ?? null;
+}
+
+export function clearOpencodeProvider(providerId: string): void {
+  const current = loadSettings();
+  const enabled = { ...(current.opencodeEnabledModels ?? {}) };
+  const archive = { ...(current.opencodeEnabledModelsArchive ?? {}) };
+  delete enabled[providerId];
+  delete archive[providerId];
+  saveSettings({
+    ...current,
+    opencodeEnabledModels: enabled,
+    opencodeEnabledModelsArchive: archive,
+    opencodeModelAllowlist: Object.keys(enabled),
+  });
 }
 
 export function getOllamaConfig(): OllamaConfig | undefined {

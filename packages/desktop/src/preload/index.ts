@@ -228,11 +228,42 @@ const api = {
   opencodeDeleteProviderKey: (providerId: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_DELETE_PROVIDER_KEY, providerId),
 
-  // Opencode model allowlist
+  // Opencode model allowlist (deprecated)
   opencodeGetModelAllowlist: (): Promise<string[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_GET_MODEL_ALLOWLIST),
   opencodeSetModelAllowlist: (allowlist: string[]): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_SET_MODEL_ALLOWLIST, allowlist),
+
+  // Opencode — per-provider enabled models
+  opencodeListProviderModels: (
+    providerId: string,
+  ): Promise<
+    {
+      value: string;
+      displayName: string;
+      description: string;
+      supportsEffort?: boolean;
+      supportsReasoning?: boolean;
+    }[]
+  > =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_LIST_PROVIDER_MODELS, providerId),
+  opencodeGetEnabledModels: (): Promise<Record<string, string[]>> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_GET_ENABLED_MODELS),
+  opencodeSetEnabledModels: (
+    providerId: string,
+    modelValues: string[],
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      IPC_CHANNELS.OPENCODE_SET_ENABLED_MODELS,
+      providerId,
+      modelValues,
+    ),
+  opencodeDisableProvider: (providerId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_DISABLE_PROVIDER, providerId),
+  opencodeClearProvider: (providerId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_CLEAR_PROVIDER, providerId),
+  opencodeRestoreProvider: (providerId: string): Promise<string[] | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_RESTORE_PROVIDER, providerId),
 
   // Ollama — local model server
   ollamaGetConfig: (): Promise<unknown> =>
