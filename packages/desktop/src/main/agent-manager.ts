@@ -370,7 +370,7 @@ export class AgentManager {
         ) {
           return cached.models;
         }
-        const provider = createProvider(key as ProviderType);
+        let provider = createProvider(key as ProviderType);
         const settings = loadSettings();
         const cliPath =
           key === "claude-code"
@@ -392,6 +392,33 @@ export class AgentManager {
         try {
           let models = await provider.getAvailableModels();
           if (key === "opencode") {
+            // Drift detection: if a sub-provider we configured (API key or
+            // Ollama) is missing from the server's /provider response, the
+            // server is running with stale env. Restart + refetch once.
+            const ollama = getOllamaConfig();
+            const expected = new Set<string>([
+              ...Object.keys(getOpencodeProviderKeys()),
+              ...(ollama && Object.keys(ollama.models).length > 0
+                ? ["ollama"]
+                : []),
+            ]);
+            const present = new Set(models.map((m) => m.value.split("/")[0]));
+            const missing = [...expected].filter((id) => !present.has(id));
+            if (missing.length > 0) {
+              console.warn(
+                "[agent-manager] opencode provider drift — missing:",
+                missing,
+                "— restarting + refetching",
+              );
+              OpencodeProvider.restartServer();
+              await provider.dispose();
+              provider = createProvider(key as ProviderType);
+              await provider.initialize({
+                cliPath,
+                ...(opencodeConfig ? { opencodeConfig } : {}),
+              });
+              models = await provider.getAvailableModels();
+            }
             const enabled = getOpencodeEnabledModels();
             models = models.filter((m) => {
               const providerId = m.value.split("/")[0];
