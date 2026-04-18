@@ -493,10 +493,51 @@ export class OpencodeProvider implements AgentProvider {
     }
   }
 
+  /** Cheap liveness probe. Returns true if the server responds to /provider. */
+  async healthCheck(): Promise<boolean> {
+    if (!this.baseUrl) return false;
+    try {
+      const resp = await fetch(`${this.baseUrl}/provider`, {
+        signal: AbortSignal.timeout(2_000),
+      });
+      return resp.ok || resp.status === 404;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Recover from a dead / wedged / stale-env server. Kills anything on the
+   * port and re-runs initialize() with the provider's current config, which
+   * spawns a fresh process with the up-to-date env (API keys, Ollama config).
+   */
+  async recoverServer(): Promise<void> {
+    if (!this.config || this.port === null) return;
+    console.warn(
+      `[opencode] recovering server on port ${this.port} (restart + reinit)`,
+    );
+    OpencodeProvider.restartServer(this.port);
+    this.baseUrl = null;
+    const port = this.port;
+    this.port = null;
+    await this.initialize({
+      ...this.config,
+      opencodeConfig: { ...(this.config.opencodeConfig ?? {}), port },
+    });
+  }
+
   // ── Messaging ──────────────────────────────────────────────────────────────
 
   async *sendMessage(params: SendMessageParams): AsyncGenerator<AgentMessage> {
     if (!this.baseUrl) throw new Error("OpencodeProvider not initialized");
+
+    // Auto-recover from a dead server before we start streaming. If the
+    // server is wedged or was killed externally, restart it once and retry.
+    // After an event has been yielded we can't safely retry, so the check
+    // only runs here at the start.
+    if (!(await this.healthCheck())) {
+      await this.recoverServer();
+    }
 
     this.abortController = new AbortController();
 
