@@ -392,6 +392,36 @@ export class OpencodeProvider implements AgentProvider {
     const binaryPath = resolveOpencodeBinary(config.opencodeConfig?.binaryPath);
     const env = buildOpencodeEnv(config);
 
+    // If a stale opencode server from a prior run is holding our port, kill
+    // it before spawning. Otherwise waitForServerReady will adopt the zombie
+    // via HTTP probe and we'd be stuck with whatever env it was started with
+    // (e.g. without the current Ollama config).
+    try {
+      const existingPids = execSync(`lsof -ti :${port} -sTCP:LISTEN`, {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      })
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (const pid of existingPids) {
+        try {
+          process.kill(parseInt(pid, 10), "SIGTERM");
+          console.log(
+            `[opencode] killed stale listener on port ${port} (pid=${pid})`,
+          );
+        } catch {
+          // pid may have exited between lsof and kill; ignore
+        }
+      }
+      if (existingPids.length > 0) {
+        // Give the OS a moment to release the port
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    } catch {
+      // lsof returned non-zero (no listener) — nothing to kill
+    }
+
     console.log(
       `[opencode] starting server on port ${port} (binary: ${binaryPath})`,
     );
