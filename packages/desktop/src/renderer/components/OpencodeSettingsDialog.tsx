@@ -319,13 +319,17 @@ function ProviderRow({
 }: ProviderRowProps): React.ReactElement {
   return (
     <div
-      className="flex items-center gap-2 p-2 rounded-md bg-[var(--bg-surface)] border border-[var(--border)]"
+      className="flex items-center gap-3 px-3 py-2 rounded-md bg-[var(--bg-surface)] border border-[var(--border)]"
       data-testid={`opencode-row-${id}`}
     >
       <div
-        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-          enabled && modelCount > 0 ? "bg-green-500" : "bg-gray-500"
-        }`}
+        className="flex-shrink-0 rounded-full"
+        style={{
+          width: 6,
+          height: 6,
+          backgroundColor:
+            enabled && modelCount > 0 ? "#22c55e" : "var(--border)",
+        }}
       />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium text-[var(--text-primary)] truncate">
@@ -337,34 +341,64 @@ function ProviderRow({
           {modelCount} model{modelCount === 1 ? "" : "s"}
         </p>
       </div>
-      <button
-        role="switch"
-        aria-checked={enabled}
-        aria-label={`${enabled ? "Disable" : "Enable"} ${label}`}
-        onClick={() => onToggle(!enabled)}
-        className={`w-8 h-4 rounded-full transition-colors flex-shrink-0 relative ${
-          enabled ? "bg-green-600" : "bg-[var(--border)]"
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
-            enabled ? "translate-x-4" : "translate-x-0.5"
-          }`}
-        />
-      </button>
+      <Toggle
+        enabled={enabled}
+        onToggle={onToggle}
+        ariaLabel={`${enabled ? "Disable" : "Enable"} ${label}`}
+      />
       <button
         onClick={onManage}
-        className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors flex-shrink-0 px-1"
+        className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors flex-shrink-0"
       >
         Manage
       </button>
       <button
         onClick={onRemove}
-        className="text-[10px] text-[var(--text-muted)] hover:text-red-400 transition-colors flex-shrink-0 px-1"
+        className="text-[11px] text-[var(--text-muted)] hover:text-red-400 transition-colors flex-shrink-0"
       >
         Remove
       </button>
     </div>
+  );
+}
+
+function Toggle({
+  enabled,
+  onToggle,
+  ariaLabel,
+}: {
+  enabled: boolean;
+  onToggle: (next: boolean) => void;
+  ariaLabel: string;
+}): React.ReactElement {
+  const TRACK_W = 28;
+  const TRACK_H = 16;
+  const KNOB = 12;
+  const PAD = 2;
+  return (
+    <button
+      role="switch"
+      aria-checked={enabled}
+      aria-label={ariaLabel}
+      onClick={() => onToggle(!enabled)}
+      className="flex-shrink-0 relative rounded-full transition-colors p-0 border-0 cursor-pointer"
+      style={{
+        width: TRACK_W,
+        height: TRACK_H,
+        backgroundColor: enabled ? "#16a34a" : "var(--border)",
+      }}
+    >
+      <span
+        className="absolute rounded-full bg-white transition-all"
+        style={{
+          width: KNOB,
+          height: KNOB,
+          top: (TRACK_H - KNOB) / 2,
+          left: enabled ? TRACK_W - KNOB - PAD : PAD,
+          boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
+        }}
+      />
+    </button>
   );
 }
 
