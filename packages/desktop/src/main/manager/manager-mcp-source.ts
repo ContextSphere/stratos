@@ -203,7 +203,7 @@ function toolListSessions(args) {
   return { text: JSON.stringify({ sessions, totalCount, nextCursor, hasMore }, null, 2) };
 }
 
-function toolGetSession(args) {
+async function toolGetSession(args) {
   const { threadId, includeTranscript, transcriptLimit = 20 } = args || {};
   if (!threadId) return { isError: true, text: "threadId is required" };
 
@@ -211,14 +211,27 @@ function toolGetSession(args) {
   const thread = (data.threads || []).find(t => t.id === threadId);
   if (!thread) return { isError: true, text: "Thread not found: " + threadId };
 
-  const messages = loadMessages(threadId);
+  let messages = [];
+  if (includeTranscript) {
+    // Route through main process so claude-code SDK transcripts work
+    // (the JSONL lives under ~/.claude/projects/ and is not accessible
+    // from this subprocess).
+    try {
+      const rpcRes = await rpcCall("get_messages", { threadId, limit: transcriptLimit });
+      messages = (rpcRes && rpcRes.messages) || [];
+    } catch (e) {
+      // Fall back to disk (works for codex/opencode, empty for claude-code)
+      messages = loadMessages(threadId).slice(-transcriptLimit);
+    }
+  }
+
   const summary = deriveSummary(thread, messages);
 
   const result = {
     thread,
     summary,
     status: "idle",
-    ...(includeTranscript ? { recentMessages: messages.slice(-transcriptLimit) } : {}),
+    ...(includeTranscript ? { recentMessages: messages } : {}),
     tools: thread.sessionTools || [],
   };
 
@@ -505,7 +518,7 @@ async function handleRequest(req) {
           case "stop_session":      result = await toolStopSession(args);    break;
           case "delete_session":    result = await toolDeleteSession(args);  break;
           case "list_sessions":     result = toolListSessions(args);         break;
-          case "get_session":       result = toolGetSession(args);           break;
+          case "get_session":       result = await toolGetSession(args);     break;
           case "search_sessions":   result = toolSearchSessions(args);       break;
           case "get_dashboard":     result = toolGetDashboard();             break;
           case "list_workspaces":   result = toolListWorkspaces();           break;

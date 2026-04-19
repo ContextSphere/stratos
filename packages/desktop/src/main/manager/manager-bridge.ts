@@ -131,9 +131,29 @@ export class ManagerBridge {
         return this.createWorkspace(params);
       case "remove_workspace":
         return this.removeWorkspace(params);
+      case "get_messages":
+        return this.getMessages(params);
       default:
         throw new Error(`Unknown method: ${method}`);
     }
+  }
+
+  /**
+   * Load a thread's transcript via FileStorageAdapter, which knows how to
+   * read from the Claude SDK JSONL for claude-code threads and from disk
+   * for other providers. The MCP subprocess can't do this itself — it only
+   * sees ~/.stratos/threads/messages/ which is never populated for
+   * claude-code sessions.
+   */
+  private async getMessages(
+    params: Record<string, unknown>,
+  ): Promise<{ messages: unknown[] }> {
+    const threadId = params.threadId as string;
+    const limit = (params.limit as number | undefined) ?? 20;
+    if (!threadId) throw new Error("threadId is required");
+    const messages = await this.storage.loadMessages(threadId);
+    const sliced = limit > 0 ? messages.slice(-limit) : messages;
+    return { messages: sliced };
   }
 
   private async createSession(
