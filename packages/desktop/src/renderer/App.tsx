@@ -480,15 +480,16 @@ function AppInner(): React.ReactElement {
 
       // Route to Manager Agent if active thread is the manager
       if (threadId && threadId === managerThreadId) {
+        const managerId = threadId;
         const ipcImages = images?.map((img) => ({
           dataUrl: img.dataUrl,
           mimeType: img.mimeType,
         }));
         await window.api.managerSend(prompt, ipcImages);
-        draftsRef.current.delete(threadId);
+        draftsRef.current.delete(managerId);
         setDraftThreadIds((prev) => {
           const next = new Set(prev);
-          next.delete(threadId);
+          next.delete(managerId);
           return next;
         });
         return;
@@ -559,11 +560,11 @@ function AppInner(): React.ReactElement {
   );
 
   // Wrap interrupt to route manager thread through manager IPC
-  const handleInterrupt = useCallback(() => {
+  const handleInterrupt = useCallback(async () => {
     if (isManagerActive) {
-      window.api.managerInterrupt();
+      await window.api.managerInterrupt();
     } else {
-      interrupt();
+      await interrupt();
     }
   }, [isManagerActive, interrupt]);
 

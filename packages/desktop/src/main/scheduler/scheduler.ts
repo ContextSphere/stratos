@@ -1,4 +1,4 @@
-import cron from "node-cron";
+import cron, { type ScheduledTask } from "node-cron";
 import { Notification, BrowserWindow } from "electron";
 import { writeFileSync, existsSync, mkdirSync, watch, chmodSync } from "fs";
 import type { FSWatcher } from "fs";
@@ -21,7 +21,7 @@ export function getScheduleMcpPath(): string {
 }
 
 export class SchedulerManager {
-  private tasks = new Map<string, cron.ScheduledTask>();
+  private tasks = new Map<string, ScheduledTask>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private agentManager: AgentManager;
   private storage: FileStorageAdapter;

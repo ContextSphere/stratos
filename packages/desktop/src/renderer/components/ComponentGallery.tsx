@@ -9,6 +9,7 @@ import {
   TaskCard,
 } from "@stratosapp/ui";
 import type { ToolCall, TaskInfo } from "@stratosapp/ui";
+type ProviderType = "claude-code" | "codex" | "opencode";
 type AgentMode =
   | "plan"
   | "default"
@@ -90,9 +91,7 @@ const SAMPLE_TASK: TaskInfo = {
  * Automatically reflects the active theme — no props needed.
  */
 export function ComponentGallery(): React.ReactElement {
-  const [provider, setProvider] = useState<"claude-code" | "codex">(
-    "claude-code",
-  );
+  const [provider, setProvider] = useState<ProviderType>("claude-code");
   const [model, setModel] = useState("claude-opus-4-6");
   const [effort, setEffort] = useState("high");
   const [mode, setMode] = useState<AgentMode>("default");

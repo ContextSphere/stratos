@@ -103,7 +103,10 @@ export class ManagerBridge {
     }
   }
 
-  private respond(conn: import("net").Socket, obj: unknown): void {
+  private respond(
+    conn: import("net").Socket,
+    obj: Record<string, unknown>,
+  ): void {
     try {
       conn.write(JSON.stringify({ jsonrpc: "2.0", ...obj }) + "\n");
     } catch {
