@@ -194,6 +194,63 @@ export function MessageBubble({
     [cleanContent, isUser],
   );
 
+  // Task notification — compact card announcing a completed background task
+  if (message.taskNotification) {
+    const tn = message.taskNotification;
+    const colors =
+      tn.status === "completed"
+        ? PILL_COLOR_MAP.green
+        : tn.status === "failed"
+          ? PILL_COLOR_MAP.red
+          : PILL_COLOR_MAP.amber;
+    const statusLabel =
+      tn.status === "completed"
+        ? "Background task done"
+        : tn.status === "failed"
+          ? "Background task failed"
+          : "Background task stopped";
+    return (
+      <div
+        id={`msg-${message.id}`}
+        data-message-id={message.id}
+        className="my-2"
+      >
+        <div
+          className={`flex items-start gap-2 rounded-lg border ${colors.border} ${colors.bg} px-3 py-2 text-xs`}
+        >
+          <span
+            className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${colors.dot}`}
+          />
+          <div className="min-w-0 flex-1">
+            <div className={`font-semibold ${colors.text}`}>{statusLabel}</div>
+            <div className="mt-0.5 text-[var(--text-secondary)] leading-relaxed break-words">
+              {tn.summary}
+            </div>
+            {tn.outputFile && (
+              <div className="mt-1">
+                {onViewFile ? (
+                  <button
+                    onClick={() => onViewFile(tn.outputFile!)}
+                    className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] underline font-mono text-[11px]"
+                  >
+                    {tn.outputFile}
+                  </button>
+                ) : (
+                  <span
+                    className="text-[var(--text-muted)] font-mono text-[11px]"
+                    title={tn.outputFile}
+                  >
+                    {tn.outputFile}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Mode change indicator — renders as a centered pill, not a message bubble
   if (message.modeChange) {
     const modeKey = message.modeChange as AgentMode;

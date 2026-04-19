@@ -1,5 +1,9 @@
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
-import type { StoredMessage, StoredToolCall } from "../types/thread";
+import type {
+  StoredMessage,
+  StoredToolCall,
+  TaskNotification,
+} from "../types/thread";
 
 type ContentBlock =
   | { type: "text"; text: string }
@@ -49,6 +53,30 @@ function normalizeContent(content: unknown): ContentBlock[] | null {
   if (Array.isArray(content)) return content as ContentBlock[];
   if (typeof content === "string") return [{ type: "text", text: content }];
   return null;
+}
+
+// Parse the <task-notification>...</task-notification> XML the SDK injects
+// as a user message when a background Task finishes. Returns null if the
+// text is not a recognizable task notification.
+export function parseTaskNotification(text: string): TaskNotification | null {
+  if (!text.includes("<task-notification>")) return null;
+  const read = (tag: string): string | undefined => {
+    const m = text.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
+    return m ? m[1].trim() : undefined;
+  };
+  const taskId = read("task-id");
+  const summary = read("summary");
+  const rawStatus = read("status");
+  if (!taskId || !summary || !rawStatus) return null;
+  const status: TaskNotification["status"] =
+    rawStatus === "failed" || rawStatus === "stopped" ? rawStatus : "completed";
+  return {
+    taskId,
+    summary,
+    status,
+    toolUseId: read("tool-use-id"),
+    outputFile: read("output-file"),
+  };
 }
 
 /**
@@ -134,6 +162,25 @@ export async function sdkMessagesToStored(
         type: "image";
         source: { type: "base64"; media_type: string; data: string };
       }[];
+
+      const rawText = textBlocks.map((b) => b.text).join("\n");
+      const taskNotif =
+        (msg as { origin?: { kind?: string } }).origin?.kind ===
+          "task-notification" || rawText.includes("<task-notification>")
+          ? parseTaskNotification(rawText)
+          : null;
+
+      if (taskNotif) {
+        result.push({
+          id: msg.uuid,
+          role: "user",
+          content: "",
+          timestamp: threadCreatedAt + msgIndex++,
+          taskNotification: taskNotif,
+        });
+        i++;
+        continue;
+      }
 
       const text = textBlocks
         .map((b) => b.text)

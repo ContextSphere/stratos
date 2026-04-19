@@ -92,6 +92,14 @@ export interface WorktreeProgressData {
   steps: WorktreeProgressStep[];
 }
 
+export interface TaskNotification {
+  taskId: string;
+  toolUseId?: string;
+  status: "completed" | "failed" | "stopped";
+  summary: string;
+  outputFile?: string;
+}
+
 export interface StoredMessage {
   id: string;
   role: "user" | "assistant";
@@ -99,6 +107,7 @@ export interface StoredMessage {
   timestamp: number;
   toolCalls?: StoredToolCall[];
   taskInfo?: unknown;
+  taskNotification?: TaskNotification;
   cost?: number;
   usage?: { inputTokens: number; outputTokens: number };
   contextWindow?: number;

@@ -86,6 +86,7 @@ function toStoredMessage(m: ChatMessage): StoredMessage {
     timestamp: m.timestamp,
     ...(m.toolCalls && { toolCalls: m.toolCalls }),
     ...(m.taskInfo && { taskInfo: m.taskInfo }),
+    ...(m.taskNotification && { taskNotification: m.taskNotification }),
     ...(m.cost != null && { cost: m.cost }),
     ...(m.usage && { usage: m.usage }),
     ...(m.contextWindow != null && { contextWindow: m.contextWindow }),
@@ -123,6 +124,7 @@ function fromStoredMessage(m: StoredMessage): ChatMessage {
       toolCalls: m.toolCalls.filter((tc) => tc.toolName !== "TodoWrite"),
     }),
     ...(m.taskInfo ? { taskInfo: m.taskInfo as TaskInfo } : {}),
+    ...(m.taskNotification ? { taskNotification: m.taskNotification } : {}),
     ...(m.cost != null && { cost: m.cost }),
     ...(m.usage && { usage: m.usage }),
     ...(m.contextWindow != null && { contextWindow: m.contextWindow }),
@@ -435,6 +437,29 @@ export function useChat(
               },
             ]);
           }
+          break;
+        }
+
+        case "task_notification": {
+          // Close any open assistant bubble so the pill renders between turns
+          state.assistantId = null;
+          const id = nextMessageId();
+          apply((prev) => [
+            ...prev,
+            {
+              id,
+              role: "user" as const,
+              content: "",
+              timestamp: Date.now(),
+              taskNotification: {
+                taskId: msg.taskId,
+                toolUseId: msg.toolUseId,
+                status: msg.status,
+                summary: msg.summary,
+                outputFile: msg.outputFile,
+              },
+            },
+          ]);
           break;
         }
 

@@ -70,6 +70,14 @@ export type AgentMessage =
       parentToolUseId?: string;
     }
   | { type: "tool_result"; toolCallId: string; output: string }
+  | {
+      type: "task_notification";
+      taskId: string;
+      toolUseId?: string;
+      status: "completed" | "failed" | "stopped";
+      summary: string;
+      outputFile?: string;
+    }
   | { type: "todo_update"; todos: TodoItem[] }
   | {
       type: "permission_request";

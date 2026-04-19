@@ -10,6 +10,7 @@ import type {
   TodoItem,
 } from "./types";
 import { MODE_CONFIGS } from "../types/mode";
+import { parseTaskNotification as parseTaskNotificationText } from "../storage/sdk-transcript";
 
 /**
  * Use all default Claude Code tools (including deferred ones like
@@ -629,9 +630,17 @@ export class ClaudeCodeProvider implements AgentProvider {
         }
         break;
 
-      case "user":
-        if (msg.message?.content && Array.isArray(msg.message.content)) {
-          for (const block of msg.message.content) {
+      case "user": {
+        const content = msg.message?.content;
+        const isTaskNotificationOrigin =
+          msg.origin?.kind === "task-notification";
+
+        // Collect candidate text snippets that might contain task-notification XML
+        const textSnippets: string[] = [];
+        if (typeof content === "string") {
+          textSnippets.push(content);
+        } else if (Array.isArray(content)) {
+          for (const block of content) {
             if (block.type === "tool_result") {
               const output =
                 typeof block.content === "string"
@@ -642,10 +651,36 @@ export class ClaudeCodeProvider implements AgentProvider {
                 toolCallId: block.tool_use_id,
                 output,
               };
+            } else if (
+              block.type === "text" &&
+              typeof block.text === "string"
+            ) {
+              textSnippets.push(block.text);
             }
           }
         }
+
+        for (const text of textSnippets) {
+          if (
+            !isTaskNotificationOrigin &&
+            !text.includes("<task-notification>")
+          )
+            continue;
+          const notif = parseTaskNotificationText(text);
+          if (notif) {
+            yield {
+              type: "task_notification",
+              taskId: notif.taskId,
+              toolUseId: notif.toolUseId,
+              status: notif.status,
+              summary: notif.summary,
+              outputFile: notif.outputFile,
+            };
+            break;
+          }
+        }
         break;
+      }
 
       case "tool_use_summary":
         if (Array.isArray(msg.preceding_tool_use_ids)) {

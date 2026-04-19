@@ -6,7 +6,10 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 }));
 
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
-import { sdkMessagesToStored } from "../storage/sdk-transcript";
+import {
+  parseTaskNotification,
+  sdkMessagesToStored,
+} from "../storage/sdk-transcript";
 
 const mockGetSessionMessages = vi.mocked(getSessionMessages);
 
@@ -103,5 +106,96 @@ describe("sdkMessagesToStored — user message content shapes", () => {
     const result = await sdkMessagesToStored("session-1", 0);
     expect(result).toHaveLength(1);
     expect(result[0].content).toBe("hello world");
+  });
+});
+
+describe("parseTaskNotification", () => {
+  it("parses a well-formed task notification XML blob", () => {
+    const xml =
+      "<task-notification>" +
+      "<task-id>abc123</task-id>" +
+      "<tool-use-id>toolu_01</tool-use-id>" +
+      "<output-file>/tmp/out.txt</output-file>" +
+      "<status>completed</status>" +
+      '<summary>Background command "find foo" completed (exit code 0)</summary>' +
+      "</task-notification>";
+    expect(parseTaskNotification(xml)).toEqual({
+      taskId: "abc123",
+      toolUseId: "toolu_01",
+      outputFile: "/tmp/out.txt",
+      status: "completed",
+      summary: 'Background command "find foo" completed (exit code 0)',
+    });
+  });
+
+  it("returns null for non-task-notification text", () => {
+    expect(parseTaskNotification("hello world")).toBeNull();
+  });
+
+  it("maps failed and stopped statuses", () => {
+    const make = (status: string) =>
+      `<task-notification><task-id>t</task-id><status>${status}</status><summary>s</summary></task-notification>`;
+    expect(parseTaskNotification(make("failed"))?.status).toBe("failed");
+    expect(parseTaskNotification(make("stopped"))?.status).toBe("stopped");
+    expect(parseTaskNotification(make("completed"))?.status).toBe("completed");
+  });
+});
+
+describe("sdkMessagesToStored — task-notification user messages", () => {
+  beforeEach(() => {
+    mockGetSessionMessages.mockReset();
+  });
+
+  it("extracts taskNotification and strips raw XML from content when origin is task-notification", async () => {
+    const xml =
+      "<task-notification>" +
+      "<task-id>t-1</task-id>" +
+      "<tool-use-id>tu-1</tool-use-id>" +
+      "<output-file>/tmp/out.log</output-file>" +
+      "<status>completed</status>" +
+      "<summary>Background command completed (exit code 0)</summary>" +
+      "</task-notification>";
+    mockGetSessionMessages.mockResolvedValue([
+      {
+        type: "user",
+        uuid: "u1",
+        origin: { kind: "task-notification" },
+        message: { role: "user", content: xml },
+      },
+    ]);
+
+    const result = await sdkMessagesToStored("session-1", 0);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("user");
+    expect(result[0].content).toBe("");
+    expect(result[0].taskNotification).toEqual({
+      taskId: "t-1",
+      toolUseId: "tu-1",
+      outputFile: "/tmp/out.log",
+      status: "completed",
+      summary: "Background command completed (exit code 0)",
+    });
+  });
+
+  it("also recognizes task-notification when origin is missing but XML is present", async () => {
+    const xml =
+      "<task-notification>" +
+      "<task-id>t-2</task-id>" +
+      "<status>failed</status>" +
+      "<summary>boom</summary>" +
+      "</task-notification>";
+    mockGetSessionMessages.mockResolvedValue([
+      {
+        type: "user",
+        uuid: "u1",
+        message: { role: "user", content: xml },
+      },
+    ]);
+
+    const result = await sdkMessagesToStored("session-1", 0);
+    expect(result).toHaveLength(1);
+    expect(result[0].taskNotification?.taskId).toBe("t-2");
+    expect(result[0].taskNotification?.status).toBe("failed");
+    expect(result[0].content).toBe("");
   });
 });

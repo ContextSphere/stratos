@@ -11,6 +11,7 @@ export type {
   WorktreeProgressData,
   StoredImageAttachment,
   StoredFileAttachment,
+  TaskNotification,
 } from "./types/thread";
 export type {
   ScheduledPrompt,

@@ -229,7 +229,10 @@ describe("useChat — thread switching", () => {
 
     rerender({ threadId: "thread-2" });
 
-    expect(mockApi.threadsSaveMessages).toHaveBeenCalledWith("thread-1", stored);
+    expect(mockApi.threadsSaveMessages).toHaveBeenCalledWith(
+      "thread-1",
+      stored,
+    );
   });
 });
 
@@ -438,6 +441,38 @@ describe("useChat — updateTaskExpanded", () => {
 
     // No crash, messages still empty
     expect(result.current.messages).toEqual([]);
+  });
+});
+
+describe("useChat — task-notification loading", () => {
+  it("loads a stored taskNotification into a ChatMessage", async () => {
+    const stored = [
+      {
+        id: "m1",
+        role: "user" as const,
+        content: "",
+        timestamp: 1000,
+        taskNotification: {
+          taskId: "t-1",
+          toolUseId: "tu-1",
+          status: "completed" as const,
+          summary: "Background command completed (exit code 0)",
+          outputFile: "/tmp/out.log",
+        },
+      },
+    ];
+    mockApi.threadsLoadMessages.mockResolvedValue(stored);
+
+    const { result } = renderUseChat("thread-1");
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0].taskNotification).toEqual(
+      stored[0].taskNotification,
+    );
+    expect(result.current.messages[0].content).toBe("");
   });
 });
 

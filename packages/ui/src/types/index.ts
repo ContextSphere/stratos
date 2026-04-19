@@ -1,4 +1,4 @@
-import type { AgentMode } from "@stratosapp/core";
+import type { AgentMode, TaskNotification } from "@stratosapp/core";
 
 export type {
   Thread,
@@ -6,6 +6,7 @@ export type {
   StoredToolCall,
   StoredImageAttachment,
   StoredFileAttachment,
+  TaskNotification,
   AgentMode,
 } from "@stratosapp/core";
 
@@ -68,6 +69,7 @@ export interface ChatMessage {
   timestamp: number;
   toolCalls?: ToolCall[];
   taskInfo?: TaskInfo;
+  taskNotification?: TaskNotification;
   cost?: number;
   usage?: { inputTokens: number; outputTokens: number };
   contextWindow?: number;
