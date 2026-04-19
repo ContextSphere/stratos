@@ -610,6 +610,7 @@ function AppInner(): React.ReactElement {
 
   const handleModeChange = useCallback(
     async (mode: AgentMode) => {
+      if (isManagerActive) return;
       if (!activeThreadId) {
         setPendingMode(mode);
         return;
@@ -617,7 +618,7 @@ function AppInner(): React.ReactElement {
       await threadsBridge.update(activeThreadId, { mode });
       await refreshThreads();
     },
-    [activeThreadId, refreshThreads, threadsBridge],
+    [activeThreadId, isManagerActive, refreshThreads, threadsBridge],
   );
 
   const handleProviderChange = useCallback(
@@ -766,6 +767,7 @@ function AppInner(): React.ReactElement {
         e.preventDefault();
         e.stopPropagation();
         if (isStreaming) return;
+        if (isManagerActive) return;
         const currentProvider =
           normalizeProvider(activeThread?.provider) ?? pendingProvider;
         const currentMode = activeThread?.mode
@@ -780,7 +782,14 @@ function AppInner(): React.ReactElement {
     document.addEventListener("keydown", handler, { capture: true });
     return () =>
       document.removeEventListener("keydown", handler, { capture: true });
-  }, [activeThread, pendingMode, isStreaming, handleModeChange]);
+  }, [
+    activeThread,
+    pendingMode,
+    pendingProvider,
+    isStreaming,
+    isManagerActive,
+    handleModeChange,
+  ]);
 
   // Ctrl+Tab / Ctrl+Shift+Tab to cycle threads
   useEffect(() => {
@@ -1139,6 +1148,20 @@ function AppInner(): React.ReactElement {
                     onUpdateTaskExpanded={updateTaskExpanded}
                     onViewFile={handleViewFile}
                     onAnchorChange={handleAnchorChange}
+                    emptyState={
+                      isManagerActive ? (
+                        <div className="text-center px-6 max-w-sm">
+                          <h1 className="text-2xl font-semibold text-gray-300 mb-3">
+                            Manager
+                          </h1>
+                          <p className="text-sm text-gray-400 leading-relaxed">
+                            Orchestrates your agent sessions. Dispatch tasks,
+                            check progress, and relay messages to agents running
+                            in any workspace.
+                          </p>
+                        </div>
+                      ) : undefined
+                    }
                   />
 
                   {/* Input */}
@@ -1184,23 +1207,25 @@ function AppInner(): React.ReactElement {
                           onOpenChange={setModelPickerOpen}
                         />
                       </div>
-                      <ModeToggle
-                        provider={
-                          normalizeProvider(activeThread?.provider) ??
-                          pendingProvider
-                        }
-                        mode={
-                          activeThread?.mode
-                            ? normalizeMode(
-                                activeThread.mode,
-                                normalizeProvider(activeThread?.provider) ??
-                                  pendingProvider,
-                              )
-                            : pendingMode
-                        }
-                        onModeChange={handleModeChange}
-                        disabled={isStreaming}
-                      />
+                      {!isManagerActive && (
+                        <ModeToggle
+                          provider={
+                            normalizeProvider(activeThread?.provider) ??
+                            pendingProvider
+                          }
+                          mode={
+                            activeThread?.mode
+                              ? normalizeMode(
+                                  activeThread.mode,
+                                  normalizeProvider(activeThread?.provider) ??
+                                    pendingProvider,
+                                )
+                              : pendingMode
+                          }
+                          onModeChange={handleModeChange}
+                          disabled={isStreaming}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>

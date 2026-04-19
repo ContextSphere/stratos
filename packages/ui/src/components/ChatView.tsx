@@ -5,6 +5,7 @@ import {
   useCallback,
   useState,
   useImperativeHandle,
+  type ReactNode,
 } from "react";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./shared/StatusIndicator";
@@ -36,6 +37,8 @@ interface Props {
   onViewFile?: (filePath: string) => void;
   /** Called (debounced 300ms) when the user's scroll position changes meaningfully */
   onAnchorChange?: (anchor: NavAnchor) => void;
+  /** Custom inner content for the empty state. Defaults to the generic Stratos splash. */
+  emptyState?: ReactNode;
 }
 
 /** Pixel threshold: user is considered "at the bottom" if within this distance */
@@ -54,6 +57,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     onUpdateTaskExpanded,
     onViewFile,
     onAnchorChange,
+    emptyState,
   }: Props,
   ref,
 ) {
@@ -174,12 +178,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   if (messages.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-semibold text-gray-300 mb-2">Stratos</h1>
-          <p className="text-xs text-gray-600 mt-4">
-            Type a message to get started
-          </p>
-        </div>
+        {emptyState ?? (
+          <div className="text-center">
+            <h1 className="text-2xl font-semibold text-gray-300 mb-2">
+              Stratos
+            </h1>
+            <p className="text-xs text-gray-600 mt-4">
+              Type a message to get started
+            </p>
+          </div>
+        )}
       </div>
     );
   }
