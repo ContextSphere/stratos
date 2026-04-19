@@ -115,6 +115,85 @@ describe("AgentManager (integration)", () => {
     manager.dispose();
   });
 
+  describe("manager MCP status delegation", () => {
+    it("delegates getMcpStatusForThread to managerMcpStatusProvider for manager threads", async () => {
+      const mockStorage = {
+        getThread: vi.fn().mockResolvedValue({
+          id: "mgr",
+          isManagerThread: true,
+          cwd: "/home/user",
+        }),
+      };
+
+      const managerStatuses = [
+        {
+          name: "stratos-manager",
+          status: "connected",
+          tools: ["list_sessions", "create_workspace"],
+        },
+      ];
+      const delegate = vi.fn().mockResolvedValue(managerStatuses);
+
+      const manager = new AgentManager(mockWindow);
+      (manager as any).storage = mockStorage;
+      manager.setManagerMcpStatusProvider(delegate);
+
+      const result = await (manager as any).getMcpStatusForThread("mgr");
+
+      expect(delegate).toHaveBeenCalledTimes(1);
+      expect(result).toEqual(managerStatuses);
+      manager.dispose();
+    });
+
+    it("returns [] for manager thread when delegate throws", async () => {
+      const mockStorage = {
+        getThread: vi
+          .fn()
+          .mockResolvedValue({ id: "mgr", isManagerThread: true }),
+      };
+      const manager = new AgentManager(mockWindow);
+      (manager as any).storage = mockStorage;
+      manager.setManagerMcpStatusProvider(() =>
+        Promise.reject(new Error("boom")),
+      );
+
+      const result = await (manager as any).getMcpStatusForThread("mgr");
+
+      expect(result).toEqual([]);
+      manager.dispose();
+    });
+
+    it("falls through to session lookup for non-manager threads", async () => {
+      const mockStorage = {
+        getThread: vi.fn().mockResolvedValue({
+          id: "t1",
+          isManagerThread: false,
+          cwd: "/home/user",
+        }),
+      };
+      const providerStatuses = [
+        { name: "scheduler", status: "connected", tools: ["a", "b"] },
+      ];
+      const fakeProvider = {
+        getMcpServerStatus: vi.fn().mockResolvedValue(providerStatuses),
+        dispose: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const delegate = vi.fn();
+      const manager = new AgentManager(mockWindow);
+      (manager as any).storage = mockStorage;
+      (manager as any).sessions.set("t1", { provider: fakeProvider });
+      manager.setManagerMcpStatusProvider(delegate);
+
+      const result = await (manager as any).getMcpStatusForThread("t1");
+
+      expect(delegate).not.toHaveBeenCalled();
+      expect(fakeProvider.getMcpServerStatus).toHaveBeenCalledTimes(1);
+      expect(result).toEqual(providerStatuses);
+      manager.dispose();
+    });
+  });
+
   describe("stale model detection", () => {
     it("falls back to first available model and updates settings when saved model is not in cache", async () => {
       const mockStorage = {

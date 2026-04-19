@@ -241,6 +241,9 @@ if (!gotLock) {
       mainWindow,
     );
     registerManagerIpc(managerSession);
+    agentManager.setManagerMcpStatusProvider(() =>
+      managerSession!.getMcpServerStatus(),
+    );
   }
 
   app.on("web-contents-created", (_event, contents) => {

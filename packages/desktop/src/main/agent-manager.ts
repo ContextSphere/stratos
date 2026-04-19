@@ -22,6 +22,7 @@ import type {
   AgentProvider,
   AgentMessage,
   AgentMode,
+  McpServerInfo,
   PermissionHandler,
   SendMessageParams,
   ProviderType,
@@ -251,6 +252,7 @@ export class AgentManager {
   private sessions = new Map<string, ThreadSession>();
   private sessionAccessOrder: string[] = []; // LRU tracking: most recent at end
   private static readonly MAX_IDLE_SESSIONS = 3;
+  private managerMcpStatusProvider?: () => Promise<McpServerInfo[]>;
   private activeStreams = new Set<string>();
   private modelsCache = new Map<string, { models: unknown[]; ts: number }>();
   private static readonly MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -1300,12 +1302,30 @@ export class AgentManager {
     session.mcpWatcherTimer = setTimeout(poll, 2000);
   }
 
-  private async getMcpStatusForThread(threadId: string): Promise<unknown[]> {
+  /**
+   * Register a lookup for the Manager Agent's MCP status. The manager runs
+   * outside AgentManager.sessions, so MCP status queries for its thread need
+   * to be delegated.
+   */
+  setManagerMcpStatusProvider(provider: () => Promise<McpServerInfo[]>): void {
+    this.managerMcpStatusProvider = provider;
+  }
+
+  private async getMcpStatusForThread(
+    threadId: string,
+  ): Promise<McpServerInfo[]> {
+    const thread = await this.storage.getThread(threadId);
+    if (thread?.isManagerThread && this.managerMcpStatusProvider) {
+      try {
+        return await this.managerMcpStatusProvider();
+      } catch {
+        return [];
+      }
+    }
     const session = this.sessions.get(threadId);
     if (!session?.provider.getMcpServerStatus) return [];
     try {
       const statuses = await session.provider.getMcpServerStatus();
-      const thread = await this.storage.getThread(threadId);
       const cwd = thread?.cwd ?? process.env.HOME!;
       const home = homedir();
       for (const s of statuses) {
