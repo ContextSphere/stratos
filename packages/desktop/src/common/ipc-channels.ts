@@ -28,6 +28,12 @@ export const IPC_CHANNELS = {
   THREADS_CREATE_WORKTREE: "chat:threads:create-worktree",
   THREADS_CLEANUP_WORKTREE: "chat:threads:cleanup-worktree",
 
+  // Storage-change broadcasts (fired when mutations happen outside the
+  // renderer's own create/delete helpers — e.g. from the Manager Agent).
+  // Subscribers re-fetch the full list rather than applying a delta.
+  THREADS_CHANGED: "chat:threads:changed",
+  FOLDERS_CHANGED: "chat:folders:changed",
+
   // Folders
   FOLDERS_LIST: "chat:folders:list",
   FOLDERS_ADD: "chat:folders:add",

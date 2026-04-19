@@ -6,9 +6,11 @@
  * dispatches them to AgentManager and FileStorageAdapter, returning
  * results synchronously (from the subprocess's perspective).
  */
+import type { BrowserWindow } from "electron";
 import { createServer, type Server } from "net";
 import { existsSync, unlinkSync, mkdirSync } from "fs";
 import { dirname } from "path";
+import { IPC_CHANNELS } from "../../common/ipc-channels";
 import type { AgentManager } from "../agent-manager";
 import type { FileStorageAdapter } from "@stratosapp/core";
 
@@ -17,15 +19,31 @@ export class ManagerBridge {
   private agentManager: AgentManager;
   private storage: FileStorageAdapter;
   private socketPath: string;
+  private window: BrowserWindow;
 
   constructor(
     agentManager: AgentManager,
     storage: FileStorageAdapter,
     socketPath: string,
+    window: BrowserWindow,
   ) {
     this.agentManager = agentManager;
     this.storage = storage;
     this.socketPath = socketPath;
+    this.window = window;
+  }
+
+  /**
+   * Broadcast a channel to the renderer. Used to keep the sidebar's thread
+   * and folder lists in sync with manager-driven mutations — without this,
+   * sessions/workspaces created by the Manager Agent don't appear until the
+   * user reloads.
+   */
+  private broadcast(channel: string): void {
+    if (this.window.isDestroyed() || this.window.webContents.isDestroyed()) {
+      return;
+    }
+    this.window.webContents.send(channel);
   }
 
   start(): void {
@@ -169,9 +187,15 @@ export class ManagerBridge {
 
     // Ensure folder is registered
     const folders = this.storage.listFolders();
-    if (!folders.find((f) => f.path === workspace)) {
+    const folderAdded = !folders.find((f) => f.path === workspace);
+    if (folderAdded) {
       this.storage.addFolder(workspace);
     }
+
+    // FileStorageAdapter.createThread unconditionally sets activeThreadId
+    // to the new thread, which would yank the user's view away from the
+    // Manager chat. Restore the previous active thread after the create.
+    const previousActive = this.storage.getActiveThreadId();
 
     // Create thread
     const thread = this.storage.createThread(
@@ -188,6 +212,13 @@ export class ManagerBridge {
     if (Object.keys(updates).length > 0) {
       this.storage.updateThread(thread.id, updates);
     }
+
+    if (previousActive && previousActive !== thread.id) {
+      this.storage.setActiveThreadId(previousActive);
+    }
+
+    if (folderAdded) this.broadcast(IPC_CHANNELS.FOLDERS_CHANGED);
+    this.broadcast(IPC_CHANNELS.THREADS_CHANGED);
 
     // Fire-and-forget: start the stream
     this.agentManager.startStream(thread.id, prompt).catch((err) => {
@@ -258,6 +289,7 @@ export class ManagerBridge {
 
     this.agentManager.clearSession(threadId);
     this.storage.deleteThread(threadId);
+    this.broadcast(IPC_CHANNELS.THREADS_CHANGED);
     return { status: "deleted" };
   }
 
@@ -270,12 +302,17 @@ export class ManagerBridge {
     const name = params.name as string | undefined;
 
     const folder = this.storage.addFolder(path, name);
+    this.broadcast(IPC_CHANNELS.FOLDERS_CHANGED);
     return { folderId: folder.id, name: folder.name, path: folder.path };
   }
 
   private removeWorkspace(params: Record<string, unknown>): { status: string } {
     const folderId = params.folderId as string;
     this.storage.removeFolder(folderId);
+    // removeFolder cascades — deletes every thread whose cwd matches the
+    // folder path (see FileStorageAdapter.removeFolder). Refresh both lists.
+    this.broadcast(IPC_CHANNELS.FOLDERS_CHANGED);
+    this.broadcast(IPC_CHANNELS.THREADS_CHANGED);
     return { status: "removed" };
   }
 }

@@ -96,7 +96,12 @@ export class ManagerSession {
     this.agentManager = agentManager;
     this.storage = storage;
     this.window = window;
-    this.bridge = new ManagerBridge(agentManager, storage, MANAGER_SOCK);
+    this.bridge = new ManagerBridge(
+      agentManager,
+      storage,
+      MANAGER_SOCK,
+      window,
+    );
   }
 
   static initialize(

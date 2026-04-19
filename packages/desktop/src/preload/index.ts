@@ -141,6 +141,19 @@ const api = {
     );
   },
 
+  // Storage-change broadcasts — fired when something outside the current
+  // renderer (e.g. Manager Agent) adds/removes threads or folders.
+  onThreadsChanged: (callback: () => void): (() => void) => {
+    const handler = (): void => callback();
+    ipcRenderer.on(IPC_CHANNELS.THREADS_CHANGED, handler);
+    return () => ipcRenderer.off(IPC_CHANNELS.THREADS_CHANGED, handler);
+  },
+  onFoldersChanged: (callback: () => void): (() => void) => {
+    const handler = (): void => callback();
+    ipcRenderer.on(IPC_CHANNELS.FOLDERS_CHANGED, handler);
+    return () => ipcRenderer.off(IPC_CHANNELS.FOLDERS_CHANGED, handler);
+  },
+
   // Orphaned thread recovery
   onThreadsOrphaned: (callback: (threadIds: string[]) => void): void => {
     ipcRenderer.on(IPC_CHANNELS.THREADS_ORPHANED, (_event, threadIds) =>

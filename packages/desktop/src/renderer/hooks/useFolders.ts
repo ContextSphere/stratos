@@ -21,6 +21,14 @@ export function useFolders(): UseFoldersReturn {
     refreshFolders();
   }, [refreshFolders]);
 
+  // Stay in sync when folders are mutated outside this renderer — e.g.
+  // when the Manager Agent adds/removes workspaces via MCP tools.
+  useEffect(() => {
+    return window.api.onFoldersChanged(() => {
+      refreshFolders();
+    });
+  }, [refreshFolders]);
+
   const addFolder = useCallback(
     async (path: string, name?: string) => {
       const folder = await window.api.foldersAdd(path, name);

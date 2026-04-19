@@ -35,6 +35,14 @@ export function useThreads(): UseThreadsReturn {
     refreshThreads();
   }, [refreshThreads]);
 
+  // Stay in sync when threads are mutated outside this renderer — e.g.
+  // when the Manager Agent creates/deletes sessions via MCP tools.
+  useEffect(() => {
+    return window.api.onThreadsChanged(() => {
+      refreshThreads();
+    });
+  }, [refreshThreads]);
+
   const setActiveThreadId = useCallback(async (id: string | null) => {
     await window.api.threadsSetActive(id);
     setActiveThreadIdState(id);
