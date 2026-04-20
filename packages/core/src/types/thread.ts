@@ -102,9 +102,12 @@ export interface WorktreeProgressData {
 export interface TaskNotification {
   taskId: string;
   toolUseId?: string;
-  status: "completed" | "failed" | "stopped";
+  /** "event" is used for Monitor intermediate stdout events (not a final status) */
+  status: "completed" | "failed" | "stopped" | "event";
   summary: string;
   outputFile?: string;
+  /** Stdout line emitted by a Monitor tool event (only present when status === "event") */
+  event?: string;
 }
 
 /** Notification injected into the Manager chat when one of its spawned
@@ -147,4 +150,6 @@ export interface StoredToolCall {
   input: Record<string, unknown>;
   output?: string;
   status: "pending" | "running" | "completed" | "denied";
+  monitorTaskId?: string;
+  monitorEvents?: string[];
 }

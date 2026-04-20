@@ -74,9 +74,11 @@ export type AgentMessage =
       type: "task_notification";
       taskId: string;
       toolUseId?: string;
-      status: "completed" | "failed" | "stopped";
+      status: "completed" | "failed" | "stopped" | "event";
       summary: string;
       outputFile?: string;
+      /** Stdout line from a Monitor event (only when status === "event") */
+      event?: string;
     }
   | { type: "todo_update"; todos: TodoItem[] }
   | {

@@ -260,6 +260,9 @@ export function useChat(
   // Tracks the active streamId per thread so late events from an interrupted
   // stream can be discarded before they corrupt the new stream's messages.
   const activeStreamIdRef = useRef<Map<string, string>>(new Map());
+  // Maps Monitor task-id → toolCallId so Monitor events can be attached to
+  // the originating tool call instead of rendering as standalone pills.
+  const monitorTaskIdsRef = useRef<Map<string, string>>(new Map());
   const activeThreadIdRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const loadingThreadIdRef = useRef<string | null>(null);
@@ -494,7 +497,53 @@ export function useChat(
         }
 
         case "task_notification": {
-          // Close any open assistant bubble so the pill renders between turns
+          // Monitor intermediate event — attach to originating tool call
+          if (msg.status === "event") {
+            const toolCallId = monitorTaskIdsRef.current.get(msg.taskId);
+            if (toolCallId) {
+              const eventLine = msg.event ?? msg.summary;
+              apply((prev) =>
+                prev.map((m) => ({
+                  ...m,
+                  toolCalls: m.toolCalls?.map((tc) =>
+                    tc.toolCallId === toolCallId
+                      ? {
+                          ...tc,
+                          monitorEvents: [
+                            ...(tc.monitorEvents ?? []),
+                            eventLine,
+                          ],
+                        }
+                      : tc,
+                  ),
+                })),
+              );
+              break;
+            }
+            // Orphaned event (no known monitor): fall through to pill
+          }
+
+          // Monitor final status — update the tool call status and clean up
+          if (
+            msg.status !== "event" &&
+            monitorTaskIdsRef.current.has(msg.taskId)
+          ) {
+            const toolCallId = monitorTaskIdsRef.current.get(msg.taskId)!;
+            monitorTaskIdsRef.current.delete(msg.taskId);
+            apply((prev) =>
+              prev.map((m) => ({
+                ...m,
+                toolCalls: m.toolCalls?.map((tc) =>
+                  tc.toolCallId === toolCallId
+                    ? { ...tc, status: "completed" as const }
+                    : tc,
+                ),
+              })),
+            );
+            break;
+          }
+
+          // Default: standalone pill for Task tool completions and orphaned notifications
           state.assistantId = null;
           const id = nextMessageId();
           apply((prev) => [
@@ -643,6 +692,29 @@ export function useChat(
         case "tool_result": {
           // Truncate at storage level to prevent unbounded memory growth
           const truncatedOutput = truncateToolOutput(msg.output);
+
+          // For Monitor tools: extract the task-id from the result output so
+          // future Monitor events can be associated with this tool call.
+          let monitorTaskIdExtracted: string | undefined;
+          if (truncatedOutput) {
+            for (const m of state.messages) {
+              const tc = m.toolCalls?.find(
+                (tc) =>
+                  tc.toolCallId === msg.toolCallId && tc.toolName === "Monitor",
+              );
+              if (tc) {
+                const match = truncatedOutput.match(
+                  /\(task ([a-zA-Z0-9_-]+)[,)]/,
+                );
+                if (match) {
+                  monitorTaskIdExtracted = match[1];
+                  monitorTaskIdsRef.current.set(match[1], tc.toolCallId);
+                }
+                break;
+              }
+            }
+          }
+
           if (msg.toolCallId === state.activeTaskId) {
             // Task completed - update taskInfo and auto-collapse
             apply((prev) =>
@@ -677,15 +749,17 @@ export function useChat(
             apply((prev) =>
               prev.map((m) => ({
                 ...m,
-                toolCalls: m.toolCalls?.map((tc) =>
-                  tc.toolCallId === msg.toolCallId
-                    ? {
-                        ...tc,
-                        output: truncatedOutput || tc.output,
-                        status: "completed" as const,
-                      }
-                    : tc,
-                ),
+                toolCalls: m.toolCalls?.map((tc) => {
+                  if (tc.toolCallId !== msg.toolCallId) return tc;
+                  return {
+                    ...tc,
+                    output: truncatedOutput || tc.output,
+                    status: "completed" as const,
+                    ...(monitorTaskIdExtracted && {
+                      monitorTaskId: monitorTaskIdExtracted,
+                    }),
+                  };
+                }),
               })),
             );
           }

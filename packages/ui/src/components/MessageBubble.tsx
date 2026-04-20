@@ -242,13 +242,17 @@ export function MessageBubble({
         ? PILL_COLOR_MAP.green
         : tn.status === "failed"
           ? PILL_COLOR_MAP.red
-          : PILL_COLOR_MAP.amber;
+          : tn.status === "event"
+            ? PILL_COLOR_MAP.amber
+            : PILL_COLOR_MAP.amber;
     const statusLabel =
       tn.status === "completed"
         ? "Background task done"
         : tn.status === "failed"
           ? "Background task failed"
-          : "Background task stopped";
+          : tn.status === "event"
+            ? "Monitor event"
+            : "Background task stopped";
     return (
       <div
         id={`msg-${message.id}`}

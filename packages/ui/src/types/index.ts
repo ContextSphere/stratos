@@ -96,6 +96,10 @@ export interface ToolCall {
   input: Record<string, unknown>;
   output?: string;
   status: "pending" | "running" | "completed" | "denied";
+  /** Monitor tool only: task-id extracted from the tool result output */
+  monitorTaskId?: string;
+  /** Monitor tool only: accumulated stdout event lines */
+  monitorEvents?: string[];
 }
 
 export interface TaskInfo {

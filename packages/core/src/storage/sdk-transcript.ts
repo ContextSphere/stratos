@@ -90,8 +90,12 @@ export function parseSessionCompleteNotification(
 }
 
 // Parse the <task-notification>...</task-notification> XML the SDK injects
-// as a user message when a background Task finishes. Returns null if the
-// text is not a recognizable task notification.
+// as a user message when a background Task or Monitor tool fires. Returns null
+// if the text is not a recognizable task notification.
+//
+// Two variants exist:
+//  - Final task/Monitor completion: has <status> field
+//  - Monitor intermediate event: has <event> field (no <status>)
 export function parseTaskNotification(text: string): TaskNotification | null {
   if (!text.includes("<task-notification>")) return null;
   const read = (tag: string): string | undefined => {
@@ -101,7 +105,21 @@ export function parseTaskNotification(text: string): TaskNotification | null {
   const taskId = read("task-id");
   const summary = read("summary");
   const rawStatus = read("status");
-  if (!taskId || !summary || !rawStatus) return null;
+  const rawEvent = read("event");
+  if (!taskId || !summary) return null;
+
+  // Monitor intermediate event (stdout line) — no <status> but has <event>
+  if (!rawStatus && rawEvent !== undefined) {
+    return {
+      taskId,
+      summary,
+      status: "event",
+      event: rawEvent,
+      toolUseId: read("tool-use-id"),
+    };
+  }
+
+  if (!rawStatus) return null;
   const status: TaskNotification["status"] =
     rawStatus === "failed" || rawStatus === "stopped" ? rawStatus : "completed";
   return {
@@ -163,6 +181,12 @@ export async function sdkMessagesToStored(
   // Pass 2: build StoredMessages
   const result: StoredMessage[] = [];
   let msgIndex = 0;
+  // Maps Monitor task-id → { result index, toolCallId } so Monitor events
+  // can be folded into the originating tool call instead of becoming pills.
+  const monitorTaskMap = new Map<
+    string,
+    { resultIdx: number; toolCallId: string }
+  >();
 
   // We iterate and group consecutive assistant messages into one StoredMessage
   let i = 0;
@@ -205,6 +229,31 @@ export async function sdkMessagesToStored(
           : null;
 
       if (taskNotif) {
+        // Monitor intermediate event — fold into the originating tool call
+        if (taskNotif.status === "event") {
+          const mapping = monitorTaskMap.get(taskNotif.taskId);
+          if (mapping) {
+            const targetMsg = result[mapping.resultIdx];
+            const tc = targetMsg.toolCalls?.find(
+              (c) => c.toolCallId === mapping.toolCallId,
+            );
+            if (tc) {
+              tc.monitorEvents = [
+                ...(tc.monitorEvents ?? []),
+                taskNotif.event ?? taskNotif.summary,
+              ];
+            }
+            i++;
+            continue;
+          }
+          // Orphaned event with no known monitor: fall through to standalone pill
+        }
+
+        // Monitor final status — clean up the map, tool call is already "completed"
+        if (taskNotif.status !== "event") {
+          monitorTaskMap.delete(taskNotif.taskId);
+        }
+
         result.push({
           id: msg.uuid,
           role: "user",
@@ -326,6 +375,21 @@ export async function sdkMessagesToStored(
         storedMsg.todoData = Array.isArray(inp.todos)
           ? { todos: inp.todos }
           : todoWrite.input;
+      }
+
+      // Extract Monitor task-ids from tool results so future Monitor events
+      // can be folded into this message's tool calls.
+      for (const tc of toolCalls) {
+        if (tc.toolName === "Monitor" && tc.output) {
+          const match = tc.output.match(/\(task ([a-zA-Z0-9_-]+)[,)]/);
+          if (match) {
+            tc.monitorTaskId = match[1];
+            monitorTaskMap.set(match[1], {
+              resultIdx: result.length,
+              toolCallId: tc.toolCallId,
+            });
+          }
+        }
       }
 
       result.push(storedMsg);

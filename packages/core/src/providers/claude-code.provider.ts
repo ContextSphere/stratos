@@ -675,6 +675,7 @@ export class ClaudeCodeProvider implements AgentProvider {
               status: notif.status,
               summary: notif.summary,
               outputFile: notif.outputFile,
+              event: notif.event,
             };
             break;
           }

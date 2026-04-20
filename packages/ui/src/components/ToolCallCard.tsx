@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import type { ToolCall } from "../types";
 import { MemoryOperationCard } from "./MemoryOperationCard";
+import { MonitorCard } from "./MonitorCard";
 
 const FileChangeViewer = lazy(() =>
   import("./FileChangeViewer").then((m) => ({ default: m.FileChangeViewer })),
@@ -78,6 +79,10 @@ export function ToolCallCard({
   isHistorical = false,
   onViewFile,
 }: Props): React.ReactElement {
+  if (toolCall.toolName === "Monitor") {
+    return <MonitorCard toolCall={toolCall} />;
+  }
+
   if (toolCall.toolName === "Skill") {
     return <SkillCard toolCall={toolCall} />;
   }
