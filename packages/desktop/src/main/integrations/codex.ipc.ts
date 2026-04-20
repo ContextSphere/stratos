@@ -355,7 +355,7 @@ async function checkAuthStatus(): Promise<{
     await ensureAppServer();
     const result = await sendRpc("account/read", { refreshToken: false });
     const account = result?.account;
-    if (account) {
+    if (account && !result.requiresOpenaiAuth) {
       return {
         authenticated: true,
         email: account.email ?? null,

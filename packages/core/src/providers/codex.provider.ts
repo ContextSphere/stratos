@@ -788,6 +788,14 @@ export class CodexProvider implements AgentProvider {
       }
     });
 
+    // Unblock any pending waitForNotification when the server exits
+    this.rl.on("close", () => {
+      if (this.notificationResolve) {
+        this.notificationResolve();
+        this.notificationResolve = undefined;
+      }
+    });
+
     // Initialize the app-server
     if (!this.initialized) {
       await this.sendRpc("initialize", {
@@ -1272,10 +1280,17 @@ export class CodexProvider implements AgentProvider {
 
           if (status === "failed") {
             const errorMsg = turn?.error?.message ?? "Turn failed";
+            const isAuthError =
+              errorMsg.toLowerCase().includes("access token") ||
+              errorMsg.toLowerCase().includes("refresh token") ||
+              errorMsg.toLowerCase().includes("sign in") ||
+              errorMsg.toLowerCase().includes("log out");
             yield {
               type: "error",
-              message: errorMsg,
-              code: "CODEX_TURN_FAILED",
+              message: isAuthError
+                ? `Codex authentication expired. Please reconnect in Settings → Codex. (${errorMsg})`
+                : errorMsg,
+              code: isAuthError ? "CODEX_AUTH_EXPIRED" : "CODEX_TURN_FAILED",
             };
           }
 
