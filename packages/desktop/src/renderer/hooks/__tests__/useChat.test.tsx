@@ -28,6 +28,7 @@ function makeMockApi() {
     onModeChanged: vi.fn(),
     onMcpStatusChanged: vi.fn(),
     onThreadActivate: vi.fn(),
+    onThreadMessagesReload: vi.fn(),
     removeAllListeners: vi.fn(),
 
     // Data-fetching calls used on mount / thread switch

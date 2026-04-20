@@ -157,6 +157,13 @@ export class FileStorageAdapter implements StorageAdapter {
     this.saveThreadsFile(data);
   }
 
+  clearThreadMessages(threadId: string): void {
+    const msgPath = this.getMessagesPath(threadId);
+    if (existsSync(msgPath)) {
+      unlinkSync(msgPath);
+    }
+  }
+
   clearPersistedSessionId(threadId: string): void {
     const data = this.loadThreadsFile();
     const idx = data.threads.findIndex((t) => t.id === threadId);

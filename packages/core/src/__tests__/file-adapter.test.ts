@@ -169,7 +169,10 @@ describe("FileStorageAdapter", () => {
 
       adapter.updateThread(thread.id, { provider: "codex" });
       adapter.saveMessages(thread.id, msgs);
-      adapter.updateThread(thread.id, { provider: undefined, sessionId: undefined });
+      adapter.updateThread(thread.id, {
+        provider: undefined,
+        sessionId: undefined,
+      });
 
       await expect(adapter.loadMessages(thread.id)).resolves.toEqual(msgs);
     });
@@ -220,6 +223,34 @@ describe("FileStorageAdapter", () => {
       adapter.clearPersistedSessionId(thread.id);
       const after = adapter.getThread(thread.id)!.updatedAt;
       expect(after).toBeGreaterThanOrEqual(before);
+    });
+  });
+
+  describe("clearThreadMessages", () => {
+    it("deletes the disk messages file for a non-claude-code thread", async () => {
+      const thread = adapter.createThread("t", undefined, undefined, "codex");
+      adapter.saveMessages(thread.id, [
+        {
+          id: "m1",
+          role: "user",
+          content: "hello",
+          timestamp: Date.now(),
+        },
+      ]);
+      // Codex messages are disk-backed — loadMessages reads them back.
+      await expect(adapter.loadMessages(thread.id)).resolves.toHaveLength(1);
+
+      adapter.clearThreadMessages(thread.id);
+      await expect(adapter.loadMessages(thread.id)).resolves.toHaveLength(0);
+    });
+
+    it("is a no-op when no messages file exists", () => {
+      const thread = adapter.createThread();
+      expect(() => adapter.clearThreadMessages(thread.id)).not.toThrow();
+    });
+
+    it("is a no-op for a non-existent thread", () => {
+      expect(() => adapter.clearThreadMessages("does-not-exist")).not.toThrow();
     });
   });
 });

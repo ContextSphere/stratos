@@ -628,13 +628,30 @@ function AppInner(): React.ReactElement {
         setPendingMode((prev) => (prev ? normalizeMode(prev, provider) : prev));
         return;
       }
+      // The Manager thread needs a full session reset on provider switch:
+      // each provider has its own conversation-persistence scheme, so
+      // carrying state across a switch leaves the transcript broken. The
+      // manager-side handler (managerSwitchProvider) disposes the provider,
+      // clears the stored sessionId + disk messages, and broadcasts a
+      // refresh. Regular threads keep the simpler behaviour below.
+      if (activeThreadId === managerThreadId) {
+        await window.api.managerSwitchProvider(provider);
+        await refreshThreads();
+        return;
+      }
       await threadsBridge.update(activeThreadId, {
         provider,
         mode: normalizeMode(activeThread?.mode, provider),
       });
       await refreshThreads();
     },
-    [activeThread?.mode, activeThreadId, refreshThreads, threadsBridge],
+    [
+      activeThread?.mode,
+      activeThreadId,
+      managerThreadId,
+      refreshThreads,
+      threadsBridge,
+    ],
   );
 
   const handleWorktreeModeChange = useCallback(
@@ -1187,7 +1204,16 @@ function AppInner(): React.ReactElement {
                             pendingProvider
                           }
                           onProviderChange={handleProviderChange}
-                          disabled={isStreaming || messages.length > 0}
+                          disabled={
+                            isStreaming ||
+                            // Lock the provider once a regular thread has
+                            // messages (switching mid-conversation breaks
+                            // the transcript). The Manager thread is the
+                            // exception: switching resets it cleanly, so
+                            // users can toggle freely.
+                            (activeThreadId !== managerThreadId &&
+                              messages.length > 0)
+                          }
                         />
                         <span className="text-xs text-[var(--text-muted)]">
                           |

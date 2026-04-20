@@ -153,6 +153,14 @@ const api = {
     ipcRenderer.on(IPC_CHANNELS.FOLDERS_CHANGED, handler);
     return () => ipcRenderer.off(IPC_CHANNELS.FOLDERS_CHANGED, handler);
   },
+  onThreadMessagesReload: (
+    callback: (data: { threadId: string }) => void,
+  ): (() => void) => {
+    const handler = (_e: unknown, data: { threadId: string }): void =>
+      callback(data);
+    ipcRenderer.on(IPC_CHANNELS.THREAD_MESSAGES_RELOAD, handler);
+    return () => ipcRenderer.off(IPC_CHANNELS.THREAD_MESSAGES_RELOAD, handler);
+  },
 
   // Orphaned thread recovery
   onThreadsOrphaned: (callback: (threadIds: string[]) => void): void => {

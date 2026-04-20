@@ -21,6 +21,11 @@ export interface StorageAdapter {
   clearPersistedSessionId(threadId: string): void;
   loadMessages(threadId: string): Promise<StoredMessage[]>;
   saveMessages(threadId: string, messages: StoredMessage[]): void;
+  /** Wipe the disk-backed messages file for a thread (codex/opencode path).
+   *  No-op if the file doesn't exist. Harmless for claude-code threads,
+   *  which don't write this file. Used when resetting state on provider
+   *  switch. */
+  clearThreadMessages(threadId: string): void;
 
   // Folders
   listFolders(): Folder[];

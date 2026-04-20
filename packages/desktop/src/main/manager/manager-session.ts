@@ -317,22 +317,50 @@ export class ManagerSession {
     }
   }
 
-  /** Switch the Manager's provider. */
+  /**
+   * Switch the Manager's provider. Fully resets session state — different
+   * providers have incompatible conversation persistence (Claude SDK JSONL
+   * vs. Codex disk vs. Opencode disk), so carrying state across a switch
+   * produces broken transcripts. User explicitly opted into the reset.
+   */
   async switchProvider(provider: ProviderType, model?: string): Promise<void> {
-    // Dispose current provider
+    const threadId = await this.getThreadId();
+
+    // 1. Tear down the in-memory provider + session state.
     if (this.provider) {
       try {
         await this.provider.dispose();
       } catch {}
-      this.provider = null;
-      this.sessionId = undefined;
     }
-
+    this.provider = null;
+    this.sessionId = undefined;
+    this.notificationQueue = [];
     this.currentProvider = provider;
 
-    // Update the thread
-    const threadId = await this.getThreadId();
-    this.storage.updateThread(threadId, { provider, model });
+    // 2. Wipe persisted state that belongs to the old provider.
+    //    clearPersistedSessionId removes thread.sessionId so loadMessages
+    //    doesn't try to fetch an orphaned SDK transcript.
+    //    clearThreadMessages removes the disk messages file used by
+    //    codex/opencode; no-op for claude-code threads.
+    this.storage.clearPersistedSessionId(threadId);
+    this.storage.clearThreadMessages(threadId);
+    this.storage.updateThread(threadId, {
+      provider,
+      model,
+      sessionTools: undefined,
+    });
+
+    // 3. Tell the renderer to refresh. THREADS_CHANGED refreshes the
+    //    sidebar thread list (picks up the new provider badge).
+    //    THREAD_MESSAGES_RELOAD tells useChat to re-read the transcript
+    //    for this thread — since we cleared the sessionId and wiped disk
+    //    messages, loadMessages returns [] and the chat view goes blank.
+    if (!this.window.isDestroyed() && !this.window.webContents.isDestroyed()) {
+      this.window.webContents.send(IPC_CHANNELS.THREADS_CHANGED);
+      this.window.webContents.send(IPC_CHANNELS.THREAD_MESSAGES_RELOAD, {
+        threadId,
+      });
+    }
   }
 
   dispose(): void {

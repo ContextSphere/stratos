@@ -1083,6 +1083,25 @@ export function useChat(
       },
     );
 
+    // External transcript reset (e.g. Manager provider switch wiped the
+    // session + disk messages). If the affected thread is active, drop
+    // in-memory state and re-load — since storage is now empty, this
+    // clears the chat view.
+    api.onThreadMessagesReload(({ threadId }: { threadId: string }) => {
+      if (threadId !== activeThreadIdRef.current) return;
+      streamingThreadsRef.current.delete(threadId);
+      activeStreamIdRef.current.delete(threadId);
+      setMessages([]);
+      setSessionStats({
+        totalCost: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        contextWindow: null,
+      });
+      setSessionTools(null);
+      setMcpServers(null);
+    });
+
     api.onModeChanged((data: { mode: string }, threadId: string | null) => {
       if (!threadId) return;
 

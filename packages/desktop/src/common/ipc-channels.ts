@@ -34,6 +34,11 @@ export const IPC_CHANNELS = {
   THREADS_CHANGED: "chat:threads:changed",
   FOLDERS_CHANGED: "chat:folders:changed",
 
+  // Fired when a thread's messages have been reset externally — e.g. the
+  // Manager Agent's provider switch wipes the transcript. useChat re-loads
+  // if the reset thread is currently active.
+  THREAD_MESSAGES_RELOAD: "chat:thread:messages-reload",
+
   // Folders
   FOLDERS_LIST: "chat:folders:list",
   FOLDERS_ADD: "chat:folders:add",
