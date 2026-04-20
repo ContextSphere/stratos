@@ -381,6 +381,10 @@ const api = {
     );
   },
 
+  onPreviewClose: (callback: () => void): void => {
+    ipcRenderer.on(IPC_CHANNELS.PREVIEW_CLOSE, () => callback());
+  },
+
   // File explorer
   filesListDir: (
     dirPath: string,

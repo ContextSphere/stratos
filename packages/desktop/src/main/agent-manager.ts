@@ -48,6 +48,12 @@ import type { OllamaConfig, OllamaModelInfo } from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 import { resolveClaudePathOrUndefined } from "./integrations/claude-path";
 import { getScheduleMcpPath } from "./scheduler/scheduler";
+import {
+  getPreviewMcpPath,
+  getPreviewSocketPath,
+  installPreviewMcp,
+  startPreviewSocketServer,
+} from "./preview-mcp";
 
 /**
  * Build explicit MCP servers for an agent session.
@@ -59,12 +65,20 @@ import { getScheduleMcpPath } from "./scheduler/scheduler";
  *   - chrome-devtools: worktree mode only, for cross-worktree CDP debugging.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildMcpServers(cwd: string): Record<string, any> {
+function buildMcpServers(
+  cwd: string,
+  previewSocketPath: string,
+): Record<string, any> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const servers: Record<string, any> = {
     "stratos-scheduler": {
       command: "node",
       args: [getScheduleMcpPath()],
+    },
+    "stratos-preview": {
+      command: "node",
+      args: [getPreviewMcpPath()],
+      env: { STRATOS_PREVIEW_SOCKET: previewSocketPath },
     },
   };
 
@@ -317,10 +331,19 @@ export class AgentManager {
   private lastPlanMarkdown: { content: string; title: string } | null = null;
   private previewFileWatchers = new Map<string, FSWatcher>();
   private cachedSlashCommands: { name: string; description?: string }[] = [];
+  private previewSocketPath: string;
 
   constructor(window: BrowserWindow, storage?: FileStorageAdapter) {
     this.window = window;
     this.storage = storage ?? new FileStorageAdapter();
+
+    // Install preview MCP and start its Unix socket server
+    installPreviewMcp();
+    this.previewSocketPath = getPreviewSocketPath(getWorktreeInfo().hash);
+    startPreviewSocketServer(this.previewSocketPath, (channel, data) => {
+      this.sendToRenderer(channel, data);
+    });
+
     this.registerIpc();
     this.detectOrphanedThreads().catch((err) => {
       safeLog(console.error, "[agent-manager] orphan detection failed:", err);
@@ -944,7 +967,7 @@ export class AgentManager {
             )
           : undefined;
       const threadCwd = thread.cwd ?? process.env.HOME!;
-      const mcpServers = buildMcpServers(threadCwd);
+      const mcpServers = buildMcpServers(threadCwd, this.previewSocketPath);
       await provider.initialize({
         ...(providerName === "claude-code"
           ? {
@@ -972,6 +995,12 @@ export class AgentManager {
                   `- \`schedule_enable\` / \`schedule_disable\` — toggle a schedule on/off without deleting it`,
                   `- \`schedule_folders\` — list available folders (id, name, path)`,
                   `Each schedule fires in a new Stratos thread. Use the folder or cwd argument to control which folder the thread appears in.`,
+                  ``,
+                  `# Preview Pane`,
+                  `You have access to the \`stratos-preview\` MCP to control the side preview pane:`,
+                  `- \`preview_open_file(file_path, title?)\` — open any file in the preview pane (markdown files render as formatted text, all other files open in a code editor). Always use absolute paths.`,
+                  `- \`preview_close()\` — close the preview pane.`,
+                  `Use this after creating or editing a file so the user can see the result immediately.`,
                 ].join("\n"),
               },
             }
@@ -1632,7 +1661,7 @@ export class AgentManager {
             )
           : undefined;
       const threadCwd = thread.cwd ?? process.env.HOME!;
-      const mcpServers = buildMcpServers(threadCwd);
+      const mcpServers = buildMcpServers(threadCwd, this.previewSocketPath);
       await provider.initialize({
         ...(providerName === "claude-code"
           ? {
@@ -1657,6 +1686,11 @@ export class AgentManager {
                   `- \`schedule_create\` — schedule a new prompt`,
                   `- \`schedule_list\` — list existing schedules`,
                   `- \`schedule_folders\` — list available folders`,
+                  ``,
+                  `# Preview Pane`,
+                  `You have access to the \`stratos-preview\` MCP to control the side preview pane:`,
+                  `- \`preview_open_file(file_path, title?)\` — open any file in the preview pane. Always use absolute paths.`,
+                  `- \`preview_close()\` — close the preview pane.`,
                 ].join("\n"),
               },
             }
