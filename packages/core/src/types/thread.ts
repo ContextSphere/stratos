@@ -81,6 +81,13 @@ export interface Thread {
   scheduledPromptId?: string;
   /** True if this is the Manager Agent's singleton thread (pinned, non-deletable) */
   isManagerThread?: boolean;
+  /** Who created this thread. "manager" means it was spawned via the
+   * Manager Agent's create_session MCP tool; used to auto-report completion
+   * back to the manager. */
+  spawnedBy?: "manager";
+  /** True once a completion notification has been dispatched to the Manager
+   * Agent for this thread. Prevents duplicate notifications on restart. */
+  reportedToManager?: boolean;
 }
 
 export interface WorktreeProgressStep {
@@ -100,6 +107,16 @@ export interface TaskNotification {
   outputFile?: string;
 }
 
+/** Notification injected into the Manager chat when one of its spawned
+ * sessions finishes. Rendered as a compact status card instead of a
+ * plain user bubble. */
+export interface SessionCompleteNotification {
+  threadId: string;
+  title: string;
+  provider: string;
+  status: "completed" | "error" | "interrupted";
+}
+
 export interface StoredMessage {
   id: string;
   role: "user" | "assistant";
@@ -108,6 +125,7 @@ export interface StoredMessage {
   toolCalls?: StoredToolCall[];
   taskInfo?: unknown;
   taskNotification?: TaskNotification;
+  sessionCompleteNotification?: SessionCompleteNotification;
   cost?: number;
   usage?: { inputTokens: number; outputTokens: number };
   contextWindow?: number;

@@ -103,6 +103,23 @@ describe("ManagerBridge — sidebar broadcast events", () => {
     expect(mockStorage.setActiveThreadId).toHaveBeenCalledWith("mgr-thread");
   });
 
+  it("createSession tags the new thread with spawnedBy='manager'", async () => {
+    const bridge = makeBridge();
+    mockStorage.createThread.mockReturnValue({ id: "new-thread" });
+    await dispatch(bridge, "create_session", {
+      workspace: "/tmp/ws",
+      prompt: "hi",
+    });
+    // The first updateThread call must include spawnedBy — this is the flag
+    // AgentManager's completion event uses to decide whether to notify the
+    // Manager Agent when the child finishes.
+    const updateCall = mockStorage.updateThread.mock.calls.find(
+      (c: unknown[]) =>
+        (c[1] as Record<string, unknown> | undefined)?.spawnedBy === "manager",
+    );
+    expect(updateCall).toBeDefined();
+  });
+
   it("deleteSession fires THREADS_CHANGED", async () => {
     const bridge = makeBridge();
     await dispatch(bridge, "delete_session", { threadId: "t1" });

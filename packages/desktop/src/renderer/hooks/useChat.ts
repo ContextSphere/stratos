@@ -12,7 +12,43 @@ import type {
   WorktreeProgressData,
   McpServerInfo,
 } from "@stratosapp/ui";
-import type { StoredMessage, AgentMode } from "@stratosapp/core";
+import type {
+  SessionCompleteNotification,
+  StoredMessage,
+  AgentMode,
+} from "@stratosapp/core";
+
+/**
+ * Parse a `[stratos-notification]` directive injected by the Manager Agent
+ * when a spawned child session finishes. Inlined here because the renderer
+ * can't runtime-import from the CJS-only `@stratosapp/core` package.
+ * Keep in sync with packages/core/src/storage/sdk-transcript.ts.
+ */
+function parseSessionCompleteNotification(
+  text: string,
+): SessionCompleteNotification | null {
+  const firstLine = text.split("\n", 1)[0];
+  if (!firstLine.startsWith("[stratos-notification]")) return null;
+  const read = (key: string): string | undefined => {
+    const m = firstLine.match(new RegExp(`${key}="([^"]*)"`));
+    return m ? m[1] : undefined;
+  };
+  const threadId = read("session");
+  const title = read("title");
+  const provider = read("provider");
+  const rawStatus = read("status");
+  if (!threadId || !rawStatus) return null;
+  const status: SessionCompleteNotification["status"] =
+    rawStatus === "error" || rawStatus === "interrupted"
+      ? rawStatus
+      : "completed";
+  return {
+    threadId,
+    title: title ?? threadId,
+    provider: provider ?? "claude-code",
+    status,
+  };
+}
 
 interface UseChatOptions {
   onThreadUpdated?: () => void;
@@ -87,6 +123,9 @@ function toStoredMessage(m: ChatMessage): StoredMessage {
     ...(m.toolCalls && { toolCalls: m.toolCalls }),
     ...(m.taskInfo && { taskInfo: m.taskInfo }),
     ...(m.taskNotification && { taskNotification: m.taskNotification }),
+    ...(m.sessionCompleteNotification && {
+      sessionCompleteNotification: m.sessionCompleteNotification,
+    }),
     ...(m.cost != null && { cost: m.cost }),
     ...(m.usage && { usage: m.usage }),
     ...(m.contextWindow != null && { contextWindow: m.contextWindow }),
@@ -125,6 +164,9 @@ function fromStoredMessage(m: StoredMessage): ChatMessage {
     }),
     ...(m.taskInfo ? { taskInfo: m.taskInfo as TaskInfo } : {}),
     ...(m.taskNotification ? { taskNotification: m.taskNotification } : {}),
+    ...(m.sessionCompleteNotification
+      ? { sessionCompleteNotification: m.sessionCompleteNotification }
+      : {}),
     ...(m.cost != null && { cost: m.cost }),
     ...(m.usage && { usage: m.usage }),
     ...(m.contextWindow != null && { contextWindow: m.contextWindow }),
@@ -399,13 +441,24 @@ export function useChat(
 
       switch (msg.type) {
         case "user_message": {
-          // Synthetic user message injected by main process (e.g. auto-implement)
-          const userMsg: ChatMessage = {
-            id: nextMessageId(),
-            role: "user",
-            content: msg.content ?? "",
-            timestamp: Date.now(),
-          };
+          // Synthetic user message injected by main process (e.g. auto-implement
+          // after plan approval, or Manager Agent child-completion notifications).
+          const rawContent = msg.content ?? "";
+          const sessionNotif = parseSessionCompleteNotification(rawContent);
+          const userMsg: ChatMessage = sessionNotif
+            ? {
+                id: nextMessageId(),
+                role: "user",
+                content: "",
+                timestamp: Date.now(),
+                sessionCompleteNotification: sessionNotif,
+              }
+            : {
+                id: nextMessageId(),
+                role: "user",
+                content: rawContent,
+                timestamp: Date.now(),
+              };
           apply((prev) => [...prev, userMsg]);
           break;
         }

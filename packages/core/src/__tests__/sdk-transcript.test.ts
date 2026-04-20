@@ -7,6 +7,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import {
+  parseSessionCompleteNotification,
   parseTaskNotification,
   sdkMessagesToStored,
 } from "../storage/sdk-transcript";
@@ -138,6 +139,56 @@ describe("parseTaskNotification", () => {
     expect(parseTaskNotification(make("failed"))?.status).toBe("failed");
     expect(parseTaskNotification(make("stopped"))?.status).toBe("stopped");
     expect(parseTaskNotification(make("completed"))?.status).toBe("completed");
+  });
+});
+
+describe("parseSessionCompleteNotification", () => {
+  it("parses the first-line directive prefix", () => {
+    const text =
+      '[stratos-notification] session="abc123" title="My Session" provider="codex" status="completed"\n\n' +
+      'Session "My Session" finished successfully.';
+    expect(parseSessionCompleteNotification(text)).toEqual({
+      threadId: "abc123",
+      title: "My Session",
+      provider: "codex",
+      status: "completed",
+    });
+  });
+
+  it("returns null for text without the prefix", () => {
+    expect(
+      parseSessionCompleteNotification("just a normal message"),
+    ).toBeNull();
+    expect(parseSessionCompleteNotification("")).toBeNull();
+  });
+
+  it("maps error and interrupted statuses; defaults other values to completed", () => {
+    const make = (status: string) =>
+      `[stratos-notification] session="t" title="T" provider="claude-code" status="${status}"`;
+    expect(parseSessionCompleteNotification(make("error"))?.status).toBe(
+      "error",
+    );
+    expect(parseSessionCompleteNotification(make("interrupted"))?.status).toBe(
+      "interrupted",
+    );
+    expect(parseSessionCompleteNotification(make("completed"))?.status).toBe(
+      "completed",
+    );
+    // Unknown status falls back to "completed"
+    expect(parseSessionCompleteNotification(make("whatever"))?.status).toBe(
+      "completed",
+    );
+  });
+
+  it("falls back to threadId for title when title is missing", () => {
+    const text =
+      '[stratos-notification] session="abc" provider="claude-code" status="completed"';
+    expect(parseSessionCompleteNotification(text)?.title).toBe("abc");
+  });
+
+  it("returns null when session id is missing", () => {
+    const text = '[stratos-notification] title="foo" status="completed"';
+    expect(parseSessionCompleteNotification(text)).toBeNull();
   });
 });
 

@@ -9,7 +9,7 @@ import { writeFileSync, existsSync, mkdirSync, chmodSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
-import type { AgentManager } from "../agent-manager";
+import type { AgentManager, StreamCompletedEvent } from "../agent-manager";
 import {
   createProvider,
   FileStorageAdapter,
@@ -87,6 +87,8 @@ export class ManagerSession {
   private currentProvider: ProviderType = "claude-code";
   private sessionId: string | undefined;
   private activeStream = false;
+  private notificationQueue: Array<{ prompt: string }> = [];
+  private completionUnsub?: () => void;
 
   private constructor(
     agentManager: AgentManager,
@@ -143,6 +145,13 @@ export class ManagerSession {
       this.currentProvider =
         (existing.provider as ProviderType) ?? "claude-code";
     }
+
+    // Auto-report child session completions to the Manager. When any thread
+    // spawned via create_session finishes, inject a directive into the
+    // Manager chat so it can summarise the result for the user — no polling.
+    this.completionUnsub = this.agentManager.onStreamCompleted((event) =>
+      this.handleChildCompletion(event),
+    );
   }
 
   /** Get or create the manager thread ID. */
@@ -269,6 +278,9 @@ export class ManagerSession {
         threadId,
         isRunning: false,
       });
+      // Any child-completion notifications that queued up while this turn
+      // was active now get a chance to run.
+      this.drainNotificationQueue();
     }
   }
 
@@ -300,6 +312,8 @@ export class ManagerSession {
   }
 
   dispose(): void {
+    this.completionUnsub?.();
+    this.completionUnsub = undefined;
     this.bridge.stop();
     if (this.provider) {
       this.provider.dispose().catch(() => {});
@@ -309,6 +323,57 @@ export class ManagerSession {
   }
 
   // ── private ──────────────────────────────────────────────────────────────
+
+  /**
+   * Called when any thread's stream finishes. If the thread was spawned via
+   * the Manager's create_session MCP tool, inject a notification so the
+   * Manager can fetch the transcript and summarise for the user.
+   */
+  private handleChildCompletion(event: StreamCompletedEvent): void {
+    const thread = this.storage.getThread(event.threadId);
+    if (!thread || thread.spawnedBy !== "manager") return;
+    if (thread.reportedToManager) return;
+
+    // Set the flag before queueing so a crash between here and the inject
+    // won't cause duplicate notifications on restart. Accepted tradeoff:
+    // may rarely miss a notification if the process dies mid-call.
+    this.storage.updateThread(event.threadId, { reportedToManager: true });
+
+    const title = thread.title?.trim() || event.threadId;
+    const provider = thread.provider ?? "claude-code";
+    const statusLine =
+      event.status === "completed"
+        ? "finished successfully"
+        : event.status === "interrupted"
+          ? "was interrupted"
+          : `ended with an error${event.errorMessage ? ` (${event.errorMessage})` : ""}`;
+
+    const directive = [
+      `[stratos-notification] session="${event.threadId}" title="${title}" provider="${provider}" status="${event.status}"`,
+      "",
+      `Session "${title}" (threadId: ${event.threadId}, provider: ${provider}) ${statusLine}.`,
+      `Use mcp__stratos-manager__get_session with includeTranscript=true to fetch the result, then give the user a concise 2–3 sentence summary of what the agent did and any notable output. If the session errored, say so.`,
+    ].join("\n");
+
+    this.notificationQueue.push({ prompt: directive });
+    this.drainNotificationQueue();
+  }
+
+  private drainNotificationQueue(): void {
+    if (this.activeStream) return;
+    const next = this.notificationQueue.shift();
+    if (!next) return;
+    // Schedule on next tick so the caller's finally (which clears
+    // activeStream) has fully unwound before we start the next turn.
+    setImmediate(() => {
+      this.send(next.prompt).catch((err) => {
+        console.error(
+          "[manager-session] failed to dispatch child-completion notification:",
+          err,
+        );
+      });
+    });
+  }
 
   private async initProvider(): Promise<void> {
     const threadId = await this.getThreadId();

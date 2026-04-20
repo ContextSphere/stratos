@@ -194,6 +194,55 @@ describe("AgentManager (integration)", () => {
     });
   });
 
+  describe("onStreamCompleted listener registry", () => {
+    it("fires registered listeners with {threadId, status} and supports unsubscribe", () => {
+      const manager = new AgentManager(mockWindow);
+      const listener = vi.fn();
+      const unsub = manager.onStreamCompleted(listener);
+
+      (manager as any).emitStreamCompleted({
+        threadId: "t1",
+        status: "completed",
+      });
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith({
+        threadId: "t1",
+        status: "completed",
+      });
+
+      unsub();
+      (manager as any).emitStreamCompleted({
+        threadId: "t2",
+        status: "error",
+      });
+      // After unsubscribe no further calls
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      manager.dispose();
+    });
+
+    it("swallows listener errors so one bad listener doesn't block others", () => {
+      const manager = new AgentManager(mockWindow);
+      const bad = vi.fn().mockImplementation(() => {
+        throw new Error("boom");
+      });
+      const good = vi.fn();
+      manager.onStreamCompleted(bad);
+      manager.onStreamCompleted(good);
+
+      expect(() =>
+        (manager as any).emitStreamCompleted({
+          threadId: "t1",
+          status: "completed",
+        }),
+      ).not.toThrow();
+      expect(bad).toHaveBeenCalledTimes(1);
+      expect(good).toHaveBeenCalledTimes(1);
+
+      manager.dispose();
+    });
+  });
+
   describe("stale model detection", () => {
     it("falls back to first available model and updates settings when saved model is not in cache", async () => {
       const mockStorage = {

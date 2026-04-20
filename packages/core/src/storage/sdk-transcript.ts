@@ -1,5 +1,6 @@
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import type {
+  SessionCompleteNotification,
   StoredMessage,
   StoredToolCall,
   TaskNotification,
@@ -53,6 +54,39 @@ function normalizeContent(content: unknown): ContentBlock[] | null {
   if (Array.isArray(content)) return content as ContentBlock[];
   if (typeof content === "string") return [{ type: "text", text: content }];
   return null;
+}
+
+/**
+ * Parse the `[stratos-notification]` prefix that ManagerSession injects as a
+ * user message when a manager-spawned child session finishes. The first line
+ * looks like:
+ *   [stratos-notification] session="abc" title="foo" provider="claude-code" status="completed"
+ * Returns null if the text is not a recognizable session-complete notification.
+ */
+export function parseSessionCompleteNotification(
+  text: string,
+): SessionCompleteNotification | null {
+  const firstLine = text.split("\n", 1)[0];
+  if (!firstLine.startsWith("[stratos-notification]")) return null;
+  const read = (key: string): string | undefined => {
+    const m = firstLine.match(new RegExp(`${key}="([^"]*)"`));
+    return m ? m[1] : undefined;
+  };
+  const threadId = read("session");
+  const title = read("title");
+  const provider = read("provider");
+  const rawStatus = read("status");
+  if (!threadId || !rawStatus) return null;
+  const status: SessionCompleteNotification["status"] =
+    rawStatus === "error" || rawStatus === "interrupted"
+      ? rawStatus
+      : "completed";
+  return {
+    threadId,
+    title: title ?? threadId,
+    provider: provider ?? "claude-code",
+    status,
+  };
 }
 
 // Parse the <task-notification>...</task-notification> XML the SDK injects
@@ -177,6 +211,19 @@ export async function sdkMessagesToStored(
           content: "",
           timestamp: threadCreatedAt + msgIndex++,
           taskNotification: taskNotif,
+        });
+        i++;
+        continue;
+      }
+
+      const sessionNotif = parseSessionCompleteNotification(rawText);
+      if (sessionNotif) {
+        result.push({
+          id: msg.uuid,
+          role: "user",
+          content: "",
+          timestamp: threadCreatedAt + msgIndex++,
+          sessionCompleteNotification: sessionNotif,
         });
         i++;
         continue;

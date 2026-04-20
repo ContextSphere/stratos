@@ -11,6 +11,7 @@ export type {
   WorktreeProgressData,
   StoredImageAttachment,
   StoredFileAttachment,
+  SessionCompleteNotification,
   TaskNotification,
 } from "./types/thread";
 export type {
@@ -49,6 +50,10 @@ export { createProvider, getAvailableProviders } from "./providers/index";
 // Storage
 export type { StorageAdapter } from "./storage/types";
 export { FileStorageAdapter } from "./storage/file-adapter";
+export {
+  parseSessionCompleteNotification,
+  parseTaskNotification,
+} from "./storage/sdk-transcript";
 export type { TraceEntry } from "./storage/trace.store";
 export {
   appendTraceEntry,

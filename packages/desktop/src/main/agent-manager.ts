@@ -230,6 +230,12 @@ function buildOllamaCustomProvider(): Record<
   };
 }
 
+export interface StreamCompletedEvent {
+  threadId: string;
+  status: "completed" | "error" | "interrupted";
+  errorMessage?: string;
+}
+
 interface ThreadSession {
   provider: AgentProvider;
   sessionId?: string;
@@ -253,6 +259,9 @@ export class AgentManager {
   private sessionAccessOrder: string[] = []; // LRU tracking: most recent at end
   private static readonly MAX_IDLE_SESSIONS = 3;
   private managerMcpStatusProvider?: () => Promise<McpServerInfo[]>;
+  private completionListeners = new Set<
+    (event: StreamCompletedEvent) => void
+  >();
   private activeStreams = new Set<string>();
   private modelsCache = new Map<string, { models: unknown[]; ts: number }>();
   private static readonly MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -825,6 +834,9 @@ export class AgentManager {
     // When set to true in the stale-session catch branch, the finally block
     // skips cleanup so it doesn't send isRunning:false while the retry runs.
     let isRetrying = false;
+    // Captured in the catch block so the finally can tell the Manager Agent
+    // whether this run ended cleanly, with an error, or via user interrupt.
+    let caughtError: unknown = null;
 
     let thread = await this.storage.getThread(threadId);
     if (!thread) throw new Error(`Thread ${threadId} not found`);
@@ -1191,6 +1203,7 @@ export class AgentManager {
         void this.requestPlanReview(threadId, { allowedPrompts: [] });
       }
     } catch (err: any) {
+      caughtError = err;
       // If the error is due to a stale session (process exited), retry once
       // without the sessionId so a fresh session is started.
       // Do NOT retry if the user explicitly interrupted — provider.interrupt()
@@ -1242,6 +1255,21 @@ export class AgentManager {
         this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, {
           threadId,
           isRunning: false,
+        });
+
+        const latestSession = this.sessions.get(threadId);
+        const status: StreamCompletedEvent["status"] =
+          latestSession?.interruptRequested
+            ? "interrupted"
+            : caughtError
+              ? "error"
+              : "completed";
+        this.emitStreamCompleted({
+          threadId,
+          status,
+          ...(caughtError && typeof (caughtError as any)?.message === "string"
+            ? { errorMessage: (caughtError as any).message }
+            : {}),
         });
       }
     }
@@ -1307,6 +1335,29 @@ export class AgentManager {
    * outside AgentManager.sessions, so MCP status queries for its thread need
    * to be delegated.
    */
+  /**
+   * Subscribe to stream-completion events. Fires once per runStream exit
+   * (success, error, or interrupt), with the final status. Used by the
+   * Manager Agent to auto-report when one of its spawned sessions finishes.
+   * Returns an unsubscribe function.
+   */
+  onStreamCompleted(
+    listener: (event: StreamCompletedEvent) => void,
+  ): () => void {
+    this.completionListeners.add(listener);
+    return () => this.completionListeners.delete(listener);
+  }
+
+  private emitStreamCompleted(event: StreamCompletedEvent): void {
+    for (const listener of this.completionListeners) {
+      try {
+        listener(event);
+      } catch (err) {
+        console.error("[agent-manager] stream-completion listener threw:", err);
+      }
+    }
+  }
+
   setManagerMcpStatusProvider(provider: () => Promise<McpServerInfo[]>): void {
     this.managerMcpStatusProvider = provider;
   }

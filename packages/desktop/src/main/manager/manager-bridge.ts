@@ -205,13 +205,12 @@ export class ManagerBridge {
       provider,
     );
 
-    // Apply optional settings
-    const updates: Record<string, unknown> = {};
+    // Apply optional settings + mark as manager-spawned so AgentManager's
+    // completion event can notify the Manager Agent when the child finishes.
+    const updates: Record<string, unknown> = { spawnedBy: "manager" };
     if (mode) updates.mode = mode;
     if (worktreeMode) updates.worktreeMode = worktreeMode;
-    if (Object.keys(updates).length > 0) {
-      this.storage.updateThread(thread.id, updates);
-    }
+    this.storage.updateThread(thread.id, updates);
 
     if (previousActive && previousActive !== thread.id) {
       this.storage.setActiveThreadId(previousActive);
