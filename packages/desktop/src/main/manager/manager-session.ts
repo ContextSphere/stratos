@@ -144,6 +144,10 @@ export class ManagerSession {
       this.threadId = existing.id;
       this.currentProvider =
         (existing.provider as ProviderType) ?? "claude-code";
+      // Restore the stored sessionId so the next send resumes the SDK
+      // session rather than starting a fresh one, preserving history
+      // across app restarts.
+      this.sessionId = existing.sessionId;
     }
 
     // Auto-report child session completions to the Manager. When any thread
@@ -434,6 +438,16 @@ export class ManagerSession {
 
     if (msg.type === "session_init") {
       this.sessionId = msg.sessionId;
+      // Persist the sessionId on the thread so useChat can re-load the
+      // SDK transcript when the user switches to another thread and back.
+      // Without this, loadMessages → sdkMessagesToStored(thread.sessionId)
+      // has no sessionId and returns [], wiping the manager's chat history.
+      try {
+        this.storage.updateThread(threadId, { sessionId: msg.sessionId });
+      } catch {
+        // Non-fatal — history won't restore on next switch but live stream
+        // continues to work.
+      }
     }
 
     // Forward all messages through the standard STREAM_MESSAGE channel
