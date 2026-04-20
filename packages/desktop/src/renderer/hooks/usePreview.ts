@@ -87,7 +87,8 @@ export function usePreview(activeThreadId?: string | null) {
         }
       },
     );
-  }, [openUrl, openMarkdown, openArtifactEditor]);
+    window.api.onPreviewClose(close);
+  }, [openUrl, openMarkdown, openArtifactEditor, close]);
 
   return {
     preview,

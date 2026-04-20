@@ -95,6 +95,7 @@ export const IPC_CHANNELS = {
   // Preview pane
   PREVIEW_OPEN_URL: "preview:open-url",
   PREVIEW_OPEN_MARKDOWN: "preview:open-markdown",
+  PREVIEW_CLOSE: "preview:close",
 
   // File explorer
   FILES_LIST_DIR: "files:list-dir",
