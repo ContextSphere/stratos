@@ -128,6 +128,9 @@ export const IPC_CHANNELS = {
   // App info
   APP_INFO: "app:info",
 
+  // Shell
+  SHELL_OPEN_EXTERNAL: "shell:open-external",
+
   // MCP servers
   MCP_SERVER_STATUS: "mcp:server-status",
   MCP_TOGGLE_SERVER: "mcp:toggle-server",

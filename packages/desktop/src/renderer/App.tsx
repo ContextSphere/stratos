@@ -717,7 +717,12 @@ function AppInner(): React.ReactElement {
       const value = href.trim();
       if (!value) return;
 
-      // Keep true web links in web preview.
+      // Web and mailto links open in the system's default browser/handler.
+      if (/^(https?|mailto):/i.test(value)) {
+        window.api.openExternal(value);
+        return;
+      }
+      // Other protocol-style URLs (e.g. file://, ftp://) fall back to preview.
       if (/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(value)) {
         openUrl(value);
         return;

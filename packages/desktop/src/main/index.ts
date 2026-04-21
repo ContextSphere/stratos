@@ -218,6 +218,12 @@ if (!gotLock) {
       cdpPort,
     }));
 
+    ipcMain.handle(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, (_event, url: string) => {
+      if (typeof url !== "string") return;
+      if (!/^https?:\/\//i.test(url) && !/^mailto:/i.test(url)) return;
+      shell.openExternal(url);
+    });
+
     registerThreadIpc(storage);
     registerGitHubIpc(mainWindow);
     registerClaudeIpc(mainWindow);
@@ -272,6 +278,7 @@ if (!gotLock) {
     schedulerManager?.dispose();
     agentManager?.dispose();
     ipcMain.removeHandler(IPC_CHANNELS.APP_INFO);
+    ipcMain.removeHandler(IPC_CHANNELS.SHELL_OPEN_EXTERNAL);
     unregisterManagerIpc();
     unregisterSchedulerIpc();
     unregisterThreadIpc();

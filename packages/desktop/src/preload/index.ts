@@ -179,6 +179,9 @@ const api = {
     cdpPort: number | null;
   }> => ipcRenderer.invoke(IPC_CHANNELS.APP_INFO),
 
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, url),
+
   // App settings
   settings: {
     get: (): Promise<Record<string, unknown>> =>
