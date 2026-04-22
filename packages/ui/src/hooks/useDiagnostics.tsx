@@ -55,7 +55,13 @@ export function DiagnosticsProvider({
         timestamp: Date.now(),
         severity: error.severity ?? "error",
       };
-      console.error(
+      const log =
+        entry.severity === "info"
+          ? console.info
+          : entry.severity === "warning"
+            ? console.warn
+            : console.error;
+      log(
         `[diagnostic] ${entry.title}: ${entry.message}`,
         entry.context ?? "",
         entry.stack ?? "",

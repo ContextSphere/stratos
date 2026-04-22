@@ -143,19 +143,7 @@ export class SchedulerManager {
       .then(() => {
         updateScheduledPrompt(prompt.id, { lastRunStatus: "completed" });
         this.notifyChanged();
-
-        // Desktop notification on completion
-        if (!this.window.isDestroyed() && !this.window.isFocused()) {
-          const notification = new Notification({
-            title: "Scheduled Prompt Completed",
-            body: `"${prompt.name}" finished running.`,
-          });
-          notification.on("click", () => {
-            this.window.show();
-            this.window.focus();
-          });
-          notification.show();
-        }
+        this.notifyRunFinished(prompt, thread.id, "completed");
       })
       .catch((err) => {
         updateScheduledPrompt(prompt.id, {
@@ -165,6 +153,12 @@ export class SchedulerManager {
         console.error(
           `[scheduler] Error executing scheduled prompt ${prompt.id}:`,
           err,
+        );
+        this.notifyRunFinished(
+          prompt,
+          thread.id,
+          "error",
+          err instanceof Error ? err.message : String(err),
         );
       });
 
@@ -284,5 +278,49 @@ export class SchedulerManager {
       return;
     }
     this.window.webContents.send(IPC_CHANNELS.SCHEDULED_CHANGED);
+  }
+
+  /**
+   * Fire both a desktop notification (always — even if focused) and an in-app
+   * toast when a scheduled run finishes. Clicking the desktop notification
+   * activates the thread.
+   */
+  private notifyRunFinished(
+    prompt: ScheduledPrompt,
+    threadId: string,
+    status: "completed" | "error",
+    errorMessage?: string,
+  ): void {
+    if (this.window.isDestroyed()) return;
+
+    const isError = status === "error";
+    const title = isError
+      ? "Scheduled Prompt Failed"
+      : "Scheduled Prompt Completed";
+    const body = isError
+      ? `"${prompt.name}" failed${errorMessage ? `: ${errorMessage}` : "."}`
+      : `"${prompt.name}" finished running.`;
+
+    const notification = new Notification({ title, body });
+    notification.on("click", () => {
+      if (this.window.isDestroyed()) return;
+      this.window.show();
+      this.window.focus();
+      if (!this.window.webContents.isDestroyed()) {
+        this.window.webContents.send(IPC_CHANNELS.THREAD_ACTIVATE, {
+          threadId,
+        });
+      }
+    });
+    notification.show();
+
+    if (!this.window.webContents.isDestroyed()) {
+      this.window.webContents.send(IPC_CHANNELS.DIAGNOSTIC_ERROR, {
+        title,
+        message: body,
+        severity: isError ? "error" : "info",
+        context: { threadId, promptId: prompt.id },
+      });
+    }
   }
 }
