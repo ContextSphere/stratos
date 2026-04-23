@@ -10,6 +10,7 @@ import { InsightCard } from "./InsightCard";
 import type { ChatMessage } from "../types";
 import type { AgentMode, ProviderType } from "../utils/modes";
 import { getModeConfig } from "../utils/modes";
+import { toolRegistry } from "../tool-registry";
 
 // Static Tailwind class map for mode-change pills
 const PILL_COLOR_MAP: Record<
@@ -331,9 +332,19 @@ export function MessageBubble({
     "TodoWrite",
   ]);
   const regularToolCalls = !message.taskInfo
-    ? (message.toolCalls ?? []).filter(
-        (tc) => tc.toolName !== "Task" && !INTERACTIVE_TOOLS.has(tc.toolName),
-      )
+    ? (message.toolCalls ?? []).filter((tc) => {
+        if (tc.toolName === "Task" || INTERACTIVE_TOOLS.has(tc.toolName))
+          return false;
+        const descriptor = toolRegistry.resolve(tc.toolName);
+        if (descriptor?.visibility) {
+          const vis =
+            typeof descriptor.visibility === "function"
+              ? descriptor.visibility(tc)
+              : descriptor.visibility;
+          if (vis === "hidden") return false;
+        }
+        return true;
+      })
     : [];
   const hasToolCalls = regularToolCalls.length > 0 || !!message.taskInfo;
 

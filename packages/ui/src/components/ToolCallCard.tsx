@@ -2,6 +2,9 @@ import { lazy, Suspense } from "react";
 import type { ToolCall } from "../types";
 import { MemoryOperationCard } from "./MemoryOperationCard";
 import { MonitorCard } from "./MonitorCard";
+import { BuiltinToolCard } from "./BuiltinToolCard";
+import { DefaultBuiltinCardBody } from "./DefaultBuiltinCardBody";
+import { toolRegistry } from "../tool-registry";
 
 const FileChangeViewer = lazy(() =>
   import("./FileChangeViewer").then((m) => ({ default: m.FileChangeViewer })),
@@ -85,6 +88,27 @@ export function ToolCallCard({
 
   if (toolCall.toolName === "Skill") {
     return <SkillCard toolCall={toolCall} />;
+  }
+
+  // Registry lookup for internal Stratos tools
+  const descriptor = toolRegistry.resolve(toolCall.toolName);
+  if (descriptor) {
+    const BodyComponent = descriptor.CardBody ?? DefaultBuiltinCardBody;
+    const hasBody =
+      !!descriptor.CardBody ||
+      Object.keys(toolCall.input).length > 0 ||
+      !!toolCall.output;
+    return (
+      <BuiltinToolCard
+        toolCall={toolCall}
+        descriptor={descriptor}
+        hasBody={hasBody}
+      >
+        {hasBody && (
+          <BodyComponent toolCall={toolCall} descriptor={descriptor} />
+        )}
+      </BuiltinToolCard>
+    );
   }
 
   // Use MemoryOperationCard for memory file operations

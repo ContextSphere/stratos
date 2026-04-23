@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { PanelCard } from "./shared/PanelCard";
 import type { McpServerInfo } from "../bridges/types";
+import { toolRegistry } from "../tool-registry";
 
 interface MCPServer {
   name: string;
@@ -80,7 +81,12 @@ export function ToolsPopover({
           configPath: s.configPath,
           configType: s.configType,
         }))
-        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+        .sort((a, b) => {
+          const aBuiltin = !!toolRegistry.getByServerName(a.name);
+          const bBuiltin = !!toolRegistry.getByServerName(b.name);
+          if (aBuiltin !== bBuiltin) return aBuiltin ? -1 : 1;
+          return a.displayName.localeCompare(b.displayName);
+        });
     }
 
     // Fallback: parse from sessionTools
@@ -95,14 +101,21 @@ export function ToolsPopover({
         serverMap.get(serverName)!.push(toolShortName);
       }
     }
-    return Array.from(serverMap.entries()).map(([name, tools]) => ({
-      name,
-      displayName: name
-        .split("-")
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" "),
-      tools,
-    }));
+    return Array.from(serverMap.entries())
+      .map(([name, tools]) => ({
+        name,
+        displayName: name
+          .split("-")
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" "),
+        tools,
+      }))
+      .sort((a, b) => {
+        const aBuiltin = !!toolRegistry.getByServerName(a.name);
+        const bBuiltin = !!toolRegistry.getByServerName(b.name);
+        if (aBuiltin !== bBuiltin) return aBuiltin ? -1 : 1;
+        return a.displayName.localeCompare(b.displayName);
+      });
   }, [sessionTools, mcpServers]);
 
   useEffect(() => {
@@ -130,10 +143,186 @@ export function ToolsPopover({
 
   if (!isOpen) return null;
 
+  function renderServer(
+    server: (typeof servers)[0],
+    expandedServerName: string | null,
+    onExpand: (name: string | null) => void,
+    toggleServer: Props["onToggleServer"],
+    openConfig: Props["onOpenConfig"],
+    reconnectServer: Props["onReconnectServer"],
+  ): React.ReactElement {
+    const descriptor = toolRegistry.getByServerName(server.name);
+    const statusColor =
+      STATUS_COLORS[server.status ?? "connected"] ?? STATUS_COLORS.connected;
+    const isDisabled = server.status === "disabled";
+    const isExpanded = expandedServerName === server.name;
+
+    return (
+      <div
+        key={server.name}
+        className="border-b border-[var(--border)] last:border-0"
+        style={
+          descriptor
+            ? {
+                borderLeftColor: descriptor.display.accentColor,
+                borderLeftWidth: "3px",
+              }
+            : {}
+        }
+      >
+        <button
+          onClick={() => onExpand(isExpanded ? null : server.name)}
+          className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-[var(--border)] transition-colors"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {descriptor ? (
+              <span
+                className="flex-shrink-0"
+                style={{ color: descriptor.display.accentColor }}
+              >
+                <descriptor.display.icon size={12} />
+              </span>
+            ) : (
+              <div
+                className={`w-1.5 h-1.5 rounded-full ${statusColor} flex-shrink-0`}
+              />
+            )}
+            <span
+              className={`text-xs truncate ${
+                isDisabled
+                  ? "text-[var(--text-faint)]"
+                  : server.status === "needs-auth"
+                    ? "text-yellow-500/80"
+                    : server.status === "failed"
+                      ? "text-red-400/80"
+                      : descriptor
+                        ? "text-[var(--text-primary)]"
+                        : "text-[var(--text-primary)]"
+              }`}
+            >
+              {server.displayName}
+            </span>
+            {server.scope && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--border)] text-[var(--text-muted)] flex-shrink-0">
+                {SCOPE_LABELS[server.scope] ?? server.scope}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {toggleServer && !descriptor && (
+              <div
+                role="switch"
+                aria-checked={!isDisabled}
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  toggleServer(server.name, isDisabled);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    toggleServer(server.name, isDisabled);
+                  }
+                }}
+                className={`relative w-7 h-4 rounded-full transition-colors cursor-pointer ${
+                  isDisabled ? "bg-[var(--border-mid)]" : "bg-emerald-600/50"
+                }`}
+                title={isDisabled ? "Enable server" : "Disable server"}
+              >
+                <span
+                  className={`absolute top-0.5 w-3 h-3 rounded-full bg-white/80 transition-transform pointer-events-none ${
+                    isDisabled ? "left-0.5" : "left-3.5"
+                  }`}
+                />
+              </div>
+            )}
+            <span className="text-xs text-[var(--text-muted)]">
+              {server.tools.length}
+            </span>
+            <svg
+              className={`w-3 h-3 text-[var(--text-muted)] transition-transform duration-150 ${
+                isExpanded ? "rotate-90" : ""
+              }`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </div>
+        </button>
+
+        {isExpanded && (
+          <div className="px-4 pb-2">
+            {server.configPath && (
+              <button
+                onClick={() => openConfig?.(server.configPath!)}
+                className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors mb-1.5 truncate block w-full text-left"
+                title={`Open ${server.configPath}`}
+              >
+                {shortenPath(server.configPath)}
+              </button>
+            )}
+            {server.status === "needs-auth" &&
+              reconnectServer &&
+              server.configType !== "claudeai-proxy" && (
+                <button
+                  onClick={() => reconnectServer(server.name)}
+                  className="text-[10px] px-2 py-1 mb-1.5 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors"
+                >
+                  Authenticate
+                </button>
+              )}
+            {server.status === "failed" && (
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[10px] text-red-400/70">
+                  Connection failed
+                </span>
+                {reconnectServer && (
+                  <button
+                    onClick={() => reconnectServer(server.name)}
+                    className="text-[10px] px-2 py-0.5 rounded bg-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-mid)] transition-colors"
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-1">
+              {server.tools.map((tool) => (
+                <div
+                  key={tool}
+                  className="text-xs font-mono text-[var(--text-muted)] bg-[var(--bg-overlay)] px-2 py-1 rounded truncate"
+                  title={tool}
+                >
+                  {tool}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const mcpToolCount = servers.reduce((sum, s) => sum + s.tools.length, 0);
   const builtInCount =
     sessionTools.length -
     sessionTools.filter((t) => t.startsWith("mcp__")).length;
+
+  const builtinServers = servers.filter((s) =>
+    toolRegistry.getByServerName(s.name),
+  );
+  const externalServers = servers.filter(
+    (s) => !toolRegistry.getByServerName(s.name),
+  );
 
   const closeButton = (
     <button
@@ -184,139 +373,46 @@ export function ToolsPopover({
           </div>
         ) : (
           <div>
-            {servers.map((server) => {
-              const statusColor =
-                STATUS_COLORS[server.status ?? "connected"] ??
-                STATUS_COLORS.connected;
-              const isDisabled = server.status === "disabled";
-
-              return (
-                <div
-                  key={server.name}
-                  className="border-b border-[var(--border)] last:border-0"
-                >
-                  <button
-                    onClick={() =>
-                      setExpandedServer(
-                        expandedServer === server.name ? null : server.name,
-                      )
-                    }
-                    className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-[var(--border)] transition-colors"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div
-                        className={`w-1.5 h-1.5 rounded-full ${statusColor} flex-shrink-0`}
-                      />
-                      <span
-                        className={`text-xs truncate ${isDisabled ? "text-[var(--text-faint)]" : server.status === "needs-auth" ? "text-yellow-500/80" : server.status === "failed" ? "text-red-400/80" : "text-[var(--text-primary)]"}`}
-                      >
-                        {server.displayName}
-                      </span>
-                      {server.scope && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--border)] text-[var(--text-muted)] flex-shrink-0">
-                          {SCOPE_LABELS[server.scope] ?? server.scope}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {onToggleServer && (
-                        <div
-                          role="switch"
-                          aria-checked={!isDisabled}
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            onToggleServer(server.name, isDisabled);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              onToggleServer(server.name, isDisabled);
-                            }
-                          }}
-                          className={`relative w-7 h-4 rounded-full transition-colors cursor-pointer ${isDisabled ? "bg-[var(--border-mid)]" : "bg-emerald-600/50"}`}
-                          title={
-                            isDisabled ? "Enable server" : "Disable server"
-                          }
-                        >
-                          <span
-                            className={`absolute top-0.5 w-3 h-3 rounded-full bg-white/80 transition-transform pointer-events-none ${isDisabled ? "left-0.5" : "left-3.5"}`}
-                          />
-                        </div>
-                      )}
-                      <span className="text-xs text-[var(--text-muted)]">
-                        {server.tools.length}
-                      </span>
-                      <svg
-                        className={`w-3 h-3 text-[var(--text-muted)] transition-transform duration-150 ${expandedServer === server.name ? "rotate-90" : ""}`}
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M9 5l7 7-7 7"
-                        />
-                      </svg>
-                    </div>
-                  </button>
-
-                  {expandedServer === server.name && (
-                    <div className="px-4 pb-2">
-                      {server.configPath && (
-                        <button
-                          onClick={() => onOpenConfig?.(server.configPath!)}
-                          className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors mb-1.5 truncate block w-full text-left"
-                          title={`Open ${server.configPath}`}
-                        >
-                          {shortenPath(server.configPath)}
-                        </button>
-                      )}
-                      {server.status === "needs-auth" &&
-                        onReconnectServer &&
-                        server.configType !== "claudeai-proxy" && (
-                          <button
-                            onClick={() => onReconnectServer(server.name)}
-                            className="text-[10px] px-2 py-1 mb-1.5 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors"
-                          >
-                            Authenticate
-                          </button>
-                        )}
-                      {server.status === "failed" && (
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className="text-[10px] text-red-400/70">
-                            Connection failed
-                          </span>
-                          {onReconnectServer && (
-                            <button
-                              onClick={() => onReconnectServer(server.name)}
-                              className="text-[10px] px-2 py-0.5 rounded bg-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-mid)] transition-colors"
-                            >
-                              Retry
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      <div className="grid grid-cols-2 gap-1">
-                        {server.tools.map((tool) => (
-                          <div
-                            key={tool}
-                            className="text-xs font-mono text-[var(--text-muted)] bg-[var(--bg-overlay)] px-2 py-1 rounded truncate"
-                            title={tool}
-                          >
-                            {tool}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+            {builtinServers.length > 0 && (
+              <>
+                <div className="px-4 py-1.5 border-b border-[var(--border)]">
+                  <span className="text-[10px] font-medium text-[var(--text-faint)] uppercase tracking-wider">
+                    Stratos Built-in
+                  </span>
                 </div>
-              );
-            })}
+                {builtinServers.map((server) =>
+                  renderServer(
+                    server,
+                    expandedServer,
+                    setExpandedServer,
+                    onToggleServer,
+                    onOpenConfig,
+                    onReconnectServer,
+                  ),
+                )}
+              </>
+            )}
+            {externalServers.length > 0 && (
+              <>
+                {builtinServers.length > 0 && (
+                  <div className="px-4 py-1.5 border-b border-[var(--border)]">
+                    <span className="text-[10px] font-medium text-[var(--text-faint)] uppercase tracking-wider">
+                      External
+                    </span>
+                  </div>
+                )}
+                {externalServers.map((server) =>
+                  renderServer(
+                    server,
+                    expandedServer,
+                    setExpandedServer,
+                    onToggleServer,
+                    onOpenConfig,
+                    onReconnectServer,
+                  ),
+                )}
+              </>
+            )}
           </div>
         )}
 
