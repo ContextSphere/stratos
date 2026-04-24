@@ -20,6 +20,8 @@ export class ManagerBridge {
   private storage: FileStorageAdapter;
   private socketPath: string;
   private window: BrowserWindow;
+  /** Images attached to the currently-active Manager turn, set by ManagerSession. */
+  private pendingTurnImages: { dataUrl: string; mimeType: string }[] = [];
 
   constructor(
     agentManager: AgentManager,
@@ -31,6 +33,18 @@ export class ManagerBridge {
     this.storage = storage;
     this.socketPath = socketPath;
     this.window = window;
+  }
+
+  /** Called by ManagerSession before a turn's stream begins. */
+  setTurnImages(
+    images: { dataUrl: string; mimeType: string }[] | undefined,
+  ): void {
+    this.pendingTurnImages = images ?? [];
+  }
+
+  /** Called by ManagerSession in the finally block after a turn completes. */
+  clearTurnImages(): void {
+    this.pendingTurnImages = [];
   }
 
   /**
@@ -184,9 +198,17 @@ export class ManagerBridge {
     const mode = params.mode as string | undefined;
     const title = params.title as string | undefined;
     const worktreeMode = params.worktreeMode as string | undefined;
-    const images = params.images as
+    // Prefer images explicitly included by the LLM in the tool call; fall back
+    // to images the user attached in the current Manager turn.
+    const explicitImages = params.images as
       | { dataUrl: string; mimeType: string }[]
       | undefined;
+    const images =
+      explicitImages && explicitImages.length > 0
+        ? explicitImages
+        : this.pendingTurnImages.length > 0
+          ? this.pendingTurnImages
+          : undefined;
 
     // Ensure folder is registered
     const folders = this.storage.listFolders();
@@ -244,9 +266,15 @@ export class ManagerBridge {
   ): Promise<{ status: string }> {
     const threadId = params.threadId as string;
     const prompt = params.prompt as string;
-    const images = params.images as
+    const explicitImages = params.images as
       | { dataUrl: string; mimeType: string }[]
       | undefined;
+    const images =
+      explicitImages && explicitImages.length > 0
+        ? explicitImages
+        : this.pendingTurnImages.length > 0
+          ? this.pendingTurnImages
+          : undefined;
 
     const thread = this.storage.getThread(threadId);
     if (!thread) throw new Error(`Thread not found: ${threadId}`);

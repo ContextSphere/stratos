@@ -223,6 +223,9 @@ export class ManagerSession {
     }
 
     this.activeStream = true;
+    // Register images so ManagerBridge can inject them into any create_session
+    // or send_message tool calls the Manager LLM makes during this turn.
+    this.bridge.setTurnImages(images);
     this.sendToRenderer(IPC_CHANNELS.MANAGER_STATUS, {
       isActive: true,
       threadId,
@@ -248,8 +251,16 @@ export class ManagerSession {
         threadId,
       );
 
+      // When images are attached, tell the Manager LLM they will be forwarded
+      // automatically — it doesn't need to re-encode them in tool call params.
+      // Prepend as a bracketed note so it's visible alongside the user's message.
+      const imageHint =
+        images && images.length > 0
+          ? `[Note: The user has attached ${images.length} image${images.length === 1 ? "" : "s"} to this message. They will be automatically forwarded to any agent sessions you create or message during this turn — you do not need to include image data in your tool call parameters. You can describe the image content in the prompt you send to child agents.]\n\n`
+          : "";
+
       const stream = this.provider!.sendMessage({
-        prompt,
+        prompt: imageHint + prompt,
         sessionId: this.sessionId,
         model: this.storage.getThread(threadId)?.model,
         cwd: MANAGER_DIR,
@@ -296,6 +307,8 @@ export class ManagerSession {
       }
     } finally {
       this.activeStream = false;
+      // Clear turn images so they don't leak into subsequent turns.
+      this.bridge.clearTurnImages();
       this.sendToRenderer(IPC_CHANNELS.MANAGER_STATUS, {
         isActive: false,
         threadId,
