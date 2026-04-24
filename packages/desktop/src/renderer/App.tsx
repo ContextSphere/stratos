@@ -1184,6 +1184,14 @@ function AppInner(): React.ReactElement {
                         </div>
                       ) : undefined
                     }
+                    completionStatus={
+                      !isStreaming &&
+                      activeThread?.spawnedBy === "manager" &&
+                      activeThread?.lastCompletionStatus
+                        ? activeThread.lastCompletionStatus
+                        : undefined
+                    }
+                    completionError={activeThread?.lastCompletionError}
                   />
 
                   {/* Input */}

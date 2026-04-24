@@ -39,6 +39,10 @@ interface Props {
   onAnchorChange?: (anchor: NavAnchor) => void;
   /** Custom inner content for the empty state. Defaults to the generic Stratos splash. */
   emptyState?: ReactNode;
+  /** Completion status for manager-spawned sessions — shown as a status bar
+   * at the bottom of the transcript after streaming finishes. */
+  completionStatus?: "completed" | "error" | "interrupted";
+  completionError?: string;
 }
 
 /** Pixel threshold: user is considered "at the bottom" if within this distance */
@@ -58,6 +62,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     onViewFile,
     onAnchorChange,
     emptyState,
+    completionStatus,
+    completionError,
   }: Props,
   ref,
 ) {
@@ -217,6 +223,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         {isStreaming && (
           <div className="flex items-center py-2">
             <TypingIndicator />
+          </div>
+        )}
+        {!isStreaming && completionStatus && (
+          <div
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs mt-2 ${
+              completionStatus === "completed"
+                ? "bg-emerald-950/50 text-emerald-400 border border-emerald-900/50"
+                : completionStatus === "interrupted"
+                  ? "bg-yellow-950/50 text-yellow-400 border border-yellow-900/50"
+                  : "bg-red-950/50 text-red-400 border border-red-900/50"
+            }`}
+          >
+            <span>
+              {completionStatus === "completed"
+                ? "Session completed — the Manager Agent has been notified."
+                : completionStatus === "interrupted"
+                  ? "Session interrupted."
+                  : `Session ended with an error${completionError ? `: ${completionError}` : "."}  The Manager Agent has been notified.`}
+            </span>
           </div>
         )}
       </div>

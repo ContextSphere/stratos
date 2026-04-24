@@ -1293,6 +1293,23 @@ export class AgentManager {
             : caughtError
               ? "error"
               : "completed";
+
+        // Persist completion status for manager-spawned threads so the UI can
+        // show it deterministically after reload — no LLM involvement needed.
+        const completedThread = this.storage.getThread(threadId);
+        if (completedThread?.spawnedBy === "manager") {
+          const errorMsg =
+            caughtError &&
+            typeof (caughtError as { message?: unknown })?.message === "string"
+              ? ((caughtError as { message: string }).message as string)
+              : undefined;
+          this.storage.updateThread(threadId, {
+            lastCompletionStatus: status,
+            lastCompletionError: errorMsg,
+          });
+          this.sendToRenderer(IPC_CHANNELS.THREADS_CHANGED);
+        }
+
         this.emitStreamCompleted({
           threadId,
           status,

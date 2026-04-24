@@ -200,9 +200,15 @@ export class ManagerBridge {
     // Manager chat. Restore the previous active thread after the create.
     const previousActive = this.storage.getActiveThreadId();
 
-    // Create thread
+    // Create thread — derive a title from the prompt if none was provided
+    const derivedTitle = (() => {
+      if (title) return title;
+      const trimmed = prompt?.trim() ?? "";
+      if (!trimmed) return "New chat";
+      return trimmed.length > 50 ? trimmed.slice(0, 50) + "..." : trimmed;
+    })();
     const thread = this.storage.createThread(
-      title || "New chat",
+      derivedTitle,
       model,
       workspace,
       provider,

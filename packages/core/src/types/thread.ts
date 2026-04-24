@@ -88,6 +88,11 @@ export interface Thread {
   /** True once a completion notification has been dispatched to the Manager
    * Agent for this thread. Prevents duplicate notifications on restart. */
   reportedToManager?: boolean;
+  /** Final status of the last completed stream — persisted so the UI can show
+   * a completion indicator after reload without relying on transient state. */
+  lastCompletionStatus?: "completed" | "error" | "interrupted";
+  /** Error message from the last failed stream (only when lastCompletionStatus === "error"). */
+  lastCompletionError?: string;
 }
 
 export interface WorktreeProgressStep {

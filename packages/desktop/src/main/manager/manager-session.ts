@@ -105,6 +105,8 @@ export class ManagerSession {
   private activeStream = false;
   private notificationQueue: Array<{ prompt: string }> = [];
   private completionUnsub?: () => void;
+  private isNotificationInFlight = false;
+  private notificationBackoffUntil = 0;
 
   private constructor(
     agentManager: AgentManager,
@@ -335,6 +337,8 @@ export class ManagerSession {
     this.provider = null;
     this.sessionId = undefined;
     this.notificationQueue = [];
+    this.isNotificationInFlight = false;
+    this.notificationBackoffUntil = 0;
     this.currentProvider = provider;
 
     // 2. Wipe persisted state that belongs to the old provider.
@@ -412,18 +416,37 @@ export class ManagerSession {
   }
 
   private drainNotificationQueue(): void {
-    if (this.activeStream) return;
-    const next = this.notificationQueue.shift();
+    if (this.activeStream || this.isNotificationInFlight) return;
+    if (Date.now() < this.notificationBackoffUntil) return;
+    const next = this.notificationQueue[0];
     if (!next) return;
+    // Dequeue now; we'll re-queue at the front if send() fails.
+    this.notificationQueue.shift();
+    this.isNotificationInFlight = true;
     // Schedule on next tick so the caller's finally (which clears
     // activeStream) has fully unwound before we start the next turn.
     setImmediate(() => {
-      this.send(next.prompt).catch((err) => {
-        console.error(
-          "[manager-session] failed to dispatch child-completion notification:",
-          err,
-        );
-      });
+      this.send(next.prompt)
+        .catch((err) => {
+          console.error(
+            "[manager-session] failed to dispatch child-completion notification:",
+            err,
+          );
+          // Re-queue at the front so the notification isn't lost. Apply a
+          // backoff so a broken provider doesn't spin in a tight retry loop;
+          // the next user-triggered send() will retry after the window clears.
+          this.notificationQueue.unshift(next);
+          this.notificationBackoffUntil = Date.now() + 10_000;
+        })
+        .finally(() => {
+          // send()'s own finally already called drainNotificationQueue while
+          // isNotificationInFlight was true (a no-op). Now that we've cleared
+          // the flag, schedule one more drain to pick up any queued items.
+          this.isNotificationInFlight = false;
+          if (!this.activeStream && this.notificationQueue.length > 0) {
+            setImmediate(() => this.drainNotificationQueue());
+          }
+        });
     });
   }
 
