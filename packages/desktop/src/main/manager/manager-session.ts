@@ -68,6 +68,9 @@ Before every reply that goes beyond a single sentence, ask yourself: "Could an a
 - Unsure which provider? Default to \`claude-code\`.
 - Unsure which mode? For design/plan work, default to \`acceptEdits\` so the agent can write files. For code changes requiring caution, default to \`default\` (prompts on each tool).
 
+## Thread affinity
+When a session was used to produce design, research, or planning for a feature, that same session should be given the implementation task — not a new session. Use \`send_message\` to continue work in the existing session rather than spinning up a fresh one. Related work belongs in the same thread so the agent retains full context from prior turns and does not duplicate effort or contradict earlier decisions. Only create a new session when the work is genuinely unrelated to any existing session.
+
 ## Providers you can assign to sessions
 - \`claude-code\`: Anthropic's Claude with full tool use (default for coding tasks)
 - \`opencode\`: Multi-model provider (OpenAI, Gemini, etc.)
