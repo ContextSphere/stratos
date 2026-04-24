@@ -6,6 +6,11 @@ import {
   existsSync,
   mkdirSync,
   unlinkSync,
+  renameSync,
+  copyFileSync,
+  openSync,
+  fsyncSync,
+  closeSync,
 } from "fs";
 import type { Thread, Folder, StoredMessage } from "../types/thread";
 import type { StorageAdapter } from "./types";
@@ -55,25 +60,76 @@ export class FileStorageAdapter implements StorageAdapter {
     }
   }
 
-  private loadThreadsFile(): ThreadsFile {
-    const path = this.getThreadsPath();
-    if (!existsSync(path)) {
-      return { threads: [], activeThreadId: null };
-    }
+  private tryParseThreadsFile(path: string): ThreadsFile | null {
+    if (!existsSync(path)) return null;
     try {
       const raw = readFileSync(path, "utf-8");
-      return JSON.parse(raw) as ThreadsFile;
+      if (!raw.trim()) return null;
+      const parsed = JSON.parse(raw) as ThreadsFile;
+      if (!parsed || !Array.isArray(parsed.threads)) return null;
+      return parsed;
     } catch {
-      return { threads: [], activeThreadId: null };
+      return null;
     }
   }
 
+  private loadThreadsFile(): ThreadsFile {
+    const path = this.getThreadsPath();
+    const primary = this.tryParseThreadsFile(path);
+    if (primary) return primary;
+
+    // Primary missing or corrupt. Before falling back to empty defaults —
+    // which would permanently erase the thread registry on the next save —
+    // try the prior-version backup we keep on every write.
+    const backup = this.tryParseThreadsFile(`${path}.bak`);
+    if (backup) {
+      // Quarantine the corrupt file so the next save does not overwrite a
+      // possibly-valid payload the kernel hasn't flushed yet.
+      if (existsSync(path)) {
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        try {
+          renameSync(path, `${path}.corrupt.${stamp}`);
+        } catch {
+          // best-effort — if rename fails, we still return the backup
+        }
+      }
+      return backup;
+    }
+
+    return { threads: [], activeThreadId: null };
+  }
+
   private saveThreadsFile(data: ThreadsFile): void {
-    writeFileSync(
-      this.getThreadsPath(),
-      JSON.stringify(data, null, 2),
-      "utf-8",
-    );
+    const path = this.getThreadsPath();
+    const payload = JSON.stringify(data, null, 2);
+
+    // Keep a rolling single-version backup so a torn write never leaves us
+    // with zero readable copies.
+    if (existsSync(path)) {
+      try {
+        copyFileSync(path, `${path}.bak`);
+      } catch {
+        // non-fatal — continue with the atomic write
+      }
+    }
+
+    // Atomic write: write to a pid-scoped temp file, fsync it, then rename.
+    // `rename` is atomic on the same filesystem, so readers never see a
+    // partially-written file.
+    const tmp = `${path}.tmp.${process.pid}`;
+    writeFileSync(tmp, payload, "utf-8");
+    try {
+      const fd = openSync(tmp, "r+");
+      try {
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+    } catch {
+      // fsync failures are non-fatal; the rename below still publishes the
+      // new bytes to readers.
+    }
+    renameSync(tmp, path);
   }
 
   listThreads(): Thread[] {

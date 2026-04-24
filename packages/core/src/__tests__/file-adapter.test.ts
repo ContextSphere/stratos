@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync } from "fs";
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  existsSync,
+} from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { FileStorageAdapter } from "../storage/file-adapter";
@@ -223,6 +230,61 @@ describe("FileStorageAdapter", () => {
       adapter.clearPersistedSessionId(thread.id);
       const after = adapter.getThread(thread.id)!.updatedAt;
       expect(after).toBeGreaterThanOrEqual(before);
+    });
+  });
+
+  describe("durability", () => {
+    const threadsFile = () => join(tmpDir, "threads", "threads.json");
+
+    it("writes a .bak sibling on every save after the first", () => {
+      adapter.createThread("A");
+      expect(existsSync(`${threadsFile()}.bak`)).toBe(false);
+
+      adapter.createThread("B");
+      expect(existsSync(`${threadsFile()}.bak`)).toBe(true);
+
+      const bak = JSON.parse(readFileSync(`${threadsFile()}.bak`, "utf-8"));
+      expect(bak.threads).toHaveLength(1);
+      expect(bak.threads[0].title).toBe("A");
+    });
+
+    it("restores from .bak when threads.json is corrupt", () => {
+      const t1 = adapter.createThread("Keep Me");
+      adapter.createThread("And Me");
+      // After two writes, .bak holds the state just before the latest write
+      // (one thread: "Keep Me") — that's the last known good snapshot we
+      // can guarantee was fully flushed.
+
+      writeFileSync(threadsFile(), "{ this is not json", "utf-8");
+
+      const list = adapter.listThreads();
+      expect(list.map((t) => t.title)).toEqual(["Keep Me"]);
+
+      const corrupt = readdirSync(join(tmpDir, "threads")).find((f) =>
+        f.includes(".corrupt."),
+      );
+      expect(corrupt).toBeTruthy();
+
+      // Follow-up writes must still land on the restored state
+      adapter.updateThread(t1.id, { title: "Renamed" });
+      expect(adapter.getThread(t1.id)!.title).toBe("Renamed");
+    });
+
+    it("returns empty defaults when both primary and .bak are unreadable", () => {
+      // Trigger threads dir creation without writing a usable file
+      adapter.listThreads();
+      writeFileSync(threadsFile(), "not json", "utf-8");
+      // no .bak exists (first-ever save scenario)
+      expect(adapter.listThreads()).toEqual([]);
+    });
+
+    it("does not leave a .tmp file behind after a successful save", () => {
+      adapter.createThread("A");
+      adapter.createThread("B");
+      const leftover = readdirSync(join(tmpDir, "threads")).filter((f) =>
+        f.includes(".tmp."),
+      );
+      expect(leftover).toEqual([]);
     });
   });
 
