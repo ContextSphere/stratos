@@ -170,3 +170,124 @@ describe("ManagerBridge — sidebar broadcast events", () => {
     expect(calls).not.toContain(IPC_CHANNELS.FOLDERS_CHANGED);
   });
 });
+
+describe("ManagerBridge — image forwarding", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockWindow: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockStorage: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockAgentManager: any;
+
+  const TEST_IMAGES = [
+    { dataUrl: "data:image/png;base64,abc123", mimeType: "image/png" },
+    { dataUrl: "data:image/jpeg;base64,xyz789", mimeType: "image/jpeg" },
+  ];
+
+  beforeEach(() => {
+    mockWindow = {
+      isDestroyed: () => false,
+      webContents: { isDestroyed: () => false, send: vi.fn() },
+    };
+    mockStorage = {
+      listFolders: vi.fn().mockReturnValue([{ id: "f0", path: "/tmp/ws" }]),
+      addFolder: vi
+        .fn()
+        .mockReturnValue({ id: "f1", name: "ws", path: "/tmp/ws" }),
+      createThread: vi.fn().mockReturnValue({ id: "t1" }),
+      updateThread: vi.fn(),
+      getThread: vi.fn().mockReturnValue({ id: "t1", isManagerThread: false }),
+      deleteThread: vi.fn(),
+      removeFolder: vi.fn(),
+      getActiveThreadId: vi.fn().mockReturnValue("mgr-thread"),
+      setActiveThreadId: vi.fn(),
+    };
+    mockAgentManager = {
+      startStream: vi.fn().mockResolvedValue(undefined),
+      isStreaming: vi.fn().mockReturnValue(false),
+      clearSession: vi.fn(),
+      interruptSession: vi.fn().mockResolvedValue(undefined),
+    };
+  });
+
+  function makeBridge(): ManagerBridge {
+    return new ManagerBridge(
+      mockAgentManager,
+      mockStorage,
+      "/tmp/ignored.sock",
+      mockWindow,
+    );
+  }
+
+  async function dispatch(
+    bridge: ManagerBridge,
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (bridge as any).dispatch(method, params);
+  }
+
+  it("createSession forwards images to startStream", async () => {
+    const bridge = makeBridge();
+    await dispatch(bridge, "create_session", {
+      workspace: "/tmp/ws",
+      prompt: "analyze this screenshot",
+      images: TEST_IMAGES,
+    });
+    expect(mockAgentManager.startStream).toHaveBeenCalledWith(
+      "t1",
+      "analyze this screenshot",
+      TEST_IMAGES,
+    );
+  });
+
+  it("createSession passes undefined images when none provided", async () => {
+    const bridge = makeBridge();
+    await dispatch(bridge, "create_session", {
+      workspace: "/tmp/ws",
+      prompt: "hello",
+    });
+    expect(mockAgentManager.startStream).toHaveBeenCalledWith(
+      "t1",
+      "hello",
+      undefined,
+    );
+  });
+
+  it("sendMessage forwards images to startStream", async () => {
+    const bridge = makeBridge();
+    await dispatch(bridge, "send_message", {
+      threadId: "t1",
+      prompt: "look at these images",
+      images: TEST_IMAGES,
+    });
+    expect(mockAgentManager.startStream).toHaveBeenCalledWith(
+      "t1",
+      "look at these images",
+      TEST_IMAGES,
+    );
+  });
+
+  it("sendMessage passes undefined images when none provided", async () => {
+    const bridge = makeBridge();
+    await dispatch(bridge, "send_message", { threadId: "t1", prompt: "hello" });
+    expect(mockAgentManager.startStream).toHaveBeenCalledWith(
+      "t1",
+      "hello",
+      undefined,
+    );
+  });
+
+  it("sendMessage returns 'queued' without calling startStream when session is running", async () => {
+    const bridge = makeBridge();
+    mockAgentManager.isStreaming.mockReturnValue(true);
+    const result = await dispatch(bridge, "send_message", {
+      threadId: "t1",
+      prompt: "hi",
+      images: TEST_IMAGES,
+    });
+    expect(result).toEqual({ status: "queued" });
+    expect(mockAgentManager.startStream).not.toHaveBeenCalled();
+  });
+});

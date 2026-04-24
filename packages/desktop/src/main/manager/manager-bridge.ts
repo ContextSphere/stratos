@@ -184,6 +184,9 @@ export class ManagerBridge {
     const mode = params.mode as string | undefined;
     const title = params.title as string | undefined;
     const worktreeMode = params.worktreeMode as string | undefined;
+    const images = params.images as
+      | { dataUrl: string; mimeType: string }[]
+      | undefined;
 
     // Ensure folder is registered
     const folders = this.storage.listFolders();
@@ -220,7 +223,7 @@ export class ManagerBridge {
     this.broadcast(IPC_CHANNELS.THREADS_CHANGED);
 
     // Fire-and-forget: start the stream
-    this.agentManager.startStream(thread.id, prompt).catch((err) => {
+    this.agentManager.startStream(thread.id, prompt, images).catch((err) => {
       console.error(
         `[manager-bridge] stream error for thread ${thread.id}:`,
         err,
@@ -235,6 +238,9 @@ export class ManagerBridge {
   ): Promise<{ status: string }> {
     const threadId = params.threadId as string;
     const prompt = params.prompt as string;
+    const images = params.images as
+      | { dataUrl: string; mimeType: string }[]
+      | undefined;
 
     const thread = this.storage.getThread(threadId);
     if (!thread) throw new Error(`Thread not found: ${threadId}`);
@@ -248,7 +254,7 @@ export class ManagerBridge {
     }
 
     // Fire-and-forget
-    this.agentManager.startStream(threadId, prompt).catch((err) => {
+    this.agentManager.startStream(threadId, prompt, images).catch((err) => {
       console.error(
         `[manager-bridge] stream error for thread ${threadId}:`,
         err,

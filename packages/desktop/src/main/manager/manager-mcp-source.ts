@@ -108,11 +108,11 @@ function deriveSummary(thread, messages) {
 }
 
 async function toolCreateSession(args) {
-  const { workspace, prompt, provider, model, mode, title, worktreeMode } = args;
+  const { workspace, prompt, provider, model, mode, title, worktreeMode, images } = args;
   if (!workspace) return { isError: true, text: "workspace (path) is required" };
   if (!prompt) return { isError: true, text: "prompt is required" };
   try {
-    const result = await rpcCall("create_session", { workspace, prompt, provider, model, mode, title, worktreeMode });
+    const result = await rpcCall("create_session", { workspace, prompt, provider, model, mode, title, worktreeMode, images });
     return { text: JSON.stringify(result, null, 2) };
   } catch (e) {
     return { isError: true, text: "Error: " + e.message };
@@ -120,11 +120,11 @@ async function toolCreateSession(args) {
 }
 
 async function toolSendMessage(args) {
-  const { threadId, prompt } = args;
+  const { threadId, prompt, images } = args;
   if (!threadId) return { isError: true, text: "threadId is required" };
   if (!prompt) return { isError: true, text: "prompt is required" };
   try {
-    const result = await rpcCall("send_message", { threadId, prompt });
+    const result = await rpcCall("send_message", { threadId, prompt, images });
     return { text: JSON.stringify(result, null, 2) };
   } catch (e) {
     return { isError: true, text: "Error: " + e.message };
@@ -363,6 +363,18 @@ const TOOLS = [
         mode: { type: "string", description: "Permission mode", enum: ["plan", "default", "acceptEdits", "bypassPermissions"] },
         title: { type: "string", description: "Thread title (auto-generated if omitted)" },
         worktreeMode: { type: "string", description: "Git worktree isolation", enum: ["local", "worktree"] },
+        images: {
+          type: "array",
+          description: "Image attachments to forward to the spawned agent session",
+          items: {
+            type: "object",
+            properties: {
+              dataUrl: { type: "string", description: "Base64 data URL (data:<mimeType>;base64,...)" },
+              mimeType: { type: "string", description: "MIME type (e.g. image/png, image/jpeg)" },
+            },
+            required: ["dataUrl", "mimeType"],
+          },
+        },
       },
       required: ["workspace", "prompt"],
     },
@@ -375,6 +387,18 @@ const TOOLS = [
       properties: {
         threadId: { type: "string", description: "Thread ID of the target session" },
         prompt: { type: "string", description: "Message to send to the agent" },
+        images: {
+          type: "array",
+          description: "Image attachments to forward to the agent session",
+          items: {
+            type: "object",
+            properties: {
+              dataUrl: { type: "string", description: "Base64 data URL (data:<mimeType>;base64,...)" },
+              mimeType: { type: "string", description: "MIME type (e.g. image/png, image/jpeg)" },
+            },
+            required: ["dataUrl", "mimeType"],
+          },
+        },
       },
       required: ["threadId", "prompt"],
     },
