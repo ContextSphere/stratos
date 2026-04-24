@@ -174,9 +174,23 @@ export function ScheduledPromptsDialog({
     if (mode === "list") return;
     window.api
       .getAvailableModels(form.provider)
-      .then((result: { value: string; label: string }[]) => {
-        setModels(result.map((m) => ({ value: m.value, label: m.label })));
-      })
+      .then(
+        (
+          result: {
+            value: string;
+            displayName: string;
+            description?: string;
+          }[],
+        ) => {
+          setModels(
+            result.map((m) => ({
+              value: m.value,
+              label: m.displayName,
+              description: m.description,
+            })),
+          );
+        },
+      )
       .catch(() => setModels([]));
   }, [form.provider, mode]);
 
