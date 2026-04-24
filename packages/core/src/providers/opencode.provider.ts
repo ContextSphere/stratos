@@ -209,6 +209,35 @@ function resolveOpencodeBinary(binaryPath?: string): string {
   }
 }
 
+/**
+ * Translate Stratos's `mcpServers` config into Opencode's `mcp` JSON config.
+ * Only stdio-style entries (with `command`) are forwarded — SDK entries are
+ * claude-code-only and are skipped.
+ */
+export function buildOpencodeMcpConfig(
+  mcpServers: Record<string, unknown>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out: Record<string, any> = {};
+  for (const [name, raw] of Object.entries(mcpServers)) {
+    const srv = raw as {
+      type?: string;
+      command?: string;
+      args?: string[];
+      env?: Record<string, string>;
+    };
+    if (srv.type === "sdk" || !srv.command) continue;
+    out[name] = {
+      type: "local",
+      command: [srv.command, ...(srv.args ?? [])],
+      enabled: true,
+      ...(srv.env ? { environment: srv.env } : {}),
+    };
+  }
+  return out;
+}
+
 function buildOpencodeEnv(config: ProviderConfig): NodeJS.ProcessEnv {
   const providers = config.opencodeConfig?.providers ?? {};
   const customProviders = config.opencodeConfig?.customProviders ?? {};
@@ -236,16 +265,21 @@ function buildOpencodeEnv(config: ProviderConfig): NodeJS.ProcessEnv {
     };
   }
 
-  const hasEntries = Object.keys(providerConfig).length > 0;
+  // Stratos-provided MCP servers (stratos-scheduler / stratos-preview /
+  // stratos-manager) forwarded to opencode's `mcp` config key. SDK-type
+  // entries are claude-code-only; skipped here.
+  const mcpConfig = buildOpencodeMcpConfig(config.mcpServers ?? {});
 
+  const configObj: Record<string, unknown> = {};
+  if (Object.keys(providerConfig).length > 0)
+    configObj.provider = providerConfig;
+  if (Object.keys(mcpConfig).length > 0) configObj.mcp = mcpConfig;
+
+  const hasEntries = Object.keys(configObj).length > 0;
   return {
     ...process.env,
     ...(hasEntries
-      ? {
-          OPENCODE_CONFIG_CONTENT: JSON.stringify({
-            provider: providerConfig,
-          }),
-        }
+      ? { OPENCODE_CONFIG_CONTENT: JSON.stringify(configObj) }
       : {}),
   };
 }

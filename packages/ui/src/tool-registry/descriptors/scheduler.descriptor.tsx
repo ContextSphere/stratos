@@ -1,6 +1,10 @@
 import { toolRegistry } from "../registry";
 import type { ToolCardBodyProps } from "../types";
 import type { ToolCall } from "../../types";
+import {
+  stratosToolName,
+  stratosToolPrefixMatcher,
+} from "./stratos-match";
 
 export function SchedulerIcon({
   size = 12,
@@ -26,7 +30,7 @@ export function SchedulerIcon({
 }
 
 function getShortName(toolCall: ToolCall): string {
-  return toolCall.toolName.split("__")[2] ?? "";
+  return stratosToolName(toolCall.toolName) ?? "";
 }
 
 function humanizeCron(expr: string): string {
@@ -236,7 +240,7 @@ function SchedulerCardBody({
 
 toolRegistry.register({
   id: "stratos-scheduler",
-  match: { type: "mcp-server", server: "stratos-scheduler" },
+  match: { type: "predicate", fn: stratosToolPrefixMatcher("schedule_") },
   display: {
     sourceLabel: "Stratos Scheduler",
     icon: SchedulerIcon,

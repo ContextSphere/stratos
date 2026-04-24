@@ -1,6 +1,24 @@
 import { toolRegistry } from "../registry";
 import type { ToolCardBodyProps } from "../types";
 import type { ToolCall } from "../../types";
+import {
+  stratosToolName,
+  stratosToolNameMatcher,
+} from "./stratos-match";
+
+const MANAGER_TOOLS = [
+  "create_session",
+  "send_message",
+  "stop_session",
+  "delete_session",
+  "list_sessions",
+  "get_session",
+  "search_sessions",
+  "get_dashboard",
+  "list_workspaces",
+  "create_workspace",
+  "remove_workspace",
+] as const;
 
 export function ManagerIcon({
   size = 12,
@@ -27,7 +45,7 @@ export function ManagerIcon({
 }
 
 function getShortName(toolCall: ToolCall): string {
-  return toolCall.toolName.split("__")[2] ?? "";
+  return stratosToolName(toolCall.toolName) ?? "";
 }
 
 function getTitle(toolCall: ToolCall): string {
@@ -264,7 +282,14 @@ function ManagerCardBody({
 
 toolRegistry.register({
   id: "stratos-manager",
-  match: { type: "mcp-server", server: "stratos-manager" },
+  // Primary: match the 11 manager tool names. Fallback: claim the whole
+  // "stratos" server so ToolsPopover.getByServerName("stratos") returns a
+  // descriptor for the unified server card (scheduler/preview tools are
+  // already intercepted by their predicates earlier in the registry).
+  match: [
+    { type: "predicate", fn: stratosToolNameMatcher(MANAGER_TOOLS) },
+    { type: "mcp-server", server: "stratos" },
+  ],
   display: {
     sourceLabel: "Stratos Manager",
     icon: ManagerIcon,

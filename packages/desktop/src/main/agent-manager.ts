@@ -47,40 +47,58 @@ import {
 import type { OllamaConfig, OllamaModelInfo } from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 import { resolveClaudePathOrUndefined } from "./integrations/claude-path";
-import { getScheduleMcpPath } from "./scheduler/scheduler";
+import { createStratosHandlers } from "./mcp/handlers";
+import { handlersToSdkMcp } from "./mcp/sdk-adapter";
+import { startStratosMcpSocketServer } from "./mcp/socket-mcp-server";
+import type { StratosMcpSocketServer } from "./mcp/socket-mcp-server";
 import {
-  getPreviewMcpPath,
-  getPreviewSocketPath,
-  installPreviewMcp,
-  startPreviewSocketServer,
-} from "./preview-mcp";
+  getStratosMcpPath,
+  getStratosMcpSocketPath,
+  installStratosMcpProxy,
+  cleanupLegacyMcpBinaries,
+} from "./mcp/stdio-proxy";
 
 /**
  * Build explicit MCP servers for an agent session.
  *
+ * Unified: all Stratos tools (scheduler + preview + manager, 19 total) live
+ * under one MCP server named `stratos`. Per-provider transport:
+ *   - claude-code: in-process SDK MCP (bypasses LinkedIn's allowedMcpServers
+ *     allowlist which blocks arbitrary stdio MCPs).
+ *   - codex / opencode: stdio subprocess `~/.stratos/bin/stratos-mcp` that
+ *     proxies MCP JSON-RPC over a Unix socket back to main. Wired via the
+ *     providers' own config surfaces.
+ *
  * Project-level (.mcp.json) and user-level (~/.claude/.mcp.json) servers are
- * auto-discovered by the SDK via `settingSources`, so we only need to inject
- * servers that can't be statically configured:
- *   - stratos-scheduler: always present, gives agents schedule_create/list/etc.
- *   - chrome-devtools: worktree mode only, for cross-worktree CDP debugging.
+ * auto-discovered by the SDK via `settingSources`; we only inject servers
+ * that can't be statically configured.
  */
+interface BuildMcpServersOpts {
+  cwd: string;
+  providerName: ProviderType;
+  socketPath: string;
+  // SDK handler deps — only used for claude-code.
+  sdkHandlers?: ReturnType<typeof createStratosHandlers>;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildMcpServers(
-  cwd: string,
-  previewSocketPath: string,
-): Record<string, any> {
+function buildMcpServers(opts: BuildMcpServersOpts): Record<string, any> {
+  const { cwd, providerName, socketPath, sdkHandlers } = opts;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const servers: Record<string, any> = {
-    "stratos-scheduler": {
+  const servers: Record<string, any> = {};
+
+  if (providerName === "claude-code" && sdkHandlers) {
+    // In-process SDK MCP — bypasses LinkedIn's allowedMcpServers allowlist.
+    servers["stratos"] = handlersToSdkMcp("stratos", "1.0.0", sdkHandlers);
+  } else {
+    // stdio MCP — for codex/opencode. The provider forwards this into its
+    // own config surface (Codex `-c mcp_servers.*`, Opencode `mcp` JSON).
+    servers["stratos"] = {
       command: "node",
-      args: [getScheduleMcpPath()],
-    },
-    "stratos-preview": {
-      command: "node",
-      args: [getPreviewMcpPath()],
-      env: { STRATOS_PREVIEW_SOCKET: previewSocketPath },
-    },
-  };
+      args: [getStratosMcpPath()],
+      env: { STRATOS_MCP_SOCK: socketPath },
+    };
+  }
 
   // Add chrome-devtools for cross-worktree debugging (ContextSphere pattern)
   if (process.env.STRATOS_WORKTREE) {
@@ -331,17 +349,31 @@ export class AgentManager {
   private lastPlanMarkdown: { content: string; title: string } | null = null;
   private previewFileWatchers = new Map<string, FSWatcher>();
   private cachedSlashCommands: { name: string; description?: string }[] = [];
-  private previewSocketPath: string;
+  private mcpSocketPath: string;
+  private mcpSocketServer: StratosMcpSocketServer;
 
   constructor(window: BrowserWindow, storage?: FileStorageAdapter) {
     this.window = window;
     this.storage = storage ?? new FileStorageAdapter();
 
-    // Install preview MCP and start its Unix socket server
-    installPreviewMcp();
-    this.previewSocketPath = getPreviewSocketPath(getWorktreeInfo().hash);
-    startPreviewSocketServer(this.previewSocketPath, (channel, data) => {
-      this.sendToRenderer(channel, data);
+    // Install the generic stdio proxy and clean up legacy per-MCP binaries.
+    cleanupLegacyMcpBinaries();
+    installStratosMcpProxy();
+
+    // Start the unified Unix-socket MCP server. Codex/opencode subprocesses
+    // spawn the stdio proxy which tunnels their MCP traffic back here.
+    this.mcpSocketPath = getStratosMcpSocketPath(getWorktreeInfo().hash);
+    const handlers = createStratosHandlers({
+      storage: this.storage,
+      agentManager: this,
+      window: this.window,
+      sendToRenderer: (channel, data) => this.sendToRenderer(channel, data),
+    });
+    this.mcpSocketServer = startStratosMcpSocketServer({
+      socketPath: this.mcpSocketPath,
+      serverName: "stratos",
+      serverVersion: "1.0.0",
+      handlers,
     });
 
     this.registerIpc();
@@ -967,7 +999,21 @@ export class AgentManager {
             )
           : undefined;
       const threadCwd = thread.cwd ?? process.env.HOME!;
-      const mcpServers = buildMcpServers(threadCwd, this.previewSocketPath);
+      const mcpServers = buildMcpServers({
+        cwd: threadCwd,
+        providerName,
+        socketPath: this.mcpSocketPath,
+        sdkHandlers:
+          providerName === "claude-code"
+            ? createStratosHandlers({
+                storage: this.storage,
+                agentManager: this,
+                window: this.window,
+                sendToRenderer: (channel, data) =>
+                  this.sendToRenderer(channel, data),
+              })
+            : undefined,
+      });
       await provider.initialize({
         ...(providerName === "claude-code"
           ? {
@@ -987,8 +1033,10 @@ export class AgentManager {
                   `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes — this would kill your own host application.`,
                   `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
                   ``,
-                  `# Scheduled Prompts`,
-                  `You have access to the \`stratos-scheduler\` MCP which lets you create and manage scheduled prompts:`,
+                  `# Stratos MCP`,
+                  `You have access to the \`stratos\` MCP server, which exposes Stratos-specific tools for schedules, the side preview pane, and session management.`,
+                  ``,
+                  `## Scheduled prompts`,
                   `- \`schedule_create\` — create a recurring or one-shot scheduled prompt (call \`schedule_folders\` first to get a valid folder)`,
                   `- \`schedule_list\` — list all scheduled prompts with status and last-run info`,
                   `- \`schedule_delete\` — permanently delete a schedule by ID`,
@@ -996,9 +1044,8 @@ export class AgentManager {
                   `- \`schedule_folders\` — list available folders (id, name, path)`,
                   `Each schedule fires in a new Stratos thread. Use the folder or cwd argument to control which folder the thread appears in.`,
                   ``,
-                  `# Preview Pane`,
-                  `You have access to the \`stratos-preview\` MCP to control the side preview pane:`,
-                  `- \`preview_open_file(file_path, title?)\` — open any file in the preview pane (markdown files render as formatted text, all other files open in a code editor). Always use absolute paths.`,
+                  `## Preview pane`,
+                  `- \`preview_open_file(file_path, title?)\` — open any file in the side preview pane (markdown files render as formatted text, all other files open in a code editor). Always use absolute paths.`,
                   `- \`preview_close()\` — close the preview pane.`,
                   `Use this after creating or editing a file so the user can see the result immediately.`,
                 ].join("\n"),
@@ -1307,7 +1354,7 @@ export class AgentManager {
             lastCompletionStatus: status,
             lastCompletionError: errorMsg,
           });
-          this.sendToRenderer(IPC_CHANNELS.THREADS_CHANGED);
+          this.sendToRenderer(IPC_CHANNELS.THREADS_CHANGED, undefined);
         }
 
         this.emitStreamCompleted({
@@ -1678,7 +1725,21 @@ export class AgentManager {
             )
           : undefined;
       const threadCwd = thread.cwd ?? process.env.HOME!;
-      const mcpServers = buildMcpServers(threadCwd, this.previewSocketPath);
+      const mcpServers = buildMcpServers({
+        cwd: threadCwd,
+        providerName,
+        socketPath: this.mcpSocketPath,
+        sdkHandlers:
+          providerName === "claude-code"
+            ? createStratosHandlers({
+                storage: this.storage,
+                agentManager: this,
+                window: this.window,
+                sendToRenderer: (channel, data) =>
+                  this.sendToRenderer(channel, data),
+              })
+            : undefined,
+      });
       await provider.initialize({
         ...(providerName === "claude-code"
           ? {
@@ -1698,16 +1759,10 @@ export class AgentManager {
                   `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes.`,
                   `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
                   ``,
-                  `# Scheduled Prompts`,
-                  `You have access to the \`stratos-scheduler\` MCP to create additional schedules:`,
-                  `- \`schedule_create\` — schedule a new prompt`,
-                  `- \`schedule_list\` — list existing schedules`,
-                  `- \`schedule_folders\` — list available folders`,
-                  ``,
-                  `# Preview Pane`,
-                  `You have access to the \`stratos-preview\` MCP to control the side preview pane:`,
-                  `- \`preview_open_file(file_path, title?)\` — open any file in the preview pane. Always use absolute paths.`,
-                  `- \`preview_close()\` — close the preview pane.`,
+                  `# Stratos MCP`,
+                  `The \`stratos\` MCP server exposes:`,
+                  `- \`schedule_create\`, \`schedule_list\`, \`schedule_folders\` — manage scheduled prompts`,
+                  `- \`preview_open_file(file_path, title?)\` / \`preview_close()\` — control the side preview pane (use absolute paths)`,
                 ].join("\n"),
               },
             }
@@ -1928,6 +1983,7 @@ export class AgentManager {
     this.pendingQuestions.clear();
     this.pendingPlanReviews.clear();
     this.pendingElicitations.clear();
+    this.mcpSocketServer.close().catch(() => {});
     this.unregisterIpc();
   }
 }

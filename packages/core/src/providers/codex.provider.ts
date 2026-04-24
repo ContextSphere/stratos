@@ -12,6 +12,44 @@ import * as readline from "readline";
 import * as path from "path";
 import * as fs from "fs";
 
+/**
+ * Translate Stratos's `mcpServers` config into Codex `-c` arg pairs (each
+ * MCP config key becomes one `-c key=value` pair, prepended in reverse
+ * order so the final argv reads left-to-right).
+ *
+ * Returns an array that, when `unshift`-ed one at a time onto an argv, yields:
+ *   [-c, mcp_servers.name.command="cmd", -c, mcp_servers.name.args=[...], ...]
+ */
+export function buildCodexMcpArgs(
+  mcpServers: Record<string, unknown>,
+): string[] {
+  const toml = (v: string): string =>
+    `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  const out: string[] = [];
+  for (const [name, raw] of Object.entries(mcpServers)) {
+    const config = raw as {
+      type?: string;
+      command?: string;
+      args?: string[];
+      env?: Record<string, string>;
+    };
+    if (config.type === "sdk" || !config.command) continue;
+    out.push(`mcp_servers.${name}.command=${toml(config.command)}`);
+    out.push("-c");
+    if (config.args?.length) {
+      out.push(`mcp_servers.${name}.args=[${config.args.map(toml).join(",")}]`);
+      out.push("-c");
+    }
+    if (config.env) {
+      for (const [k, v] of Object.entries(config.env)) {
+        out.push(`mcp_servers.${name}.env.${k}=${toml(v)}`);
+        out.push("-c");
+      }
+    }
+  }
+  return out;
+}
+
 type CodexReasoningEffort =
   | "none"
   | "minimal"
@@ -724,6 +762,12 @@ export class CodexProvider implements AgentProvider {
       );
       appServerArgs.unshift("-c");
     }
+
+    // Inject Stratos-provided MCP servers (stratos-scheduler / stratos-preview /
+    // stratos-manager) as Codex TOML config overrides. Only stdio-style entries
+    // (with `command` + `args`) are forwarded — SDK entries are claude-code-only.
+    const mcpArgs = buildCodexMcpArgs(this.config.mcpServers ?? {});
+    for (const a of mcpArgs) appServerArgs.unshift(a);
 
     this.appServer = spawn(codexPath, appServerArgs, {
       stdio: ["pipe", "pipe", "pipe"],

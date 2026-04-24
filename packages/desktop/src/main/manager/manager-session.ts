@@ -5,7 +5,7 @@
  * agent sessions. It runs under ~/.stratos/manager/ and is always non-blocking.
  */
 import { BrowserWindow } from "electron";
-import { writeFileSync, existsSync, mkdirSync, chmodSync } from "fs";
+import { mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
@@ -21,26 +21,24 @@ import type {
   McpServerInfo,
   ProviderType,
 } from "@stratosapp/core";
-import { ManagerBridge } from "./manager-bridge";
-import { MANAGER_MCP_SOURCE } from "./manager-mcp-source";
 import { resolveClaudePathOrUndefined } from "../integrations/claude-path";
 import { loadSettings } from "../settings/settings.store";
 import { getOpencodeProviderKeys } from "../settings/settings.store";
-import { getScheduleMcpPath } from "../scheduler/scheduler";
+import { createStratosHandlers } from "../mcp/handlers";
+import { handlersToSdkMcp } from "../mcp/sdk-adapter";
+import { getStratosMcpPath, getStratosMcpSocketPath } from "../mcp/stdio-proxy";
+import { getWorktreeInfo } from "@stratosapp/core";
+import {
+  clearManagerTurnImages,
+  setManagerTurnImages,
+} from "./turn-state";
 
 const MANAGER_DIR = join(homedir(), ".stratos", "manager");
-const MANAGER_SOCK = join(MANAGER_DIR, "manager.sock");
-const MANAGER_MCP_BIN = join(
-  homedir(),
-  ".stratos",
-  "bin",
-  "stratos-manager-mcp",
-);
 
 const MANAGER_SYSTEM_PROMPT = `You are the Stratos Manager — a session orchestrator for AI coding agents. You are NOT a coding assistant, designer, planner, reviewer, or analyst.
 
 ## Hard constraints
-- Your ONLY actions are the \`stratos-manager\` and \`stratos-scheduler\` MCP tools. Everything else you do is short conversational text to the user.
+- Your ONLY actions are the \`stratos\` MCP tools (the ones starting with \`mcp__stratos__\`). Everything else you do is short conversational text to the user.
 - You NEVER write, edit, read, analyze, or explain code yourself.
 - You NEVER produce designs, design docs, design proposals, design reviews, architecture docs, plans, RFCs, technical analyses, code reviews, "here's how I would do X" walkthroughs, bullet-pointed proposals, or any other intellectual product that a coding agent could produce. ALL of those are dispatchable work.
 - You NEVER offer to "build", "scaffold", "implement", "set up", "wire up", "design", "plan", "draft", "outline", "propose", "review", or "fix" anything directly. That is the job of agent sessions.
@@ -52,11 +50,11 @@ const MANAGER_SYSTEM_PROMPT = `You are the Stratos Manager — a session orchest
 Before every reply that goes beyond a single sentence, ask yourself: "Could an agent session produce this better?" If the answer is yes (or even maybe), STOP, do not write it, and instead dispatch.
 
 ## What you do
-- Create, list, inspect, send-message-to, stop, and delete agent sessions via \`mcp__stratos-manager__*\`.
-- Manage workspaces (list/create/remove) and show a dashboard overview.
+- Create, list, inspect, send-message-to, stop, and delete agent sessions via \`mcp__stratos__{create,list,get,send_message_to,stop,delete}_session\`.
+- Manage workspaces (list/create/remove) via \`mcp__stratos__{list,create,remove}_workspace\` and show a dashboard via \`mcp__stratos__get_dashboard\`.
 - Relay messages between the user and sessions.
 - Summarize session transcripts when the user asks what an agent did.
-- Schedule recurring triggers via \`mcp__stratos-scheduler__*\` when the user asks.
+- Schedule recurring triggers via \`mcp__stratos__schedule_*\` when the user asks.
 
 ## Conversational relay
 - "Tell cosmic-fox to X" → call \`send_message\` with prompt exactly "X". Don't rephrase. Then tell the user it was sent.
@@ -99,7 +97,6 @@ export class ManagerSession {
   private agentManager: AgentManager;
   private storage: FileStorageAdapter;
   private window: BrowserWindow;
-  private bridge: ManagerBridge;
 
   private threadId: string | null = null;
   private provider: AgentProvider | null = null;
@@ -119,12 +116,6 @@ export class ManagerSession {
     this.agentManager = agentManager;
     this.storage = storage;
     this.window = window;
-    this.bridge = new ManagerBridge(
-      agentManager,
-      storage,
-      MANAGER_SOCK,
-      window,
-    );
   }
 
   static initialize(
@@ -147,16 +138,9 @@ export class ManagerSession {
   }
 
   private setup(): void {
-    // Ensure directories exist
+    // Ensure directories exist (the unified socket + stdio proxy install
+    // happens in AgentManager's constructor; manager just reuses them).
     mkdirSync(MANAGER_DIR, { recursive: true });
-    mkdirSync(join(homedir(), ".stratos", "bin"), { recursive: true });
-
-    // Install MCP server script
-    writeFileSync(MANAGER_MCP_BIN, MANAGER_MCP_SOURCE, "utf-8");
-    chmodSync(MANAGER_MCP_BIN, 0o755);
-
-    // Start the UDS bridge
-    this.bridge.start();
 
     // Find or create the manager thread
     const threads = this.storage.listThreads();
@@ -226,9 +210,12 @@ export class ManagerSession {
     }
 
     this.activeStream = true;
-    // Register images so ManagerBridge can inject them into any create_session
-    // or send_message tool calls the Manager LLM makes during this turn.
-    this.bridge.setTurnImages(images);
+    // Register images so the stratos MCP handlers can inject them into any
+    // create_session or send_message tool calls the Manager LLM makes during
+    // this turn — both the in-process SDK adapter (claude-code) and the
+    // Unix-socket server (codex/opencode) read from the same module-level
+    // turn-state singleton.
+    setManagerTurnImages(images);
     this.sendToRenderer(IPC_CHANNELS.MANAGER_STATUS, {
       isActive: true,
       threadId,
@@ -311,7 +298,7 @@ export class ManagerSession {
     } finally {
       this.activeStream = false;
       // Clear turn images so they don't leak into subsequent turns.
-      this.bridge.clearTurnImages();
+      clearManagerTurnImages();
       this.sendToRenderer(IPC_CHANNELS.MANAGER_STATUS, {
         isActive: false,
         threadId,
@@ -386,7 +373,6 @@ export class ManagerSession {
   dispose(): void {
     this.completionUnsub?.();
     this.completionUnsub = undefined;
-    this.bridge.stop();
     if (this.provider) {
       this.provider.dispose().catch(() => {});
       this.provider = null;
@@ -424,7 +410,7 @@ export class ManagerSession {
       `[stratos-notification] session="${event.threadId}" title="${title}" provider="${provider}" status="${event.status}"`,
       "",
       `Session "${title}" (threadId: ${event.threadId}, provider: ${provider}) ${statusLine}.`,
-      `Use mcp__stratos-manager__get_session with includeTranscript=true to fetch the result, then give the user a concise 2–3 sentence summary of what the agent did and any notable output. If the session errored, say so.`,
+      `Use mcp__stratos__get_session with includeTranscript=true to fetch the result, then give the user a concise 2–3 sentence summary of what the agent did and any notable output. If the session errored, say so.`,
     ].join("\n");
 
     this.notificationQueue.push({ prompt: directive });
@@ -486,18 +472,39 @@ export class ManagerSession {
         ? { providers: getOpencodeProviderKeys() }
         : undefined;
 
+    // Unified `stratos` MCP for all three providers:
+    //   - claude-code: in-process SDK MCP (policy-safe).
+    //   - codex/opencode: stdio proxy → unified Unix socket → main.
+    const stratosSocketPath = getStratosMcpSocketPath(getWorktreeInfo().hash);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mcpServers: Record<string, any> = {
-      "stratos-manager": {
-        command: "node",
-        args: [MANAGER_MCP_BIN],
-        env: { STRATOS_MANAGER_SOCK: MANAGER_SOCK },
-      },
-      "stratos-scheduler": {
-        command: "node",
-        args: [getScheduleMcpPath()],
-      },
-    };
+    const mcpServers: Record<string, any> =
+      providerName === "claude-code"
+        ? {
+            stratos: handlersToSdkMcp(
+              "stratos",
+              "1.0.0",
+              createStratosHandlers({
+                storage: this.storage,
+                agentManager: this.agentManager,
+                window: this.window,
+                sendToRenderer: (channel, data) => {
+                  if (
+                    !this.window.isDestroyed() &&
+                    !this.window.webContents.isDestroyed()
+                  ) {
+                    this.window.webContents.send(channel, data);
+                  }
+                },
+              }),
+            ),
+          }
+        : {
+            stratos: {
+              command: "node",
+              args: [getStratosMcpPath()],
+              env: { STRATOS_MCP_SOCK: stratosSocketPath },
+            },
+          };
 
     await this.provider.initialize({
       model: thread?.model,

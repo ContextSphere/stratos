@@ -1,6 +1,10 @@
 import { toolRegistry } from "../registry";
 import type { ToolCardBodyProps } from "../types";
 import type { ToolCall } from "../../types";
+import {
+  stratosToolName,
+  stratosToolPrefixMatcher,
+} from "./stratos-match";
 
 export function PreviewIcon({
   size = 12,
@@ -26,7 +30,7 @@ export function PreviewIcon({
 }
 
 function getShortName(toolCall: ToolCall): string {
-  return toolCall.toolName.split("__")[2] ?? "";
+  return stratosToolName(toolCall.toolName) ?? "";
 }
 
 const FILE_ICONS: Record<string, string> = {
@@ -114,7 +118,7 @@ function PreviewCardBody({
 
 toolRegistry.register({
   id: "stratos-preview",
-  match: { type: "mcp-server", server: "stratos-preview" },
+  match: { type: "predicate", fn: stratosToolPrefixMatcher("preview_") },
   display: {
     sourceLabel: "Stratos Preview",
     icon: PreviewIcon,
