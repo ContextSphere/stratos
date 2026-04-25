@@ -1,5 +1,9 @@
 import { resolve } from "path";
-import { startWhatsApp, stopWhatsAppClient } from "./client.js";
+import {
+  startWhatsApp,
+  stopWhatsAppClient,
+  sendProactiveWhatsApp,
+} from "./client.js";
 import { createMessageHandler } from "./handler.js";
 
 export interface GatewayConfig {
@@ -57,3 +61,5 @@ export function stopGateway(): void {
   liveConfig = null;
   stopWhatsAppClient();
 }
+
+export { sendProactiveWhatsApp };

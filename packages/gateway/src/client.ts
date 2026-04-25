@@ -119,3 +119,16 @@ export function stopWhatsAppClient(): void {
   currentSock?.end(undefined);
   currentSock = null;
 }
+
+/**
+ * Proactively send a WhatsApp message to a JID without an incoming trigger.
+ * Used to forward async Manager notifications back to the last known sender.
+ */
+export async function sendProactiveWhatsApp(
+  jid: string,
+  text: string,
+): Promise<void> {
+  if (!currentSock) throw new Error("WhatsApp not connected");
+  const { sendReply } = await import("./sender.js");
+  await sendReply(currentSock, jid, text);
+}

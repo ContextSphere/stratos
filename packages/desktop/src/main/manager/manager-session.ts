@@ -117,6 +117,8 @@ export class ManagerSession {
   private sessionId: string | undefined;
   private activeStream = false;
   private gatewayReplyFn: ((reply: string) => void) | null = null;
+  private notificationForwardFn: ((text: string) => Promise<void>) | null =
+    null;
   private notificationQueue: Array<{ prompt: string }> = [];
   private completionUnsub?: () => void;
   private isNotificationInFlight = false;
@@ -349,6 +351,23 @@ export class ManagerSession {
         this.gatewayReplyFn = null;
         fn(replyText || "Stratos processed your request.");
       }
+      // When the turn was triggered by a child-completion notification
+      // (isNotificationInFlight is still true at this point — drained to
+      // false by drainNotificationQueue's own .finally()), forward the
+      // Manager's summary to WhatsApp so the user gets an async update.
+      if (
+        this.isNotificationInFlight &&
+        this.notificationForwardFn &&
+        replyText
+      ) {
+        const forwardFn = this.notificationForwardFn;
+        forwardFn(replyText).catch((err) => {
+          console.error(
+            "[manager-session] failed to forward notification to WhatsApp:",
+            err,
+          );
+        });
+      }
       // Any child-completion notifications that queued up while this turn
       // was active now get a chance to run.
       this.drainNotificationQueue();
@@ -377,6 +396,15 @@ export class ManagerSession {
   ): Promise<void> {
     this.gatewayReplyFn = onReply;
     await this.send(prompt);
+  }
+
+  /**
+   * Register a function that receives the Manager's reply text whenever a
+   * child-completion notification turn finishes. WhatsApp IPC uses this to
+   * forward async summaries back to the last sender's JID.
+   */
+  setNotificationForward(fn: ((text: string) => Promise<void>) | null): void {
+    this.notificationForwardFn = fn;
   }
 
   /** Interrupt the current Manager stream. */

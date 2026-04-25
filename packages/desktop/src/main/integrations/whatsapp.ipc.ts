@@ -6,6 +6,7 @@ import {
   startGateway,
   stopGateway,
   updateGatewayAllowList,
+  sendProactiveWhatsApp,
 } from "@stratosapp/gateway";
 import { getManagerRef } from "../manager/manager-ref";
 
@@ -50,6 +51,7 @@ type WaStatus = "connected" | "disconnected" | "qr";
 let status: WaStatus = "disconnected";
 let currentQr: string | null = null;
 let win: BrowserWindow | null = null;
+let lastGatewayJid: string | null = null;
 
 function emit(channel: string, payload?: unknown) {
   win?.webContents.send(channel, payload);
@@ -110,6 +112,12 @@ export function registerWhatsAppIpc(window: BrowserWindow): void {
               throw new Error("Manager is busy");
             }
             emit(IPC_CHANNELS.WHATSAPP_LOG, "[ipc] forwarding to manager");
+            lastGatewayJid = from;
+            // Register a forward function so async child-completion
+            // notifications are also delivered to this sender's JID.
+            manager.setNotificationForward((text) =>
+              sendProactiveWhatsApp(from, text),
+            );
             return new Promise<string>((resolve, reject) => {
               manager
                 .sendFromGateway(text, (reply) => {
@@ -137,6 +145,8 @@ export function registerWhatsAppIpc(window: BrowserWindow): void {
     stopGateway();
     status = "disconnected";
     currentQr = null;
+    lastGatewayJid = null;
+    getManagerRef()?.setNotificationForward(null);
     emit(IPC_CHANNELS.WHATSAPP_STATUS, "disconnected");
     return { ok: true };
   });
