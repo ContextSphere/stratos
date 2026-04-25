@@ -324,10 +324,10 @@ function DisconnectedPanel({
 
 function AllowListEditor({
   numbers,
-  onChange,
+  onSave,
 }: {
   numbers: string[];
-  onChange: (list: string[]) => void;
+  onSave: (list: string[]) => void;
 }) {
   const [input, setInput] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
@@ -344,7 +344,7 @@ function AllowListEditor({
       setInputError("Already in the list");
       return;
     }
-    onChange([...numbers, val]);
+    onSave([...numbers, val]);
     setInput("");
     setInputError(null);
   }
@@ -366,7 +366,7 @@ function AllowListEditor({
   }
 
   function remove(num: string) {
-    onChange(numbers.filter((n) => n !== num));
+    onSave(numbers.filter((n) => n !== num));
   }
 
   return (
@@ -493,8 +493,6 @@ export function WhatsAppSettings(): React.ReactElement {
   const [allowList, setAllowList] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!bridge) return;
@@ -558,11 +556,9 @@ export function WhatsAppSettings(): React.ReactElement {
     }
   }
 
-  async function handleSave() {
-    await bridge!.saveSettings({ allowList });
-    setSaved(true);
-    if (savedTimer.current) clearTimeout(savedTimer.current);
-    savedTimer.current = setTimeout(() => setSaved(false), 2000);
+  async function handleAllowListSave(list: string[]) {
+    setAllowList(list);
+    await bridge!.saveSettings({ allowList: list }).catch(console.error);
   }
 
   return (
@@ -607,27 +603,7 @@ export function WhatsAppSettings(): React.ReactElement {
           Allow List
         </label>
 
-        <AllowListEditor numbers={allowList} onChange={setAllowList} />
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleSave}
-            className="text-xs font-semibold rounded-lg px-3 py-1.5"
-            style={{
-              background: WA_GREEN,
-              color: "#fff",
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            Save
-          </button>
-          {saved && (
-            <span className="text-xs" style={{ color: WA_GREEN }}>
-              Saved ✓
-            </span>
-          )}
-        </div>
+        <AllowListEditor numbers={allowList} onSave={handleAllowListSave} />
       </div>
     </div>
   );
