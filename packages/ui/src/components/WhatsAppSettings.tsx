@@ -37,8 +37,6 @@ export function WhatsAppSettings(): React.ReactElement {
   const [status, setStatus] = useState<WhatsAppStatus>("disconnected");
   const [qr, setQr] = useState<string | null>(null);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
-  const [allowList, setAllowList] = useState<string[]>([]);
-  const [callbackPort, setCallbackPort] = useState(3847);
   const [allowInput, setAllowInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,8 +48,6 @@ export function WhatsAppSettings(): React.ReactElement {
     bridge.getState().then((s) => {
       setStatus(s.status);
       setQr(s.qr);
-      setAllowList(s.allowList);
-      setCallbackPort(s.callbackPort);
       setAllowInput(s.allowList.join("\n"));
     });
     const unStatus = bridge.onStatus(setStatus);
@@ -101,8 +97,7 @@ export function WhatsAppSettings(): React.ReactElement {
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean);
-    await bridge!.saveSettings({ allowList: list, callbackPort });
-    setAllowList(list);
+    await bridge!.saveSettings({ allowList: list });
     setSaved(true);
     if (savedTimer.current) clearTimeout(savedTimer.current);
     savedTimer.current = setTimeout(() => setSaved(false), 2000);
@@ -198,28 +193,6 @@ export function WhatsAppSettings(): React.ReactElement {
             outline: "none",
           }}
           placeholder={"+15551234567\n+447911123456"}
-        />
-      </div>
-
-      {/* Callback port */}
-      <div className="space-y-1.5">
-        <label
-          className="text-xs font-semibold uppercase tracking-wider"
-          style={{ color: "var(--text-muted)" }}
-        >
-          Callback Port
-        </label>
-        <input
-          type="number"
-          value={callbackPort}
-          onChange={(e) => setCallbackPort(Number(e.target.value))}
-          className="w-28 rounded-lg px-3 py-1.5 text-sm"
-          style={{
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border)",
-            color: "var(--text)",
-            outline: "none",
-          }}
         />
       </div>
 

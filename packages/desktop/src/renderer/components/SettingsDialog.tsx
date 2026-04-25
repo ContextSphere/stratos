@@ -1,5 +1,4 @@
 import { Dialog, DialogBody, Button, WhatsAppSettings } from "@stratosapp/ui";
-import { ComponentGallery } from "./ComponentGallery";
 
 type AppTheme = "dark" | "light";
 
@@ -169,17 +168,6 @@ export function SettingsDialog({
               WhatsApp
             </h3>
             <WhatsAppSettings />
-          </section>
-
-          {/* Component Gallery */}
-          <section>
-            <h3
-              className="text-xs font-semibold uppercase tracking-wider mb-3"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Component Preview
-            </h3>
-            <ComponentGallery />
           </section>
 
           <div className="flex gap-2 justify-end pt-1">

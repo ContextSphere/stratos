@@ -586,8 +586,17 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
         if (manager.isActive) {
           return textResult(JSON.stringify({ status: "busy" }), true);
         }
+        const callbackUrl = args.callbackUrl as string;
         manager
-          .sendFromGateway(args.message as string, args.callbackUrl as string)
+          .sendFromGateway(args.message as string, (reply) => {
+            fetch(callbackUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reply }),
+            }).catch((err) =>
+              console.error("[manager_post] callback failed:", err),
+            );
+          })
           .catch((err) => console.error("[manager_post]", err));
         return textResult(JSON.stringify({ status: "queued" }));
       },

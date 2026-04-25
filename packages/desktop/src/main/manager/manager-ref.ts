@@ -8,8 +8,11 @@
 // Use an interface so we don't import the class itself.
 export interface ManagerLike {
   isActive: boolean;
-  /** Route a gateway message into the Manager. Sets the persistent gateway URL for all future turns. */
-  sendFromGateway(prompt: string, gatewayUrl: string): Promise<void>;
+  /** Route a gateway message into the Manager. Calls onReply when the Manager finishes. */
+  sendFromGateway(
+    prompt: string,
+    onReply: (reply: string) => void,
+  ): Promise<void>;
   interrupt(): Promise<void>;
 }
 

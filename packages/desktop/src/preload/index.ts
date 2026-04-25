@@ -574,10 +574,13 @@ const api = {
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_GET_STATE),
     connect: () => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_CONNECT),
     disconnect: () => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_DISCONNECT),
-    saveSettings: (s: { allowList: string[]; callbackPort: number }) =>
+    saveSettings: (s: { allowList: string[] }) =>
       ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_SAVE_SETTINGS, s),
-    onStatus: (cb: (status: string) => void) => {
-      const handler = (_: unknown, status: string) => cb(status);
+    onStatus: (cb: (status: "connected" | "disconnected" | "qr") => void) => {
+      const handler = (
+        _: unknown,
+        status: "connected" | "disconnected" | "qr",
+      ) => cb(status);
       ipcRenderer.on(IPC_CHANNELS.WHATSAPP_STATUS, handler);
       return () =>
         ipcRenderer.removeListener(IPC_CHANNELS.WHATSAPP_STATUS, handler);

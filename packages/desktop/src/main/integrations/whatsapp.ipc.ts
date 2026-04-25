@@ -3,6 +3,7 @@ import { join } from "path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
 import { startGateway, stopGateway } from "@stratosapp/gateway";
+import { getManagerRef } from "../manager/manager-ref";
 
 // ---------------------------------------------------------------------------
 // Settings persistence
@@ -10,7 +11,6 @@ import { startGateway, stopGateway } from "@stratosapp/gateway";
 
 interface WhatsAppSettings {
   allowList: string[];
-  callbackPort: number;
 }
 
 function settingsPath(): string {
@@ -23,7 +23,7 @@ function loadSettings(): WhatsAppSettings {
       readFileSync(settingsPath(), "utf-8"),
     ) as WhatsAppSettings;
   } catch {
-    return { allowList: [], callbackPort: 3847 };
+    return { allowList: [] };
   }
 }
 
@@ -64,7 +64,6 @@ export function registerWhatsAppIpc(window: BrowserWindow): void {
       status,
       qr: currentQr,
       allowList: settings.allowList,
-      callbackPort: settings.callbackPort,
     };
   });
 
@@ -75,7 +74,6 @@ export function registerWhatsAppIpc(window: BrowserWindow): void {
       await startGateway(
         {
           allowList: settings.allowList,
-          callbackPort: settings.callbackPort,
           authDir: authDir(),
         },
         {
@@ -92,6 +90,14 @@ export function registerWhatsAppIpc(window: BrowserWindow): void {
           },
           onLog(line) {
             emit(IPC_CHANNELS.WHATSAPP_LOG, line);
+          },
+          async onMessage(_from, text) {
+            const manager = getManagerRef();
+            if (!manager) throw new Error("Manager not ready");
+            if (manager.isActive) throw new Error("Manager is busy");
+            return new Promise<string>((resolve, reject) => {
+              manager.sendFromGateway(text, resolve).catch(reject);
+            });
           },
         },
       );

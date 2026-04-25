@@ -1,9 +1,7 @@
 import type { WASocket, BaileysEventMap } from "@whiskeysockets/baileys";
 import type { ResolveJid } from "./client.js";
 import type { GatewayConfig } from "./index.js";
-import { sendReply, startTyping } from "./sender.js";
-import { setActiveSender, markTyping } from "./callback.js";
-import { StratosSocket } from "./stratos-socket.js";
+import { sendReply, startTyping, stopTyping } from "./sender.js";
 
 type MessageUpsert = BaileysEventMap["messages.upsert"];
 
@@ -24,9 +22,9 @@ function isAllowed(jid: string, allowList: string[]): boolean {
 
 export function createMessageHandler(
   sock: WASocket,
-  stratos: StratosSocket,
   config: GatewayConfig,
   resolveJid: ResolveJid,
+  onMessage: (from: string, text: string) => Promise<string>,
   onLog: (line: string) => void,
 ) {
   return async ({ messages, type }: MessageUpsert) => {
@@ -57,22 +55,20 @@ export function createMessageHandler(
         continue;
       }
 
-      setActiveSender(jid, sock);
-      const replyUrl = `http://127.0.0.1:${config.callbackPort}/reply`;
-
+      await startTyping(sock, jid);
       try {
-        await stratos.ensureConnected();
-        await stratos.managerPost(text, replyUrl);
-        await startTyping(sock, jid);
-        markTyping(jid);
+        const reply = await onMessage(jid, text);
+        await stopTyping(sock, jid);
+        await sendReply(sock, jid, reply);
       } catch (err) {
+        await stopTyping(sock, jid);
         const msg2 = err instanceof Error ? err.message : String(err);
         onLog(`[handler] error: ${msg2}`);
-        const reply =
+        const errReply =
           msg2.includes("socket") || msg2.includes("connect")
             ? "Stratos appears to be offline. Start it and try again."
             : `Error: ${msg2}`;
-        await sendReply(sock, jid, reply);
+        await sendReply(sock, jid, errReply);
       }
     }
   };

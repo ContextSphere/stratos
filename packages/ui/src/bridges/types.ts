@@ -127,14 +127,10 @@ export interface WhatsAppBridge {
     status: WhatsAppStatus;
     qr: string | null;
     allowList: string[];
-    callbackPort: number;
   }>;
   connect(): Promise<{ ok: boolean; error?: string }>;
   disconnect(): Promise<{ ok: boolean }>;
-  saveSettings(s: {
-    allowList: string[];
-    callbackPort: number;
-  }): Promise<{ ok: boolean }>;
+  saveSettings(s: { allowList: string[] }): Promise<{ ok: boolean }>;
   onStatus(cb: (status: WhatsAppStatus) => void): () => void;
   onQr(cb: (qr: string) => void): () => void;
   onLog(cb: (line: string) => void): () => void;

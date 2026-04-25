@@ -116,7 +116,7 @@ export class ManagerSession {
   private currentProvider: ProviderType = "claude-code";
   private sessionId: string | undefined;
   private activeStream = false;
-  private gatewayUrl: string | null = null;
+  private gatewayReplyFn: ((reply: string) => void) | null = null;
   private notificationQueue: Array<{ prompt: string }> = [];
   private completionUnsub?: () => void;
   private isNotificationInFlight = false;
@@ -341,15 +341,9 @@ export class ManagerSession {
         isRunning: false,
       });
       // Forward reply to WhatsApp gateway if one is registered.
-      if (this.gatewayUrl && replyText) {
-        const url = this.gatewayUrl;
-        fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reply: replyText }),
-        }).catch((err) =>
-          console.error("[manager-session] gateway POST failed:", err),
-        );
+      if (this.gatewayReplyFn && replyText) {
+        this.gatewayReplyFn(replyText);
+        this.gatewayReplyFn = null;
       }
       // Any child-completion notifications that queued up while this turn
       // was active now get a chance to run.
@@ -365,17 +359,19 @@ export class ManagerSession {
     prompt: string,
     images?: { dataUrl: string; mimeType: string }[],
   ): Promise<void> {
-    this.gatewayUrl = null;
+    this.gatewayReplyFn = null;
     await this.send(prompt, images);
   }
 
   /**
    * Route a message from the WhatsApp gateway into the Manager.
-   * Registers gatewayUrl as the persistent reply channel for all future turns
-   * (including child-completion notifications), then fires send().
+   * Calls onReply when the Manager finishes producing a response.
    */
-  async sendFromGateway(prompt: string, gatewayUrl: string): Promise<void> {
-    this.gatewayUrl = gatewayUrl;
+  async sendFromGateway(
+    prompt: string,
+    onReply: (reply: string) => void,
+  ): Promise<void> {
+    this.gatewayReplyFn = onReply;
     await this.send(prompt);
   }
 
