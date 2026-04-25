@@ -15,12 +15,19 @@ export interface GatewayCallbacks {
 }
 
 let stopped = false;
+let liveConfig: GatewayConfig | null = null;
+
+/** Update the allow list in the running gateway without reconnecting. */
+export function updateGatewayAllowList(allowList: string[]): void {
+  if (liveConfig) liveConfig.allowList = allowList;
+}
 
 export async function startGateway(
   config: GatewayConfig,
   callbacks: GatewayCallbacks,
 ): Promise<void> {
   stopped = false;
+  liveConfig = config;
   const authDir = resolve(config.authDir);
 
   await startWhatsApp(
@@ -47,5 +54,6 @@ export async function startGateway(
 
 export function stopGateway(): void {
   stopped = true;
+  liveConfig = null;
   stopWhatsAppClient();
 }

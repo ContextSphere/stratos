@@ -341,9 +341,13 @@ export class ManagerSession {
         isRunning: false,
       });
       // Forward reply to WhatsApp gateway if one is registered.
-      if (this.gatewayReplyFn && replyText) {
-        this.gatewayReplyFn(replyText);
+      // Always call to resolve the pending Promise — an empty replyText
+      // means the Manager used tools only or errored; send a fallback so
+      // the WhatsApp user isn't left with a hanging "typing..." indicator.
+      if (this.gatewayReplyFn) {
+        const fn = this.gatewayReplyFn;
         this.gatewayReplyFn = null;
+        fn(replyText || "Stratos processed your request.");
       }
       // Any child-completion notifications that queued up while this turn
       // was active now get a chance to run.

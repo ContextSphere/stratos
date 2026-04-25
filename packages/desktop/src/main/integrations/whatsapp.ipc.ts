@@ -2,7 +2,11 @@ import { BrowserWindow, ipcMain, app } from "electron";
 import { join } from "path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
-import { startGateway, stopGateway } from "@stratosapp/gateway";
+import {
+  startGateway,
+  stopGateway,
+  updateGatewayAllowList,
+} from "@stratosapp/gateway";
 import { getManagerRef } from "../manager/manager-ref";
 
 // ---------------------------------------------------------------------------
@@ -91,12 +95,31 @@ export function registerWhatsAppIpc(window: BrowserWindow): void {
           onLog(line) {
             emit(IPC_CHANNELS.WHATSAPP_LOG, line);
           },
-          async onMessage(_from, text) {
+          async onMessage(from, text) {
+            emit(
+              IPC_CHANNELS.WHATSAPP_LOG,
+              `[ipc] message from ${from}: ${text.slice(0, 60)}`,
+            );
             const manager = getManagerRef();
-            if (!manager) throw new Error("Manager not ready");
-            if (manager.isActive) throw new Error("Manager is busy");
+            if (!manager) {
+              emit(IPC_CHANNELS.WHATSAPP_LOG, "[ipc] manager ref not ready");
+              throw new Error("Manager not ready");
+            }
+            if (manager.isActive) {
+              emit(IPC_CHANNELS.WHATSAPP_LOG, "[ipc] manager is busy");
+              throw new Error("Manager is busy");
+            }
+            emit(IPC_CHANNELS.WHATSAPP_LOG, "[ipc] forwarding to manager");
             return new Promise<string>((resolve, reject) => {
-              manager.sendFromGateway(text, resolve).catch(reject);
+              manager
+                .sendFromGateway(text, (reply) => {
+                  emit(
+                    IPC_CHANNELS.WHATSAPP_LOG,
+                    `[ipc] manager replied: ${reply.slice(0, 60)}`,
+                  );
+                  resolve(reply);
+                })
+                .catch(reject);
             });
           },
         },
@@ -122,6 +145,7 @@ export function registerWhatsAppIpc(window: BrowserWindow): void {
     IPC_CHANNELS.WHATSAPP_SAVE_SETTINGS,
     (_e, settings: WhatsAppSettings) => {
       saveSettings(settings);
+      updateGatewayAllowList(settings.allowList);
       return { ok: true };
     },
   );

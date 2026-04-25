@@ -14,7 +14,7 @@ function extractText(msg: MessageUpsert["messages"][0]): string {
 }
 
 function isAllowed(jid: string, allowList: string[]): boolean {
-  const digits = jid.split("@")[0];
+  const digits = jid.split("@")[0].split(":")[0]; // strip multi-device suffix (:0, :1…)
   const e164 = digits.startsWith("+") ? digits : "+" + digits;
   return allowList.includes(e164) || allowList.includes(jid);
 }
@@ -34,7 +34,7 @@ export function createMessageHandler(
       if (!rawJid || msg.key.fromMe) continue;
       if (rawJid.endsWith("@g.us") || rawJid === "status@broadcast") continue;
 
-      const jid = resolveJid(rawJid);
+      const jid = await resolveJid(rawJid);
       const text = extractText(msg);
       if (!text) continue;
 

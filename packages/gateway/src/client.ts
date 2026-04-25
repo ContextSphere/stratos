@@ -3,13 +3,14 @@ import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
   type WASocket,
+  type Contact,
 } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import pino from "pino";
 
 const logger = pino({ level: "silent" });
 
-export type ResolveJid = (jid: string) => string;
+export type ResolveJid = (jid: string) => Promise<string>;
 export type OnReady = (sock: WASocket, resolveJid: ResolveJid) => void;
 
 export interface WhatsAppCallbacks {
@@ -29,20 +30,40 @@ export async function startWhatsApp(
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const { version } = await fetchLatestBaileysVersion();
 
+  // Cache lid → phoneNumber JID from contacts events.
   const lidToPhone = new Map<string, string>();
 
-  function resolveJid(jid: string): string {
-    if (!jid.endsWith("@lid")) return jid;
-    return lidToPhone.get(jid) ?? jid;
+  function indexContacts(cs: Contact[]) {
+    for (const c of cs) {
+      // v7 Contact has explicit phoneNumber field alongside lid
+      const lid = c.lid;
+      const phone = c.phoneNumber;
+      if (lid && phone) {
+        const normalizedLid = lid.endsWith("@lid") ? lid : `${lid}@lid`;
+        lidToPhone.set(normalizedLid, phone);
+      }
+    }
   }
 
-  function indexContact(c: Record<string, unknown>) {
-    const id = c["id"] as string | undefined;
-    const lid = c["lid"] as string | undefined;
-    if (!id || !lid) return;
-    const normalizedLid = lid.endsWith("@lid") ? lid : `${lid}@lid`;
-    const normalizedPhone = !id.endsWith("@lid") ? id : undefined;
-    if (normalizedPhone) lidToPhone.set(normalizedLid, normalizedPhone);
+  async function resolveJid(sock: WASocket, jid: string): Promise<string> {
+    if (!jid.endsWith("@lid")) return jid;
+
+    // Tier 1: fast map from contacts events
+    const cached = lidToPhone.get(jid);
+    if (cached) return cached;
+
+    // Tier 2: Baileys v7 built-in signal repository LID resolver
+    try {
+      const pnJid = await sock.signalRepository.lidMapping.getPNForLID(jid);
+      if (pnJid) {
+        lidToPhone.set(jid, pnJid);
+        return pnJid;
+      }
+    } catch {
+      // fall through
+    }
+
+    return jid;
   }
 
   async function connect(): Promise<void> {
@@ -58,11 +79,11 @@ export async function startWhatsApp(
     currentSock = sock;
 
     sock.ev.on("creds.update", saveCreds);
-    sock.ev.on("contacts.upsert", (cs) =>
-      cs.forEach((c) => indexContact(c as unknown as Record<string, unknown>)),
-    );
+    sock.ev.on("contacts.upsert", (cs) => indexContacts(cs));
     sock.ev.on("contacts.update", (cs) =>
-      cs.forEach((c) => indexContact(c as unknown as Record<string, unknown>)),
+      indexContacts(
+        cs.filter((c): c is Contact => Boolean(c.lid && c.phoneNumber)),
+      ),
     );
 
     sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
@@ -71,7 +92,7 @@ export async function startWhatsApp(
       if (connection === "open") {
         callbacks.onStatus("connected");
         callbacks.onLog("[whatsapp] connected");
-        onReady(sock, resolveJid);
+        onReady(sock, (jid) => resolveJid(sock, jid));
       }
 
       if (connection === "close") {

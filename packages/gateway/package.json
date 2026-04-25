@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "^6.7.18",
+    "@whiskeysockets/baileys": "7.0.0-rc.9",
     "pino": "^9.6.0"
   },
   "devDependencies": {
