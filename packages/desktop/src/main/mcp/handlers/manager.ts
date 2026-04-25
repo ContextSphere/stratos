@@ -8,6 +8,7 @@ import type { FileStorageAdapter, StoredMessage } from "@stratosapp/core";
 import { IPC_CHANNELS } from "../../../common/ipc-channels";
 import { getManagerTurnImages } from "../../manager/turn-state";
 import { type HandlerDef, defineHandler, textResult } from "./types";
+import { getManagerRef } from "../../manager/manager-ref";
 
 const imagesSchema = z
   .array(
@@ -564,6 +565,31 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
             true,
           );
         }
+      },
+    }),
+
+    defineHandler({
+      name: "manager_post",
+      description:
+        "Send a message to the Stratos Manager fire-and-forget. Returns immediately with {status:'queued'}. When the Manager finishes, it POSTs the reply to callbackUrl as {reply: string}.",
+      inputSchema: {
+        message: z.string().describe("The message to send to the Manager."),
+        callbackUrl: z
+          .string()
+          .describe("URL to POST the reply to when the Manager finishes."),
+      },
+      handler: async (args) => {
+        const manager = getManagerRef();
+        if (!manager) {
+          return textResult("Manager not initialized.", true);
+        }
+        if (manager.isActive) {
+          return textResult(JSON.stringify({ status: "busy" }), true);
+        }
+        manager
+          .sendFromGateway(args.message as string, args.callbackUrl as string)
+          .catch((err) => console.error("[manager_post]", err));
+        return textResult(JSON.stringify({ status: "queued" }));
       },
     }),
   ];

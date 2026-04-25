@@ -11,7 +11,7 @@ export function registerManagerIpc(manager: ManagerSession): void {
       prompt: string,
       images?: { dataUrl: string; mimeType: string }[],
     ) => {
-      manager.send(prompt, images).catch((err) => {
+      manager.sendFromUI(prompt, images).catch((err) => {
         console.error("[manager-ipc] send error:", err);
       });
     },

@@ -29,6 +29,7 @@ import { handlersToSdkMcp } from "../mcp/sdk-adapter";
 import { getStratosMcpPath, getStratosMcpSocketPath } from "../mcp/stdio-proxy";
 import { getWorktreeInfo } from "@stratosapp/core";
 import { clearManagerTurnImages, setManagerTurnImages } from "./turn-state";
+import { setManagerRef } from "./manager-ref";
 
 const MANAGER_DIR = join(homedir(), ".stratos", "manager");
 
@@ -115,6 +116,7 @@ export class ManagerSession {
   private currentProvider: ProviderType = "claude-code";
   private sessionId: string | undefined;
   private activeStream = false;
+  private gatewayUrl: string | null = null;
   private notificationQueue: Array<{ prompt: string }> = [];
   private completionUnsub?: () => void;
   private isNotificationInFlight = false;
@@ -142,6 +144,7 @@ export class ManagerSession {
     const session = new ManagerSession(agentManager, storage, window);
     session.setup();
     ManagerSession.instance = session;
+    setManagerRef(session);
     return session;
   }
 
@@ -233,6 +236,8 @@ export class ManagerSession {
       threadId,
     });
 
+    let replyText = "";
+
     try {
       // Ensure provider session exists
       if (!this.provider) {
@@ -279,9 +284,25 @@ export class ManagerSession {
         },
       });
 
+      let currentBlock = "";
+      const textBlocks: string[] = [];
       for await (const msg of stream) {
         this.handleMessage(msg, threadId, streamId);
+        if (msg.type === "text") {
+          currentBlock += msg.content;
+          if (!msg.isStreaming && currentBlock.trim()) {
+            textBlocks.push(currentBlock.trim());
+            currentBlock = "";
+          }
+        } else if (msg.type === "result") {
+          if (currentBlock.trim()) {
+            textBlocks.push(currentBlock.trim());
+            currentBlock = "";
+          }
+        }
       }
+      if (currentBlock.trim()) textBlocks.push(currentBlock.trim());
+      replyText = textBlocks.join("\n\n");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[manager-session] stream error:", message);
@@ -319,10 +340,43 @@ export class ManagerSession {
         threadId,
         isRunning: false,
       });
+      // Forward reply to WhatsApp gateway if one is registered.
+      if (this.gatewayUrl && replyText) {
+        const url = this.gatewayUrl;
+        fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reply: replyText }),
+        }).catch((err) =>
+          console.error("[manager-session] gateway POST failed:", err),
+        );
+      }
       // Any child-completion notifications that queued up while this turn
       // was active now get a chance to run.
       this.drainNotificationQueue();
     }
+  }
+
+  /**
+   * Called by the Stratos UI. Clears the gateway channel so Manager replies
+   * stop going to WhatsApp once the user takes over locally.
+   */
+  async sendFromUI(
+    prompt: string,
+    images?: { dataUrl: string; mimeType: string }[],
+  ): Promise<void> {
+    this.gatewayUrl = null;
+    await this.send(prompt, images);
+  }
+
+  /**
+   * Route a message from the WhatsApp gateway into the Manager.
+   * Registers gatewayUrl as the persistent reply channel for all future turns
+   * (including child-completion notifications), then fires send().
+   */
+  async sendFromGateway(prompt: string, gatewayUrl: string): Promise<void> {
+    this.gatewayUrl = gatewayUrl;
+    await this.send(prompt);
   }
 
   /** Interrupt the current Manager stream. */
