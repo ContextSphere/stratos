@@ -14,7 +14,6 @@ function extractText(msg: MessageUpsert["messages"][0]): string {
 }
 
 function isAllowed(jid: string, allowList: string[]): boolean {
-  if (allowList.includes("*")) return true;
   const digits = jid.split("@")[0];
   const e164 = digits.startsWith("+") ? digits : "+" + digits;
   return allowList.includes(e164) || allowList.includes(jid);

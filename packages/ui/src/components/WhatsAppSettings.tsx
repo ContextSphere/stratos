@@ -6,6 +6,12 @@ import type { WhatsAppStatus } from "../bridges/types";
 const WA_GREEN = "#25D366";
 const WA_GREEN_DARK = "#128C7E";
 
+const E164_RE = /^\+[1-9]\d{7,14}$/;
+
+function isValidE164(v: string): boolean {
+  return E164_RE.test(v.trim());
+}
+
 function WaIcon({ size = 40 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
@@ -52,7 +58,6 @@ function QrPanel({
 }) {
   return (
     <div className="flex flex-col items-center" style={{ gap: 20 }}>
-      {/* QR code */}
       <div style={{ position: "relative", display: "inline-block" }}>
         <div
           style={{
@@ -70,11 +75,7 @@ function QrPanel({
             <img
               src={qrUrl}
               alt="WhatsApp QR code"
-              style={{
-                width: 200,
-                height: 200,
-                imageRendering: "pixelated",
-              }}
+              style={{ width: 200, height: 200, imageRendering: "pixelated" }}
             />
           ) : (
             <div
@@ -102,7 +103,6 @@ function QrPanel({
             </div>
           )}
         </div>
-        {/* WhatsApp logo overlay */}
         {qrUrl && (
           <div
             style={{
@@ -121,7 +121,6 @@ function QrPanel({
         )}
       </div>
 
-      {/* Heading */}
       <div className="text-center" style={{ gap: 6 }}>
         <h2
           className="font-bold"
@@ -137,7 +136,6 @@ function QrPanel({
         </p>
       </div>
 
-      {/* Steps */}
       <div
         className="w-full rounded-xl"
         style={{
@@ -179,7 +177,6 @@ function QrPanel({
         ))}
       </div>
 
-      {/* Cancel */}
       <button
         onClick={onCancel}
         disabled={busy}
@@ -197,11 +194,7 @@ function QrPanel({
         Cancel
       </button>
 
-      <style>{`
-        @keyframes wa-spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
+      <style>{`@keyframes wa-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
@@ -247,7 +240,7 @@ function ConnectedPanel({
       <button
         onClick={onDisconnect}
         disabled={busy}
-        className="text-sm font-medium rounded-lg px-3 py-1.5 transition-colors"
+        className="text-sm font-medium rounded-lg px-3 py-1.5"
         style={{
           background: "#ef444422",
           color: "#ef4444",
@@ -310,7 +303,7 @@ function DisconnectedPanel({
       <button
         onClick={onConnect}
         disabled={busy}
-        className="rounded-xl text-sm font-semibold px-6 py-2.5 transition-opacity"
+        className="rounded-xl text-sm font-semibold px-6 py-2.5"
         style={{
           background: busy
             ? "var(--text-muted)"
@@ -329,12 +322,175 @@ function DisconnectedPanel({
   );
 }
 
+function AllowListEditor({
+  numbers,
+  onChange,
+}: {
+  numbers: string[];
+  onChange: (list: string[]) => void;
+}) {
+  const [input, setInput] = useState("");
+  const [inputError, setInputError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function validateAndAdd() {
+    const val = input.trim();
+    if (!val) return;
+    if (!isValidE164(val)) {
+      setInputError("Must be E.164 format, e.g. +15551234567");
+      return;
+    }
+    if (numbers.includes(val)) {
+      setInputError("Already in the list");
+      return;
+    }
+    onChange([...numbers, val]);
+    setInput("");
+    setInputError(null);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      validateAndAdd();
+    }
+    if (e.key === "Escape") {
+      setInput("");
+      setInputError(null);
+    }
+  }
+
+  function handleInputChange(val: string) {
+    setInput(val);
+    if (inputError) setInputError(null);
+  }
+
+  function remove(num: string) {
+    onChange(numbers.filter((n) => n !== num));
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* Existing numbers */}
+      {numbers.length === 0 ? (
+        <div
+          className="text-xs text-center py-3 rounded-lg"
+          style={{
+            color: "var(--text-muted)",
+            background: "var(--bg-root)",
+            border: "1px dashed var(--border)",
+          }}
+        >
+          No numbers added yet
+        </div>
+      ) : (
+        <div
+          className="rounded-lg"
+          style={{
+            border: "1px solid var(--border)",
+            background: "var(--bg-root)",
+            overflow: "hidden",
+          }}
+        >
+          {numbers.map((num, i) => (
+            <div
+              key={num}
+              className="flex items-center justify-between px-3"
+              style={{
+                height: 36,
+                borderTop: i > 0 ? "1px solid var(--border)" : undefined,
+              }}
+            >
+              <span
+                className="text-sm font-mono"
+                style={{ color: "var(--text)" }}
+              >
+                {num}
+              </span>
+              <button
+                onClick={() => remove(num)}
+                title="Remove"
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "2px 4px",
+                  borderRadius: 4,
+                  color: "var(--text-muted)",
+                  lineHeight: 1,
+                  fontSize: 16,
+                }}
+                onMouseEnter={(e) =>
+                  ((e.currentTarget as HTMLButtonElement).style.color =
+                    "#ef4444")
+                }
+                onMouseLeave={(e) =>
+                  ((e.currentTarget as HTMLButtonElement).style.color =
+                    "var(--text-muted)")
+                }
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add input */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            ref={inputRef}
+            type="tel"
+            value={input}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="+15551234567"
+            className="text-sm font-mono rounded-lg px-3"
+            style={{
+              flex: 1,
+              height: 34,
+              background: "var(--bg-root)",
+              border: `1px solid ${inputError ? "#ef4444" : "var(--border)"}`,
+              color: "var(--text)",
+              outline: "none",
+            }}
+          />
+          <button
+            onClick={validateAndAdd}
+            className="text-sm font-semibold rounded-lg px-3"
+            style={{
+              background: WA_GREEN,
+              color: "#fff",
+              border: "none",
+              cursor: "pointer",
+              height: 34,
+              flexShrink: 0,
+            }}
+          >
+            Add
+          </button>
+        </div>
+        {inputError ? (
+          <span className="text-xs" style={{ color: "#ef4444" }}>
+            {inputError}
+          </span>
+        ) : (
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            E.164 format · press Enter to add
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function WhatsAppSettings(): React.ReactElement {
   const bridge = useWhatsAppBridge();
   const [status, setStatus] = useState<WhatsAppStatus>("disconnected");
   const [qr, setQr] = useState<string | null>(null);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
-  const [allowInput, setAllowInput] = useState("");
+  const [allowList, setAllowList] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -345,7 +501,7 @@ export function WhatsAppSettings(): React.ReactElement {
     bridge.getState().then((s) => {
       setStatus(s.status);
       setQr(s.qr);
-      setAllowInput(s.allowList.join("\n"));
+      setAllowList(s.allowList);
     });
     const unStatus = bridge.onStatus(setStatus);
     const unQr = bridge.onQr((q) => setQr(q));
@@ -403,11 +559,7 @@ export function WhatsAppSettings(): React.ReactElement {
   }
 
   async function handleSave() {
-    const list = allowInput
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-    await bridge!.saveSettings({ allowList: list });
+    await bridge!.saveSettings({ allowList });
     setSaved(true);
     if (savedTimer.current) clearTimeout(savedTimer.current);
     savedTimer.current = setTimeout(() => setSaved(false), 2000);
@@ -415,7 +567,6 @@ export function WhatsAppSettings(): React.ReactElement {
 
   return (
     <div className="space-y-4">
-      {/* Main status card */}
       {status === "qr" ? (
         <QrPanel qrUrl={qrUrl} onCancel={handleDisconnect} busy={busy} />
       ) : status === "connected" ? (
@@ -424,7 +575,6 @@ export function WhatsAppSettings(): React.ReactElement {
         <DisconnectedPanel onConnect={handleConnect} busy={busy} />
       )}
 
-      {/* Error */}
       {error && (
         <div
           className="text-xs rounded-xl px-4 py-3"
@@ -438,44 +588,37 @@ export function WhatsAppSettings(): React.ReactElement {
         </div>
       )}
 
-      {/* Allow list — always visible */}
+      {/* Allow list */}
       <div
-        className="rounded-xl space-y-2"
+        className="rounded-xl"
         style={{
           background: "var(--bg-surface)",
           border: "1px solid var(--border)",
           padding: "14px 16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
         }}
       >
-        <div className="flex items-center justify-between">
-          <label
-            className="text-xs font-semibold uppercase tracking-wider"
-            style={{ color: "var(--text-muted)" }}
-          >
-            Allow List
-          </label>
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Use <code style={{ color: WA_GREEN }}>*</code> for everyone
-          </span>
-        </div>
-        <textarea
-          value={allowInput}
-          onChange={(e) => setAllowInput(e.target.value)}
-          rows={3}
-          className="w-full rounded-lg px-3 py-2 text-sm font-mono resize-none"
-          style={{
-            background: "var(--bg-root)",
-            border: "1px solid var(--border)",
-            color: "var(--text)",
-            outline: "none",
-          }}
-          placeholder={"+15551234567\n+447911123456"}
-        />
+        <label
+          className="text-xs font-semibold uppercase tracking-wider"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Allow List
+        </label>
+
+        <AllowListEditor numbers={allowList} onChange={setAllowList} />
+
         <div className="flex items-center gap-3">
           <button
             onClick={handleSave}
-            className="text-xs font-semibold rounded-lg px-3 py-1.5 transition-opacity"
-            style={{ background: WA_GREEN, color: "#fff", border: "none" }}
+            className="text-xs font-semibold rounded-lg px-3 py-1.5"
+            style={{
+              background: WA_GREEN,
+              color: "#fff",
+              border: "none",
+              cursor: "pointer",
+            }}
           >
             Save
           </button>
@@ -484,12 +627,6 @@ export function WhatsAppSettings(): React.ReactElement {
               Saved ✓
             </span>
           )}
-          <span
-            className="text-xs"
-            style={{ color: "var(--text-muted)", marginLeft: "auto" }}
-          >
-            E.164 format · one per line
-          </span>
         </div>
       </div>
     </div>
