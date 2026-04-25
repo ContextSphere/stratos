@@ -162,6 +162,15 @@ export const IPC_CHANNELS = {
   MANAGER_THREAD_ID: "manager:thread-id",
   MANAGER_SWITCH_PROVIDER: "manager:switch-provider",
 
+  // WhatsApp gateway
+  WHATSAPP_GET_STATE: "whatsapp:get-state",
+  WHATSAPP_CONNECT: "whatsapp:connect",
+  WHATSAPP_DISCONNECT: "whatsapp:disconnect",
+  WHATSAPP_SAVE_SETTINGS: "whatsapp:save-settings",
+  WHATSAPP_STATUS: "whatsapp:status", // event → "connected" | "disconnected" | "qr"
+  WHATSAPP_QR: "whatsapp:qr", // event → qr string
+  WHATSAPP_LOG: "whatsapp:log", // event → log line string
+
   // Terminal
   TERMINAL_CREATE: "terminal:create",
   TERMINAL_WRITE: "terminal:write",

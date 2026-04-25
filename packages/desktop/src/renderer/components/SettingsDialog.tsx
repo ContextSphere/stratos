@@ -1,4 +1,4 @@
-import { Dialog, DialogBody, Button } from "@stratosapp/ui";
+import { Dialog, DialogBody, Button, WhatsAppSettings } from "@stratosapp/ui";
 import { ComponentGallery } from "./ComponentGallery";
 
 type AppTheme = "dark" | "light";
@@ -158,6 +158,17 @@ export function SettingsDialog({
                 );
               })}
             </div>
+          </section>
+
+          {/* WhatsApp */}
+          <section>
+            <h3
+              className="text-xs font-semibold uppercase tracking-wider mb-3"
+              style={{ color: "var(--text-muted)" }}
+            >
+              WhatsApp
+            </h3>
+            <WhatsAppSettings />
           </section>
 
           {/* Component Gallery */}

@@ -120,6 +120,26 @@ export interface DirEntry {
   size: number;
 }
 
+export type WhatsAppStatus = "connected" | "disconnected" | "qr";
+
+export interface WhatsAppBridge {
+  getState(): Promise<{
+    status: WhatsAppStatus;
+    qr: string | null;
+    allowList: string[];
+    callbackPort: number;
+  }>;
+  connect(): Promise<{ ok: boolean; error?: string }>;
+  disconnect(): Promise<{ ok: boolean }>;
+  saveSettings(s: {
+    allowList: string[];
+    callbackPort: number;
+  }): Promise<{ ok: boolean }>;
+  onStatus(cb: (status: WhatsAppStatus) => void): () => void;
+  onQr(cb: (qr: string) => void): () => void;
+  onLog(cb: (line: string) => void): () => void;
+}
+
 export interface FilesBridge {
   listDirectory(dirPath: string, rootPath: string): Promise<DirEntry[]>;
   readFile(

@@ -76,6 +76,16 @@ export function createDesktopBridge(): StratosContextValue {
       },
     },
 
+    whatsapp: {
+      getState: () => window.api.whatsapp.getState(),
+      connect: () => window.api.whatsapp.connect(),
+      disconnect: () => window.api.whatsapp.disconnect(),
+      saveSettings: (s) => window.api.whatsapp.saveSettings(s),
+      onStatus: (cb) => window.api.whatsapp.onStatus(cb),
+      onQr: (cb) => window.api.whatsapp.onQr(cb),
+      onLog: (cb) => window.api.whatsapp.onLog(cb),
+    },
+
     files: {
       listDirectory: (dirPath, rootPath) =>
         window.api.filesListDir(dirPath, rootPath),

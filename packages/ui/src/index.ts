@@ -55,11 +55,14 @@ export type {
   SettingsBridge,
   PreviewBridge,
   FilesBridge,
+  WhatsAppBridge,
+  WhatsAppStatus,
   DirEntry,
   StreamEvent,
   ImageAttachment as BridgeImageAttachment,
   McpServerInfo,
 } from "./bridges/types";
+export { WhatsAppSettings } from "./components/WhatsAppSettings";
 
 // Theme
 export {

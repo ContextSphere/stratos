@@ -569,6 +569,33 @@ const api = {
   ): Promise<{ status: string; provider: string }> =>
     ipcRenderer.invoke(IPC_CHANNELS.MANAGER_SWITCH_PROVIDER, provider, model),
 
+  // WhatsApp gateway
+  whatsapp: {
+    getState: () => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_GET_STATE),
+    connect: () => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_CONNECT),
+    disconnect: () => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_DISCONNECT),
+    saveSettings: (s: { allowList: string[]; callbackPort: number }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_SAVE_SETTINGS, s),
+    onStatus: (cb: (status: string) => void) => {
+      const handler = (_: unknown, status: string) => cb(status);
+      ipcRenderer.on(IPC_CHANNELS.WHATSAPP_STATUS, handler);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.WHATSAPP_STATUS, handler);
+    },
+    onQr: (cb: (qr: string) => void) => {
+      const handler = (_: unknown, qr: string) => cb(qr);
+      ipcRenderer.on(IPC_CHANNELS.WHATSAPP_QR, handler);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.WHATSAPP_QR, handler);
+    },
+    onLog: (cb: (line: string) => void) => {
+      const handler = (_: unknown, line: string) => cb(line);
+      ipcRenderer.on(IPC_CHANNELS.WHATSAPP_LOG, handler);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.WHATSAPP_LOG, handler);
+    },
+  },
+
   // Skills
   skills: {
     list: (): Promise<
