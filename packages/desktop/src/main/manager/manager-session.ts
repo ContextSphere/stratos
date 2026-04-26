@@ -124,6 +124,18 @@ export class ManagerSession {
   private isNotificationInFlight = false;
   private notificationBackoffUntil = 0;
 
+  /**
+   * "remote" — Manager replies and notifications are forwarded to WhatsApp.
+   * "local"  — User is actively using the Stratos UI; nothing goes to WhatsApp.
+   *
+   * Starts remote so that async notifications fire on boot before the user
+   * has touched the UI. Switches to local the moment sendFromUI is called.
+   * An idle timer resets back to remote after 5 minutes of UI inactivity.
+   */
+  private mode: "remote" | "local" = "remote";
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+
   private constructor(
     agentManager: AgentManager,
     storage: FileStorageAdapter,
@@ -358,7 +370,8 @@ export class ManagerSession {
       if (
         this.isNotificationInFlight &&
         this.notificationForwardFn &&
-        replyText
+        replyText &&
+        this.mode === "remote"
       ) {
         const forwardFn = this.notificationForwardFn;
         forwardFn(replyText).catch((err) => {
@@ -375,15 +388,27 @@ export class ManagerSession {
   }
 
   /**
-   * Called by the Stratos UI. Clears the gateway channel so Manager replies
-   * stop going to WhatsApp once the user takes over locally.
+   * Called by the Stratos UI. Switches to local mode (stops WhatsApp
+   * forwarding) and resets the idle timer that switches back to remote.
    */
   async sendFromUI(
     prompt: string,
     images?: { dataUrl: string; mimeType: string }[],
   ): Promise<void> {
     this.gatewayReplyFn = null;
+    this.enterLocalMode();
     await this.send(prompt, images);
+  }
+
+  private enterLocalMode(): void {
+    this.mode = "local";
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    // After 5 minutes of UI inactivity, revert to remote so async
+    // notifications reach WhatsApp again.
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      this.mode = "remote";
+    }, ManagerSession.IDLE_TIMEOUT_MS);
   }
 
   /**
@@ -405,6 +430,13 @@ export class ManagerSession {
    */
   setNotificationForward(fn: ((text: string) => Promise<void>) | null): void {
     this.notificationForwardFn = fn;
+    if (fn) {
+      // A WhatsApp message just arrived — switch to remote immediately and
+      // cancel any pending idle-back timer.
+      if (this.idleTimer) clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+      this.mode = "remote";
+    }
   }
 
   /** Interrupt the current Manager stream. */
@@ -467,6 +499,10 @@ export class ManagerSession {
   dispose(): void {
     this.completionUnsub?.();
     this.completionUnsub = undefined;
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
     if (this.provider) {
       this.provider.dispose().catch(() => {});
       this.provider = null;
