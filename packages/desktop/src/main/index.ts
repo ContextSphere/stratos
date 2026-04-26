@@ -218,8 +218,14 @@ if (!gotLock) {
     });
 
     mainWindow.webContents.setWindowOpenHandler((details) => {
-      // Open external links in system browser
-      shell.openExternal(details.url);
+      try {
+        const { protocol } = new URL(details.url);
+        if (protocol === "https:" || protocol === "http:") {
+          shell.openExternal(details.url);
+        }
+      } catch {
+        // invalid URL — ignore
+      }
       return { action: "deny" };
     });
 
@@ -284,7 +290,14 @@ if (!gotLock) {
   app.on("web-contents-created", (_event, contents) => {
     if (contents.getType() === "webview") {
       contents.setWindowOpenHandler((details) => {
-        shell.openExternal(details.url);
+        try {
+          const { protocol } = new URL(details.url);
+          if (protocol === "https:" || protocol === "http:") {
+            shell.openExternal(details.url);
+          }
+        } catch {
+          // invalid URL — ignore
+        }
         return { action: "deny" };
       });
     }
