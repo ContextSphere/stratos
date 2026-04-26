@@ -109,6 +109,9 @@ let currentQr: string | null = null;
 let win: BrowserWindow | null = null;
 let lastGatewayJid: string | null = null;
 const statusListeners: Array<(s: WaStatus) => void> = [];
+// In-flight connect promise — coalesces concurrent connectGateway() calls so
+// only one Baileys socket is ever created at a time.
+let connectingPromise: Promise<{ ok: boolean; error?: string }> | null = null;
 
 export function getWhatsAppStatus(): WaStatus {
   return status;
@@ -130,70 +133,77 @@ function emit(channel: string, payload?: unknown) {
 // Core connect logic (shared by auto-connect and manual IPC)
 // ---------------------------------------------------------------------------
 
-export async function connectGateway(): Promise<{
-  ok: boolean;
-  error?: string;
-}> {
-  if (status === "connected") return { ok: true };
-  const settings = loadSettings();
-  try {
-    await startGateway(
-      {
-        trustedPhone: settings.trustedPhone,
-        authDir: authDir(),
-      },
-      {
-        onQr(qr) {
-          status = "qr";
-          currentQr = qr;
-          emit(IPC_CHANNELS.WHATSAPP_STATUS, "qr");
-          emit(IPC_CHANNELS.WHATSAPP_QR, qr);
+export function connectGateway(): Promise<{ ok: boolean; error?: string }> {
+  if (status === "connected") return Promise.resolve({ ok: true });
+  if (connectingPromise) return connectingPromise;
+
+  connectingPromise = (async () => {
+    const settings = loadSettings();
+    try {
+      await startGateway(
+        {
+          trustedPhone: settings.trustedPhone,
+          authDir: authDir(),
         },
-        onStatus(s) {
-          status = s;
-          if (s !== "qr") currentQr = null;
-          emit(IPC_CHANNELS.WHATSAPP_STATUS, s);
-          statusListeners.forEach((cb) => cb(s));
+        {
+          onQr(qr) {
+            status = "qr";
+            currentQr = qr;
+            emit(IPC_CHANNELS.WHATSAPP_STATUS, "qr");
+            emit(IPC_CHANNELS.WHATSAPP_QR, qr);
+          },
+          onStatus(s) {
+            status = s;
+            if (s !== "qr") currentQr = null;
+            emit(IPC_CHANNELS.WHATSAPP_STATUS, s);
+            statusListeners.forEach((cb) => cb(s));
+          },
+          onLog(line) {
+            writeGatewayLog(line);
+          },
+          async onMessage(from, text) {
+            writeGatewayLog(`[ipc] message from ${from}: ${text.slice(0, 60)}`);
+            const manager = getManagerRef();
+            if (!manager) {
+              writeGatewayLog("[ipc] manager ref not ready");
+              throw new Error("Manager not ready");
+            }
+            if (manager.isActive) {
+              writeGatewayLog("[ipc] manager is busy");
+              throw new Error("Manager is busy");
+            }
+            writeGatewayLog("[ipc] forwarding to manager");
+            lastGatewayJid = from;
+            // Register a forward function so async child-completion
+            // notifications are also delivered to this sender's JID.
+            manager.setNotificationForward((replyText) =>
+              sendProactiveWhatsApp(from, replyText),
+            );
+            return new Promise<string>((resolve, reject) => {
+              manager
+                .sendFromGateway(text, (reply) => {
+                  writeGatewayLog(
+                    `[ipc] manager replied: ${reply.slice(0, 60)}`,
+                  );
+                  resolve(reply);
+                })
+                .catch(reject);
+            });
+          },
         },
-        onLog(line) {
-          writeGatewayLog(line);
-        },
-        async onMessage(from, text) {
-          writeGatewayLog(`[ipc] message from ${from}: ${text.slice(0, 60)}`);
-          const manager = getManagerRef();
-          if (!manager) {
-            writeGatewayLog("[ipc] manager ref not ready");
-            throw new Error("Manager not ready");
-          }
-          if (manager.isActive) {
-            writeGatewayLog("[ipc] manager is busy");
-            throw new Error("Manager is busy");
-          }
-          writeGatewayLog("[ipc] forwarding to manager");
-          lastGatewayJid = from;
-          // Register a forward function so async child-completion
-          // notifications are also delivered to this sender's JID.
-          manager.setNotificationForward((replyText) =>
-            sendProactiveWhatsApp(from, replyText),
-          );
-          return new Promise<string>((resolve, reject) => {
-            manager
-              .sendFromGateway(text, (reply) => {
-                writeGatewayLog(`[ipc] manager replied: ${reply.slice(0, 60)}`);
-                resolve(reply);
-              })
-              .catch(reject);
-          });
-        },
-      },
-    );
-    return { ok: true };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
+      );
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    } finally {
+      connectingPromise = null;
+    }
+  })();
+
+  return connectingPromise;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +226,7 @@ export function registerWhatsAppIpc(window: BrowserWindow): void {
 
   ipcMain.handle(IPC_CHANNELS.WHATSAPP_DISCONNECT, () => {
     stopGateway();
+    connectingPromise = null;
     status = "disconnected";
     currentQr = null;
     lastGatewayJid = null;
