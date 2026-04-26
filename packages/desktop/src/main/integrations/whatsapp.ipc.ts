@@ -8,6 +8,7 @@ import {
   statSync,
   renameSync,
   appendFileSync,
+  readdirSync,
 } from "fs";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
 import {
@@ -91,7 +92,7 @@ function writeGatewayLog(line: string): void {
 function hasAuthCredentials(): boolean {
   const dir = authDir();
   try {
-    const files = require("fs").readdirSync(dir) as string[];
+    const files = readdirSync(dir);
     return files.some((f: string) => f.endsWith(".json"));
   } catch {
     return false;
