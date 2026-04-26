@@ -107,7 +107,7 @@ describe.skipIf(nested)(
         const stratosCount = initTools.filter((t) =>
           t.startsWith("mcp__stratos__"),
         ).length;
-        expect(stratosCount).toBe(19);
+        expect(stratosCount).toBe(20);
 
         const stratos = initMcpServers.find((s) => s.name === "stratos");
         expect(stratos?.status).toBe("connected");
