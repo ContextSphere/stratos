@@ -217,9 +217,15 @@ if (!gotLock) {
       }
     });
 
-    mainWindow.webContents.setWindowOpenHandler((details) => {
-      // Open external links in system browser
-      shell.openExternal(details.url);
+    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+      try {
+        const parsed = new URL(url);
+        if (["https:", "http:"].includes(parsed.protocol)) {
+          shell.openExternal(url);
+        }
+      } catch {
+        // invalid URL — deny
+      }
       return { action: "deny" };
     });
 
@@ -283,8 +289,15 @@ if (!gotLock) {
 
   app.on("web-contents-created", (_event, contents) => {
     if (contents.getType() === "webview") {
-      contents.setWindowOpenHandler((details) => {
-        shell.openExternal(details.url);
+      contents.setWindowOpenHandler(({ url }) => {
+        try {
+          const parsed = new URL(url);
+          if (["https:", "http:"].includes(parsed.protocol)) {
+            shell.openExternal(url);
+          }
+        } catch {
+          // invalid URL — deny
+        }
         return { action: "deny" };
       });
     }
