@@ -306,17 +306,11 @@ if (!gotLock) {
     // System tray: keep the app alive and accessible even when the window is
     // closed. Only create one tray per instance.
     if (!tray) {
-      const iconPath = isDev
-        ? join(__dirname, "../../build/icon.png")
-        : join(process.resourcesPath, "icon.png");
-      let trayIcon = nativeImage.createFromPath(iconPath);
-      // Resize to 16×16 for the menu bar (template image on macOS)
-      if (!trayIcon.isEmpty()) {
-        trayIcon = trayIcon.resize({ width: 16, height: 16 });
-        trayIcon.setTemplateImage(true);
-      } else {
-        trayIcon = nativeImage.createEmpty();
-      }
+      const trayIconPath = isDev
+        ? join(__dirname, "../../build/tray-icon.png")
+        : join(process.resourcesPath, "tray-icon.png");
+      const trayIcon = nativeImage.createFromPath(trayIconPath);
+      trayIcon.setTemplateImage(true);
       tray = new Tray(trayIcon);
       tray.setToolTip(worktree ? `Stratos — ${worktree.name}` : "Stratos");
 

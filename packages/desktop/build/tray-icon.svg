@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22" width="22" height="22">
+  <!-- Three stacked rhombus layers from the Stratos logo, black on transparent -->
+  <!-- Layer 3 (bottom) -->
+  <polygon points="2,14.5 11,10.5 20,14.5 11,17.5" fill="none" stroke="#000" stroke-width="1.4" stroke-linejoin="round"/>
+  <!-- Layer 2 (middle) -->
+  <polygon points="2,10.5 11,6.5 20,10.5 11,13.5" fill="none" stroke="#000" stroke-width="1.4" stroke-linejoin="round"/>
+  <!-- Layer 1 (top) -->
+  <polygon points="2,6.5 11,2.5 20,6.5 11,9.5" fill="none" stroke="#000" stroke-width="1.4" stroke-linejoin="round"/>
+</svg>
