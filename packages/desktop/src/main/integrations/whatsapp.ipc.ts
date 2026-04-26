@@ -107,7 +107,6 @@ type WaStatus = "connected" | "disconnected" | "qr";
 let status: WaStatus = "disconnected";
 let currentQr: string | null = null;
 let win: BrowserWindow | null = null;
-let lastGatewayJid: string | null = null;
 const statusListeners: Array<(s: WaStatus) => void> = [];
 
 export function getWhatsAppStatus(): WaStatus {
@@ -170,7 +169,6 @@ export async function connectGateway(): Promise<{
             throw new Error("Manager is busy");
           }
           writeGatewayLog("[ipc] forwarding to manager");
-          lastGatewayJid = from;
           // Register a forward function so async child-completion
           // notifications are also delivered to this sender's JID.
           manager.setNotificationForward((replyText) =>
@@ -218,7 +216,6 @@ export function registerWhatsAppIpc(window: BrowserWindow): void {
     stopGateway();
     status = "disconnected";
     currentQr = null;
-    lastGatewayJid = null;
     getManagerRef()?.setNotificationForward(null);
     emit(IPC_CHANNELS.WHATSAPP_STATUS, "disconnected");
     statusListeners.forEach((cb) => cb("disconnected"));
