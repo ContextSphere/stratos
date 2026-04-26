@@ -1139,7 +1139,15 @@ export class AgentManager {
       content?: Record<string, unknown>;
     }> => {
       if (request.mode === "url" && request.url) {
-        // Open auth URL in default browser
+        // Open auth URL in default browser — validate scheme first
+        try {
+          const { protocol } = new URL(request.url);
+          if (protocol !== "https:" && protocol !== "http:") {
+            return { action: "decline" };
+          }
+        } catch {
+          return { action: "decline" };
+        }
         shell.openExternal(request.url);
         // For URL-based auth, accept immediately — the SDK will wait for
         // the OAuth callback/completion via elicitation_complete
