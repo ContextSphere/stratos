@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useId, useCallback } from "react";
 import mermaid from "mermaid";
+import DOMPurify from "dompurify";
 
 function triggerDownload(href: string, filename: string): void {
   const a = document.createElement("a");
@@ -70,7 +71,7 @@ mermaid.initialize({
   startOnLoad: false,
   theme: "dark",
   darkMode: true,
-  securityLevel: "loose",
+  securityLevel: "antiscript",
 });
 
 const MIN_SCALE = 0.25;
@@ -249,7 +250,12 @@ export function MermaidDiagram({
     mermaid
       .render(`mermaid-${id}`, chart)
       .then(({ svg: renderedSvg }) => {
-        if (!cancelled) setSvg(renderedSvg);
+        if (!cancelled)
+          setSvg(
+            DOMPurify.sanitize(renderedSvg, {
+              USE_PROFILES: { svg: true, svgFilters: true },
+            }),
+          );
       })
       .catch((err: unknown) => {
         if (!cancelled)
@@ -345,7 +351,7 @@ export function MermaidDiagram({
         <div
           ref={innerRef}
           style={{ transformOrigin: "0 0", display: "inline-block" }}
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: mermaid produces trusted SVG
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: svg is DOMPurify-sanitized before storage
           dangerouslySetInnerHTML={{ __html: svg }}
         />
       </div>
