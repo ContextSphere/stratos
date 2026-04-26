@@ -151,7 +151,7 @@ export async function connectGateway(): Promise<{
         },
         onStatus(s) {
           status = s;
-          if (s !== "qr") currentQr = null;
+          currentQr = null;
           emit(IPC_CHANNELS.WHATSAPP_STATUS, s);
           statusListeners.forEach((cb) => cb(s));
         },
@@ -173,7 +173,7 @@ export async function connectGateway(): Promise<{
           lastGatewayJid = from;
           // Register a forward function so async child-completion
           // notifications are also delivered to this sender's JID.
-          manager.setNotificationForward((replyText) =>
+          manager.setNotificationForward((replyText: string) =>
             sendProactiveWhatsApp(from, replyText),
           );
           return new Promise<string>((resolve, reject) => {

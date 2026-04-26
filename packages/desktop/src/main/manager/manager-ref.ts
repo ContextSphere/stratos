@@ -14,6 +14,10 @@ export interface ManagerLike {
     onReply: (reply: string) => void,
   ): Promise<void>;
   interrupt(): Promise<void>;
+  /** Register (or clear) a function that forwards proactive notifications back to the gateway sender. */
+  setNotificationForward(
+    fn: ((replyText: string) => Promise<void>) | null,
+  ): void;
 }
 
 let ref: ManagerLike | null = null;
