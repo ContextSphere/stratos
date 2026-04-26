@@ -16,7 +16,7 @@ import {
   updateGatewayTrustedPhone,
   sendProactiveWhatsApp,
 } from "@stratosapp/gateway";
-import { getManagerRef } from "../manager/manager-ref";
+import { getManagerRef, onManagerReady } from "../manager/manager-ref";
 
 // ---------------------------------------------------------------------------
 // Settings persistence
@@ -234,14 +234,13 @@ export function registerWhatsAppIpc(window: BrowserWindow): void {
     },
   );
 
-  // Auto-connect if we have saved auth credentials and a trusted phone set.
-  // Runs after a short delay to let the Manager session initialise first.
+  // Auto-connect once the Manager session is ready (event-driven, no fixed delay).
   if (hasAuthCredentials() && loadSettings().trustedPhone) {
-    setTimeout(() => {
+    onManagerReady(() => {
       connectGateway().catch((err) =>
         console.error("[whatsapp] auto-connect failed:", err),
       );
-    }, 3000);
+    });
   }
 }
 
