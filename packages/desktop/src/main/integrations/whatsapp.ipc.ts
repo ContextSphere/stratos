@@ -107,7 +107,6 @@ type WaStatus = "connected" | "disconnected" | "qr";
 let status: WaStatus = "disconnected";
 let currentQr: string | null = null;
 let win: BrowserWindow | null = null;
-let lastGatewayJid: string | null = null;
 const statusListeners: Array<(s: WaStatus) => void> = [];
 
 export function getWhatsAppStatus(): WaStatus {
@@ -166,22 +165,22 @@ export async function connectGateway(): Promise<{
             throw new Error("Manager not ready");
           }
           if (manager.isActive) {
-            writeGatewayLog("[ipc] manager is busy");
-            throw new Error("Manager is busy");
+            writeGatewayLog("[ipc] manager is busy — queuing message");
+          } else {
+            writeGatewayLog("[ipc] forwarding to manager");
           }
-          writeGatewayLog("[ipc] forwarding to manager");
-          lastGatewayJid = from;
-          // Register a forward function so async child-completion
-          // notifications are also delivered to this sender's JID.
-          manager.setNotificationForward((replyText) =>
-            sendProactiveWhatsApp(from, replyText),
-          );
           return new Promise<string>((resolve, reject) => {
             manager
-              .sendFromGateway(text, (reply) => {
-                writeGatewayLog(`[ipc] manager replied: ${reply.slice(0, 60)}`);
-                resolve(reply);
-              })
+              .sendFromGateway(
+                text,
+                (reply) => {
+                  writeGatewayLog(
+                    `[ipc] manager replied: ${reply.slice(0, 60)}`,
+                  );
+                  resolve(reply);
+                },
+                (replyText) => sendProactiveWhatsApp(from, replyText),
+              )
               .catch(reject);
           });
         },
@@ -218,7 +217,6 @@ export function registerWhatsAppIpc(window: BrowserWindow): void {
     stopGateway();
     status = "disconnected";
     currentQr = null;
-    lastGatewayJid = null;
     getManagerRef()?.setNotificationForward(null);
     emit(IPC_CHANNELS.WHATSAPP_STATUS, "disconnected");
     statusListeners.forEach((cb) => cb("disconnected"));

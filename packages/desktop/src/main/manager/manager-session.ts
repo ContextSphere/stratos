@@ -120,6 +120,11 @@ export class ManagerSession {
   private notificationForwardFn: ((text: string) => Promise<void>) | null =
     null;
   private notificationQueue: Array<{ prompt: string }> = [];
+  private inboundGatewayQueue: Array<{
+    prompt: string;
+    onReply: (r: string) => void;
+    forwardFn: ((text: string) => Promise<void>) | null;
+  }> = [];
   private completionUnsub?: () => void;
   private isNotificationInFlight = false;
   private notificationBackoffUntil = 0;
@@ -384,6 +389,9 @@ export class ManagerSession {
       // Any child-completion notifications that queued up while this turn
       // was active now get a chance to run.
       this.drainNotificationQueue();
+      // Any inbound WhatsApp messages that arrived while the manager was busy
+      // are processed one at a time in arrival order.
+      this.drainInboundQueue();
     }
   }
 
@@ -414,11 +422,33 @@ export class ManagerSession {
   /**
    * Route a message from the WhatsApp gateway into the Manager.
    * Calls onReply when the Manager finishes producing a response.
+   *
+   * If a turn is already active the message is pushed onto inboundGatewayQueue
+   * and processed once the current turn finishes — the caller's onReply is
+   * invoked when the queued turn eventually completes.
    */
   async sendFromGateway(
     prompt: string,
     onReply: (reply: string) => void,
+    forwardFn?: (text: string) => Promise<void>,
   ): Promise<void> {
+    if (this.activeStream) {
+      const MAX_INBOUND_QUEUE = 20;
+      if (this.inboundGatewayQueue.length >= MAX_INBOUND_QUEUE) {
+        // Drop oldest to bound memory growth.
+        const dropped = this.inboundGatewayQueue.shift();
+        console.warn(
+          `[manager-session] inbound gateway queue full (${MAX_INBOUND_QUEUE}), dropped oldest message: ${dropped?.prompt.slice(0, 60)}`,
+        );
+      }
+      this.inboundGatewayQueue.push({
+        prompt,
+        onReply,
+        forwardFn: forwardFn ?? null,
+      });
+      return;
+    }
+    if (forwardFn) this.notificationForwardFn = forwardFn;
     this.gatewayReplyFn = onReply;
     await this.send(prompt);
   }
@@ -466,6 +496,7 @@ export class ManagerSession {
     this.provider = null;
     this.sessionId = undefined;
     this.notificationQueue = [];
+    this.inboundGatewayQueue = [];
     this.isNotificationInFlight = false;
     this.notificationBackoffUntil = 0;
     this.currentProvider = provider;
@@ -579,6 +610,24 @@ export class ManagerSession {
             setImmediate(() => this.drainNotificationQueue());
           }
         });
+    });
+  }
+
+  private drainInboundQueue(): void {
+    if (this.activeStream || this.inboundGatewayQueue.length === 0) return;
+    const next = this.inboundGatewayQueue.shift()!;
+    if (next.forwardFn) this.notificationForwardFn = next.forwardFn;
+    this.gatewayReplyFn = next.onReply;
+    setImmediate(() => {
+      this.send(next.prompt).catch((err) => {
+        console.error(
+          "[manager-session] failed to process queued inbound gateway message:",
+          err,
+        );
+        // Deliver a fallback reply so the caller's Promise resolves and the
+        // WhatsApp user isn't left with a hanging "typing…" indicator.
+        next.onReply("Stratos encountered an error processing your message.");
+      });
     });
   }
 
