@@ -6,13 +6,20 @@ import { join } from "path";
 import { homedir } from "os";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
 import type { AgentManager } from "../agent-manager";
-import type { ScheduledPrompt } from "@stratosapp/core";
+import type {
+  ScheduledPrompt,
+  ScheduleRunRecord,
+  Folder,
+} from "@stratosapp/core";
 import {
   loadScheduledPrompts,
   updateScheduledPrompt,
   FileStorageAdapter,
   scheduleToCron,
 } from "@stratosapp/core";
+import type { ManagerSession } from "../manager/manager-session";
+import { consumeReport, clearReport } from "./schedule-report-store";
+import { decoratePromptWithSchedule } from "./decorate-prompt";
 
 export class SchedulerManager {
   private tasks = new Map<string, ScheduledTask>();
@@ -21,6 +28,7 @@ export class SchedulerManager {
   private storage: FileStorageAdapter;
   private window: BrowserWindow;
   private fileWatcher: FSWatcher | null = null;
+  private managerSession: ManagerSession | null = null;
 
   constructor(
     agentManager: AgentManager,
@@ -30,6 +38,15 @@ export class SchedulerManager {
     this.agentManager = agentManager;
     this.storage = storage;
     this.window = window;
+  }
+
+  /**
+   * Wire the ManagerSession reference. Done after both have been constructed
+   * since ManagerSession is initialized after SchedulerManager in main/index.ts.
+   * Required for routeToManager schedules and for completion notifications.
+   */
+  setManagerSession(managerSession: ManagerSession): void {
+    this.managerSession = managerSession;
   }
 
   /** Load all enabled schedules from disk and start the file watcher. */
@@ -99,7 +116,23 @@ export class SchedulerManager {
       return null;
     }
 
-    // Create thread
+    if (prompt.routeToManager) {
+      return this.executeViaManager(prompt, folder);
+    }
+    return this.executeDirect(prompt, folder);
+  }
+
+  /**
+   * Default execution path: scheduler creates the thread itself and runs the
+   * prompt directly via AgentManager. Manager is notified on completion via
+   * a lightweight record (success) or a real LLM turn (failure).
+   */
+  private async executeDirect(
+    prompt: ScheduledPrompt,
+    folder: Folder,
+  ): Promise<string | null> {
+    const startedAt = Date.now();
+
     const now = new Date();
     const dateStr = now.toLocaleString(undefined, {
       month: "short",
@@ -115,46 +148,47 @@ export class SchedulerManager {
       prompt.provider,
     );
 
-    // Set scheduledPromptId and mode on the thread
     this.storage.updateThread(thread.id, {
       scheduledPromptId: prompt.id,
       mode: "bypassPermissions",
     });
 
-    // Update run status
     updateScheduledPrompt(prompt.id, {
-      lastRunAt: Date.now(),
+      lastRunAt: startedAt,
       lastRunThreadId: thread.id,
       lastRunStatus: "running",
     });
     this.notifyChanged();
 
-    // Execute in background
+    // Make sure no stale summary from a prior run is consumed by this one.
+    clearReport(prompt.id);
+
+    const decoratedPrompt = this.decoratePromptWithContext(prompt, folder);
+
     this.agentManager
-      .runScheduledPrompt(thread.id, prompt.prompt)
+      .runScheduledPrompt(thread.id, decoratedPrompt)
       .then(() => {
         updateScheduledPrompt(prompt.id, { lastRunStatus: "completed" });
         this.notifyChanged();
-        this.notifyRunFinished(prompt, thread.id, "completed");
+        this.finalizeRun(prompt, folder, thread.id, startedAt, "completed");
       })
       .catch((err) => {
-        updateScheduledPrompt(prompt.id, {
-          lastRunStatus: "error",
-        });
+        updateScheduledPrompt(prompt.id, { lastRunStatus: "error" });
         this.notifyChanged();
         console.error(
           `[scheduler] Error executing scheduled prompt ${prompt.id}:`,
           err,
         );
-        this.notifyRunFinished(
+        this.finalizeRun(
           prompt,
+          folder,
           thread.id,
+          startedAt,
           "error",
           err instanceof Error ? err.message : String(err),
         );
       });
 
-    // For one-time schedules, auto-disable after execution
     if (prompt.schedule.type === "once") {
       updateScheduledPrompt(prompt.id, { enabled: false });
       this.unschedulePrompt(prompt.id);
@@ -162,6 +196,131 @@ export class SchedulerManager {
     }
 
     return thread.id;
+  }
+
+  /**
+   * routeToManager execution path: scheduler hands the prompt off to the
+   * Manager, which decides how to dispatch (typically by calling create_session
+   * with the schedule context). When the Manager-spawned child completes,
+   * ManagerSession invokes the callback registered here so we can update
+   * bookkeeping. We do NOT create the thread ourselves — Manager owns that.
+   */
+  private async executeViaManager(
+    prompt: ScheduledPrompt,
+    folder: Folder,
+  ): Promise<string | null> {
+    if (!this.managerSession) {
+      console.error(
+        `[scheduler] routeToManager schedule ${prompt.id} fired before ManagerSession was wired; falling back to direct execution`,
+      );
+      return this.executeDirect(prompt, folder);
+    }
+
+    const startedAt = Date.now();
+
+    updateScheduledPrompt(prompt.id, {
+      lastRunAt: startedAt,
+      lastRunStatus: "running",
+    });
+    this.notifyChanged();
+
+    clearReport(prompt.id);
+
+    this.managerSession.sendFromScheduler(
+      prompt,
+      folder.path,
+      (status, errorMessage) => {
+        updateScheduledPrompt(prompt.id, { lastRunStatus: status });
+        this.notifyChanged();
+        // We don't know the threadId — Manager spawned it. Look it up from
+        // storage by scheduledPromptId. Best-effort; fall back to "" if not
+        // found (record still useful with workspace + summary).
+        const threads = this.storage.listThreads();
+        const childThread = [...threads]
+          .reverse()
+          .find(
+            (t) =>
+              t.scheduledPromptId === prompt.id && t.spawnedBy === "manager",
+          );
+        const threadId = childThread?.id ?? "";
+        if (threadId) {
+          updateScheduledPrompt(prompt.id, { lastRunThreadId: threadId });
+        }
+        this.finalizeRun(
+          prompt,
+          folder,
+          threadId,
+          startedAt,
+          status,
+          errorMessage,
+        );
+      },
+    );
+
+    if (prompt.schedule.type === "once") {
+      updateScheduledPrompt(prompt.id, { enabled: false });
+      this.unschedulePrompt(prompt.id);
+      this.notifyChanged();
+    }
+
+    // No threadId yet — Manager hasn't spawned it.
+    return null;
+  }
+
+  /**
+   * Append the [SCHEDULED TASK] context block to the prompt so the agent has
+   * the scheduleId it needs for schedule_report and knows it's running in
+   * scheduled mode. Delegates to the shared builder so the routed path
+   * (create_session MCP tool) can produce the same postscript.
+   */
+  private decoratePromptWithContext(
+    prompt: ScheduledPrompt,
+    folder: Folder,
+  ): string {
+    return decoratePromptWithSchedule({
+      promptText: prompt.prompt,
+      prompt,
+      workspace: folder.path,
+    });
+  }
+
+  /**
+   * Always called when a scheduled run finishes (either path). Builds a
+   * ScheduleRunRecord with any agent-deposited summary and routes it to the
+   * Manager — lightweight record for success, real LLM turn for failure.
+   */
+  private finalizeRun(
+    prompt: ScheduledPrompt,
+    folder: Folder,
+    threadId: string,
+    startedAt: number,
+    status: "completed" | "error",
+    errorMessage?: string,
+  ): void {
+    const completedAt = Date.now();
+    const pending = consumeReport(prompt.id);
+    const record: ScheduleRunRecord = {
+      scheduleId: prompt.id,
+      scheduleName: prompt.name,
+      threadId,
+      workspace: folder.path,
+      provider: prompt.provider,
+      status,
+      ...(pending?.summary ? { summary: pending.summary } : {}),
+      durationMs: completedAt - startedAt,
+      ...(errorMessage ? { errorMessage } : {}),
+      startedAt,
+      completedAt,
+    };
+
+    if (this.managerSession) {
+      this.managerSession.recordScheduleRun(record);
+      if (status === "error") {
+        this.managerSession.reportScheduleFailure(record);
+      }
+    }
+
+    this.notifyRunFinished(prompt, threadId, status, errorMessage);
   }
 
   /** Reschedule all prompts (call after CRUD changes). */

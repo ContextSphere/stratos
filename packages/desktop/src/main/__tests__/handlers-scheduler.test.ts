@@ -45,7 +45,7 @@ describe("scheduler handlers", () => {
     if (existsSync(tmp)) rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("produces exactly 6 tools with the expected names", () => {
+  it("produces exactly 8 tools with the expected names", () => {
     const defs = createSchedulerHandlers({ storage: makeStorage([]) });
     expect(defs.map((d) => d.name).sort()).toEqual([
       "schedule_create",
@@ -54,6 +54,8 @@ describe("scheduler handlers", () => {
       "schedule_enable",
       "schedule_folders",
       "schedule_list",
+      "schedule_report",
+      "schedule_runs",
     ]);
   });
 

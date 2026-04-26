@@ -7,10 +7,12 @@ import {
   addScheduledPrompt,
   deleteScheduledPrompt,
   updateScheduledPrompt,
+  listScheduleRuns,
   FileStorageAdapter,
 } from "@stratosapp/core";
 import type { ScheduledPrompt } from "@stratosapp/core";
 import { type HandlerDef, defineHandler, textResult } from "./types";
+import { depositReport } from "../../scheduler/schedule-report-store";
 
 function buildSchedule(args: {
   once?: string;
@@ -47,7 +49,7 @@ export function createSchedulerHandlers(deps: SchedulerDeps): HandlerDef[] {
     defineHandler({
       name: "schedule_create",
       description:
-        "Create a new scheduled prompt that runs automatically in Stratos. Call schedule_folders first to get a valid folder name or path.",
+        "Create a new scheduled prompt that runs automatically in Stratos. Call schedule_folders first to get a valid folder name or path. To have the Manager dispatch the run instead of executing it directly, set routeToManager=true — but only if the work genuinely benefits from Manager orchestration (conflict checks, batching). When routeToManager is true, the prompt MUST be fully self-describing — include all relevant context, goals, and constraints inline. Do not reference 'earlier discussion', 'the analysis above', or any prior session state, since the Manager's history at fire time will not contain it.",
       inputSchema: {
         name: z.string().describe("Human-readable schedule name"),
         prompt: z.string().describe("Prompt text to run on each execution"),
@@ -104,6 +106,12 @@ export function createSchedulerHandlers(deps: SchedulerDeps): HandlerDef[] {
           .describe(
             "Day of week for weekly schedules (0=Sun … 6=Sat, default: 1=Mon)",
           ),
+        routeToManager: z
+          .boolean()
+          .optional()
+          .describe(
+            "If true, the schedule fires by posting to the Manager (which then dispatches a session) instead of running the prompt directly. Use only when Manager intelligence is needed (conflict checks, batching, contextual rewriting). Default: false. When true, the prompt must be fully self-describing.",
+          ),
       },
       handler: async (args) => {
         const folders = storage.listFolders();
@@ -135,6 +143,7 @@ export function createSchedulerHandlers(deps: SchedulerDeps): HandlerDef[] {
           schedule,
           enabled: true,
           ...(args.model ? { model: args.model } : {}),
+          ...(args.routeToManager ? { routeToManager: true } : {}),
         } as Omit<ScheduledPrompt, "id" | "createdAt">);
         return textResult(JSON.stringify(entry, null, 2));
       },
@@ -162,12 +171,40 @@ export function createSchedulerHandlers(deps: SchedulerDeps): HandlerDef[] {
             schedule: sched,
             folder: folder?.name ?? "?",
             provider: p.provider,
+            routeToManager: p.routeToManager ?? false,
             lastRunAt: p.lastRunAt ?? null,
             lastRunStatus: p.lastRunStatus ?? null,
           };
         });
         return textResult(
           list.length ? JSON.stringify(list, null, 2) : "No scheduled prompts.",
+        );
+      },
+    }),
+    defineHandler({
+      name: "schedule_runs",
+      description:
+        "Query the log of past scheduled-prompt run completions (newest first). Includes status, agent-authored summary (if filed), duration, and error message. Use this to check what scheduled tasks have completed recently and what they reported.",
+      inputSchema: {
+        scheduleId: z
+          .string()
+          .optional()
+          .describe("Filter to runs of a specific schedule"),
+        limit: z
+          .number()
+          .optional()
+          .describe("Max records to return (default: 20, max: 100)"),
+      },
+      handler: async (args) => {
+        const limit = Math.min(Math.max(args.limit ?? 20, 1), 100);
+        const runs = listScheduleRuns({
+          ...(args.scheduleId ? { scheduleId: args.scheduleId } : {}),
+          limit,
+        });
+        return textResult(
+          runs.length
+            ? JSON.stringify(runs, null, 2)
+            : "No scheduled-prompt runs recorded yet.",
         );
       },
     }),
@@ -209,6 +246,27 @@ export function createSchedulerHandlers(deps: SchedulerDeps): HandlerDef[] {
         return updated
           ? textResult(`Disabled schedule: ${args.id}`)
           : textResult(`Not found: ${args.id}`, true);
+      },
+    }),
+    defineHandler({
+      name: "schedule_report",
+      description:
+        "Deposit a concise summary of a scheduled task run. Call this at the end of a scheduled run with the scheduleId from the [SCHEDULED TASK] context block. The summary is forwarded to the Manager when the run completes. This tool only stores data — it has no other side effects.",
+      inputSchema: {
+        scheduleId: z
+          .string()
+          .describe(
+            "The scheduleId from the [SCHEDULED TASK] context block in your prompt.",
+          ),
+        summary: z
+          .string()
+          .describe(
+            "1-3 sentence summary of what you accomplished, found, or changed.",
+          ),
+      },
+      handler: async (args) => {
+        depositReport(args.scheduleId, args.summary);
+        return textResult(JSON.stringify({ status: "recorded" }, null, 2));
       },
     }),
     defineHandler({

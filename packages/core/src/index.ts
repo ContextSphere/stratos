@@ -19,6 +19,7 @@ export type {
   ScheduleConfig,
   ScheduleType,
   RecurringInterval,
+  ScheduleRunRecord,
 } from "./types/scheduled-prompt";
 export { scheduleToCron, scheduleToHuman } from "./types/scheduled-prompt";
 export { normalizeMode } from "./types/thread";
@@ -70,6 +71,11 @@ export {
   deleteScheduledPrompt,
   getScheduledPrompt,
 } from "./storage/scheduled-prompts.store";
+export {
+  loadScheduleRuns,
+  appendScheduleRun,
+  listScheduleRuns,
+} from "./storage/schedule-runs.store";
 
 // Utils
 export type { WorktreeInfo } from "./utils/worktree";

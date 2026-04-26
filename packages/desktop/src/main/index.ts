@@ -285,6 +285,12 @@ if (!gotLock) {
     agentManager.setManagerMcpStatusProvider(() =>
       managerSession!.getMcpServerStatus(),
     );
+
+    // Cross-wire scheduler ↔ manager. SchedulerManager needs ManagerSession to
+    // forward run notifications and to dispatch routeToManager schedules. The
+    // wiring is post-construction since ManagerSession is a singleton
+    // initialized after SchedulerManager.
+    schedulerManager.setManagerSession(managerSession);
   }
 
   app.on("web-contents-created", (_event, contents) => {
