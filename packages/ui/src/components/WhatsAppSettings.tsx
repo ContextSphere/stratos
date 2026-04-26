@@ -444,9 +444,6 @@ export function WhatsAppSettings(): React.ReactElement {
   const [trustedPhone, setTrustedPhone] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [logsOpen, setLogsOpen] = useState(false);
-  const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!bridge) return;
@@ -457,19 +454,11 @@ export function WhatsAppSettings(): React.ReactElement {
     });
     const unStatus = bridge.onStatus(setStatus);
     const unQr = bridge.onQr((q) => setQr(q));
-    const unLog = bridge.onLog((line) =>
-      setLogs((prev) => [...prev.slice(-199), line]),
-    );
     return () => {
       unStatus();
       unQr();
-      unLog();
     };
   }, [bridge]);
-
-  useEffect(() => {
-    if (logsOpen) logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs, logsOpen]);
 
   useEffect(() => {
     if (!qr) {
@@ -569,70 +558,6 @@ export function WhatsAppSettings(): React.ReactElement {
           phone={trustedPhone}
           onSave={handleTrustedPhoneSave}
         />
-      </div>
-
-      {/* Gateway log */}
-      <div
-        className="rounded-xl"
-        style={{
-          background: "var(--bg-surface)",
-          border: "1px solid var(--border)",
-          overflow: "hidden",
-        }}
-      >
-        <button
-          onClick={() => setLogsOpen((o) => !o)}
-          className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold uppercase tracking-wider"
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--text-muted)",
-          }}
-        >
-          <span>Gateway Log</span>
-          <span style={{ fontSize: 10, opacity: 0.7 }}>
-            {logsOpen ? "▲" : "▼"} {logs.length} lines
-          </span>
-        </button>
-        {logsOpen && (
-          <div
-            style={{
-              maxHeight: 160,
-              overflowY: "auto",
-              borderTop: "1px solid var(--border)",
-              padding: "8px 12px",
-              background: "var(--bg-root)",
-            }}
-          >
-            {logs.length === 0 ? (
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                No log entries yet. Send a WhatsApp message to see activity.
-              </span>
-            ) : (
-              logs.map((line, i) => (
-                <div
-                  key={i}
-                  className="text-xs font-mono"
-                  style={{
-                    color:
-                      line.includes("error") || line.includes("blocked")
-                        ? "#f87171"
-                        : line.includes("replied") || line.includes("connected")
-                          ? WA_GREEN
-                          : "var(--text-muted)",
-                    lineHeight: 1.6,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-all",
-                  }}
-                >
-                  {line}
-                </div>
-              ))
-            )}
-            <div ref={logsEndRef} />
-          </div>
-        )}
       </div>
     </div>
   );

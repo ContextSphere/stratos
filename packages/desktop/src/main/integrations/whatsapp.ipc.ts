@@ -1,6 +1,14 @@
 import { BrowserWindow, ipcMain, app } from "electron";
 import { join } from "path";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  statSync,
+  renameSync,
+  appendFileSync,
+} from "fs";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
 import {
   startGateway,
@@ -50,6 +58,34 @@ function authDir(): string {
   const dir = join(app.getPath("userData"), "whatsapp-auth");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+// ---------------------------------------------------------------------------
+// File-based gateway log with rotation (max 2 × 5 MB)
+// ---------------------------------------------------------------------------
+
+const LOG_MAX_BYTES = 5 * 1024 * 1024;
+
+export function gatewayLogPath(): string {
+  const dir = join(app.getPath("userData"), "logs");
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  return join(dir, "gateway.log");
+}
+
+function writeGatewayLog(line: string): void {
+  const filePath = gatewayLogPath();
+  try {
+    if (existsSync(filePath) && statSync(filePath).size > LOG_MAX_BYTES) {
+      renameSync(filePath, filePath + ".1");
+    }
+    appendFileSync(
+      filePath,
+      `[${new Date().toISOString()}] ${line}\n`,
+      "utf-8",
+    );
+  } catch {
+    // Non-fatal — never crash the gateway over logging
+  }
 }
 
 function hasAuthCredentials(): boolean {
@@ -120,23 +156,20 @@ export async function connectGateway(): Promise<{
           statusListeners.forEach((cb) => cb(s));
         },
         onLog(line) {
-          emit(IPC_CHANNELS.WHATSAPP_LOG, line);
+          writeGatewayLog(line);
         },
         async onMessage(from, text) {
-          emit(
-            IPC_CHANNELS.WHATSAPP_LOG,
-            `[ipc] message from ${from}: ${text.slice(0, 60)}`,
-          );
+          writeGatewayLog(`[ipc] message from ${from}: ${text.slice(0, 60)}`);
           const manager = getManagerRef();
           if (!manager) {
-            emit(IPC_CHANNELS.WHATSAPP_LOG, "[ipc] manager ref not ready");
+            writeGatewayLog("[ipc] manager ref not ready");
             throw new Error("Manager not ready");
           }
           if (manager.isActive) {
-            emit(IPC_CHANNELS.WHATSAPP_LOG, "[ipc] manager is busy");
+            writeGatewayLog("[ipc] manager is busy");
             throw new Error("Manager is busy");
           }
-          emit(IPC_CHANNELS.WHATSAPP_LOG, "[ipc] forwarding to manager");
+          writeGatewayLog("[ipc] forwarding to manager");
           lastGatewayJid = from;
           // Register a forward function so async child-completion
           // notifications are also delivered to this sender's JID.
@@ -146,10 +179,7 @@ export async function connectGateway(): Promise<{
           return new Promise<string>((resolve, reject) => {
             manager
               .sendFromGateway(text, (reply) => {
-                emit(
-                  IPC_CHANNELS.WHATSAPP_LOG,
-                  `[ipc] manager replied: ${reply.slice(0, 60)}`,
-                );
+                writeGatewayLog(`[ipc] manager replied: ${reply.slice(0, 60)}`);
                 resolve(reply);
               })
               .catch(reject);

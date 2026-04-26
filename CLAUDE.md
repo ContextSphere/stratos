@@ -1,5 +1,22 @@
 # CLAUDE.md — Stratos
 
+## WhatsApp Gateway Log
+
+Gateway activity (connections, messages, errors) is written to a rotating log file — **not** shown in the UI.
+
+| Environment     | Path                                                     |
+| --------------- | -------------------------------------------------------- |
+| Dev (worktree)  | `~/.stratos/instances/<hash>/logs/gateway.log`           |
+| Packaged / prod | `~/Library/Application Support/Stratos/logs/gateway.log` |
+
+Rotation: file is renamed to `gateway.log.1` when it exceeds 5 MB; only one backup is kept.
+
+To tail live during development:
+
+```bash
+tail -f ~/.stratos/instances/$(ls ~/.stratos/instances/)/logs/gateway.log
+```
+
 ## Quick Start
 
 ```bash
