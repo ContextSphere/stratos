@@ -135,6 +135,7 @@ export class ManagerSession {
   private mode: "remote" | "local" = "remote";
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+  private static readonly MAX_NOTIFICATION_QUEUE = 5;
 
   private constructor(
     agentManager: AgentManager,
@@ -543,6 +544,14 @@ export class ManagerSession {
       `Use mcp__stratos__get_session with includeTranscript=true to fetch the result, then give the user a concise 2–3 sentence summary of what the agent did and any notable output. If the session errored, say so.`,
     ].join("\n");
 
+    if (
+      this.notificationQueue.length >= ManagerSession.MAX_NOTIFICATION_QUEUE
+    ) {
+      console.warn(
+        `[manager-session] notification queue full (${ManagerSession.MAX_NOTIFICATION_QUEUE}), dropping completion for "${title}"`,
+      );
+      return;
+    }
     this.notificationQueue.push({ prompt: directive });
     this.drainNotificationQueue();
   }
