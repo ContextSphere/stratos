@@ -469,6 +469,13 @@ export class ManagerSession {
     this.isNotificationInFlight = false;
     this.notificationBackoffUntil = 0;
     this.currentProvider = provider;
+    this.gatewayReplyFn = null;
+    this.notificationForwardFn = null;
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+    this.mode = "remote";
 
     // 2. Wipe persisted state that belongs to the old provider.
     //    clearPersistedSessionId removes thread.sessionId so loadMessages
