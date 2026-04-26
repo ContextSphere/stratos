@@ -16,6 +16,7 @@ export interface GatewayCallbacks {
   onStatus(status: "connected" | "disconnected"): void;
   onLog(line: string): void;
   onMessage(from: string, text: string): Promise<string>;
+  onLoggedOut?(): void;
 }
 
 let stopped = false;
@@ -51,6 +52,11 @@ export async function startGateway(
       onQr: callbacks.onQr,
       onStatus: callbacks.onStatus,
       onLog: callbacks.onLog,
+      onLoggedOut() {
+        stopped = true;
+        stopWhatsAppClient();
+        callbacks.onLoggedOut?.();
+      },
     },
     () => stopped,
   );

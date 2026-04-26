@@ -17,6 +17,7 @@ export interface WhatsAppCallbacks {
   onQr(qr: string): void;
   onStatus(status: "connected" | "disconnected"): void;
   onLog(line: string): void;
+  onLoggedOut?(): void;
 }
 
 let currentSock: WASocket | null = null;
@@ -102,6 +103,8 @@ export async function startWhatsApp(
           callbacks.onLog(
             "[whatsapp] logged out — delete auth and reconnect to re-pair",
           );
+          currentSock = null;
+          callbacks.onLoggedOut?.();
         } else if (!stopped()) {
           callbacks.onLog(
             `[whatsapp] disconnected (${code}), reconnecting in 5s…`,

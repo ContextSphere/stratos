@@ -158,6 +158,14 @@ export async function connectGateway(): Promise<{
         onLog(line) {
           writeGatewayLog(line);
         },
+        onLoggedOut() {
+          status = "disconnected";
+          currentQr = null;
+          lastGatewayJid = null;
+          getManagerRef()?.setNotificationForward(null);
+          emit(IPC_CHANNELS.WHATSAPP_STATUS, "disconnected");
+          statusListeners.forEach((cb) => cb("disconnected"));
+        },
         async onMessage(from, text) {
           writeGatewayLog(`[ipc] message from ${from}: ${text.slice(0, 60)}`);
           const manager = getManagerRef();
