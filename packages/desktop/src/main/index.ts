@@ -61,6 +61,9 @@ import { registerCodexIpc, unregisterCodexIpc } from "./integrations/codex.ipc";
 import {
   registerWhatsAppIpc,
   unregisterWhatsAppIpc,
+  getWhatsAppStatus,
+  onWhatsAppStatusChange,
+  connectGateway,
 } from "./integrations/whatsapp.ipc";
 import {
   registerDirectoryIpc,
@@ -314,8 +317,16 @@ if (!gotLock) {
       tray = new Tray(trayIcon);
       tray.setToolTip(worktree ? `Stratos — ${worktree.name}` : "Stratos");
 
-      const buildMenu = () =>
-        Menu.buildFromTemplate([
+      const rebuildMenu = () => {
+        const waStatus = getWhatsAppStatus();
+        const waLabel =
+          waStatus === "connected"
+            ? "● WhatsApp Connected"
+            : waStatus === "qr"
+              ? "◌ WhatsApp — scan QR…"
+              : "○ WhatsApp Disconnected";
+
+        const items: Electron.MenuItemConstructorOptions[] = [
           {
             label: "Show Stratos",
             click: () => {
@@ -330,10 +341,21 @@ if (!gotLock) {
             },
           },
           { type: "separator" },
+          { label: waLabel, enabled: false },
+          ...(waStatus === "disconnected"
+            ? [
+                {
+                  label: "Connect WhatsApp",
+                  click: () => {
+                    connectGateway().catch(console.error);
+                  },
+                } as Electron.MenuItemConstructorOptions,
+              ]
+            : []),
+          { type: "separator" },
           {
             label: "Quit Stratos",
             click: () => {
-              // Full teardown before quitting
               managerSession?.dispose();
               schedulerManager?.dispose();
               agentManager?.dispose();
@@ -356,9 +378,13 @@ if (!gotLock) {
               app.quit();
             },
           },
-        ]);
+        ];
 
-      tray.setContextMenu(buildMenu());
+        tray!.setContextMenu(Menu.buildFromTemplate(items));
+      };
+
+      rebuildMenu();
+      onWhatsAppStatusChange(() => rebuildMenu());
       // Double-click / left-click on macOS shows the window
       tray.on("double-click", () => {
         if (mainWindow) {

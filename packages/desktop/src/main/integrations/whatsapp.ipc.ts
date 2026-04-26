@@ -72,6 +72,19 @@ let status: WaStatus = "disconnected";
 let currentQr: string | null = null;
 let win: BrowserWindow | null = null;
 let lastGatewayJid: string | null = null;
+const statusListeners: Array<(s: WaStatus) => void> = [];
+
+export function getWhatsAppStatus(): WaStatus {
+  return status;
+}
+
+export function onWhatsAppStatusChange(cb: (s: WaStatus) => void): () => void {
+  statusListeners.push(cb);
+  return () => {
+    const i = statusListeners.indexOf(cb);
+    if (i >= 0) statusListeners.splice(i, 1);
+  };
+}
 
 function emit(channel: string, payload?: unknown) {
   win?.webContents.send(channel, payload);
@@ -81,7 +94,10 @@ function emit(channel: string, payload?: unknown) {
 // Core connect logic (shared by auto-connect and manual IPC)
 // ---------------------------------------------------------------------------
 
-async function connectGateway(): Promise<{ ok: boolean; error?: string }> {
+export async function connectGateway(): Promise<{
+  ok: boolean;
+  error?: string;
+}> {
   if (status === "connected") return { ok: true };
   const settings = loadSettings();
   try {
@@ -101,6 +117,7 @@ async function connectGateway(): Promise<{ ok: boolean; error?: string }> {
           status = s;
           if (s !== "qr") currentQr = null;
           emit(IPC_CHANNELS.WHATSAPP_STATUS, s);
+          statusListeners.forEach((cb) => cb(s));
         },
         onLog(line) {
           emit(IPC_CHANNELS.WHATSAPP_LOG, line);
@@ -174,6 +191,7 @@ export function registerWhatsAppIpc(window: BrowserWindow): void {
     lastGatewayJid = null;
     getManagerRef()?.setNotificationForward(null);
     emit(IPC_CHANNELS.WHATSAPP_STATUS, "disconnected");
+    statusListeners.forEach((cb) => cb("disconnected"));
     return { ok: true };
   });
 
