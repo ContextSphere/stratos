@@ -373,6 +373,7 @@ if (!gotLock) {
               unregisterSkillsIpc();
               unregisterFilesIpc();
               unregisterTerminalIpc();
+              unsubWaStatus();
               tray?.destroy();
               tray = null;
               app.quit();
@@ -384,7 +385,7 @@ if (!gotLock) {
       };
 
       rebuildMenu();
-      onWhatsAppStatusChange(() => rebuildMenu());
+      const unsubWaStatus = onWhatsAppStatusChange(() => rebuildMenu());
       // Double-click / left-click on macOS shows the window
       tray.on("double-click", () => {
         if (mainWindow) {
