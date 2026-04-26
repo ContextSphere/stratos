@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain, Notification, shell } from "electron";
 import type { McpElicitationRequest } from "@stratosapp/core";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { mkdirSync, watch, promises as fsPromises } from "fs";
 import type { FSWatcher } from "fs";
 import { join, basename } from "path";
@@ -105,7 +105,7 @@ function buildMcpServers(opts: BuildMcpServersOpts): Record<string, any> {
     try {
       let targetRoot: string;
       try {
-        targetRoot = execSync("git rev-parse --show-toplevel", {
+        targetRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
           cwd,
           encoding: "utf-8",
           timeout: 3000,
@@ -942,7 +942,7 @@ export class AgentManager {
         const worktreeDir = join(homedir(), ".stratos", "worktrees", threadId);
         mkdirSync(worktreeDir, { recursive: true });
 
-        execSync(`git worktree add -b "${branchName}" "${worktreeDir}"`, {
+        execFileSync("git", ["worktree", "add", "-b", branchName, worktreeDir], {
           cwd: thread.cwd,
           encoding: "utf-8",
           timeout: 30000,

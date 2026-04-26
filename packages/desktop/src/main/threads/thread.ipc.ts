@@ -1,7 +1,7 @@
 import { app, ipcMain, BrowserWindow } from "electron";
-import { execSync } from "child_process";
-import { join } from "path";
-import { mkdirSync } from "fs";
+import { execFileSync } from "child_process";
+import { join, isAbsolute } from "path";
+import { mkdirSync, existsSync } from "fs";
 import { homedir } from "os";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
 import { getProviderSettings } from "../settings/settings.store";
@@ -115,7 +115,7 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
     IPC_CHANNELS.CHECK_IS_GIT_REPO,
     async (_event, dirPath: string) => {
       try {
-        execSync("git rev-parse --is-inside-work-tree", {
+        execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
           cwd: dirPath,
           encoding: "utf-8",
           timeout: 3000,
@@ -133,12 +133,17 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
     IPC_CHANNELS.THREADS_CREATE_WORKTREE,
     async (_event, params: { threadId: string; sourceRepoPath: string }) => {
       const { threadId, sourceRepoPath } = params;
+
+      if (!isAbsolute(sourceRepoPath) || !existsSync(sourceRepoPath)) {
+        throw new Error(`Invalid sourceRepoPath: ${sourceRepoPath}`);
+      }
+
       const branchName = `stratos/${threadId}`;
       const worktreeDir = join(homedir(), ".stratos", "worktrees", threadId);
 
       mkdirSync(worktreeDir, { recursive: true });
 
-      execSync(`git worktree add -b "${branchName}" "${worktreeDir}"`, {
+      execFileSync("git", ["worktree", "add", "-b", branchName, worktreeDir], {
         cwd: sourceRepoPath,
         encoding: "utf-8",
         timeout: 30000,
@@ -169,7 +174,7 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
       const { sourceRepoPath, path: worktreePath } = thread.worktree;
 
       try {
-        execSync(`git worktree remove "${worktreePath}" --force`, {
+        execFileSync("git", ["worktree", "remove", worktreePath, "--force"], {
           cwd: sourceRepoPath,
           encoding: "utf-8",
           timeout: 10000,
@@ -220,12 +225,16 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
       const thread = await storage.getThread(threadId);
       if (thread?.worktree) {
         try {
-          execSync(`git worktree remove "${thread.worktree.path}" --force`, {
-            cwd: thread.worktree.sourceRepoPath,
-            encoding: "utf-8",
-            timeout: 10000,
-            stdio: ["pipe", "pipe", "pipe"],
-          });
+          execFileSync(
+            "git",
+            ["worktree", "remove", thread.worktree.path, "--force"],
+            {
+              cwd: thread.worktree.sourceRepoPath,
+              encoding: "utf-8",
+              timeout: 10000,
+              stdio: ["pipe", "pipe", "pipe"],
+            },
+          );
         } catch {
           // Worktree may already be removed
         }
@@ -308,8 +317,9 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
         for (const thread of threads) {
           if (thread.worktree) {
             try {
-              execSync(
-                `git worktree remove "${thread.worktree.path}" --force`,
+              execFileSync(
+                "git",
+                ["worktree", "remove", thread.worktree.path, "--force"],
                 {
                   cwd: thread.worktree.sourceRepoPath,
                   encoding: "utf-8",
