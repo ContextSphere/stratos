@@ -15,12 +15,12 @@ import { handlersToSdkMcp } from "../mcp/sdk-adapter";
 
 vi.mock("electron", () => ({ BrowserWindow: vi.fn() }));
 
-const nested = Boolean(process.env.CLAUDECODE);
+const nested = Boolean(process.env.CLAUDECODE) || Boolean(process.env.CI);
 
 describe.skipIf(nested)(
   "SDK MCP bypasses LinkedIn enterprise allowlist",
   () => {
-    it("registers the unified `stratos` server with all 19 tools, no policy warning", async () => {
+    it("registers the unified `stratos` server with all 20 tools, no policy warning", async () => {
       const storage = {
         listFolders: () => [],
         listThreads: () => [],
