@@ -225,25 +225,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             <TypingIndicator />
           </div>
         )}
-        {!isStreaming && completionStatus && (
-          <div
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs mt-2 ${
-              completionStatus === "completed"
-                ? "bg-emerald-950/50 text-emerald-400 border border-emerald-900/50"
-                : completionStatus === "interrupted"
+        {!isStreaming &&
+          completionStatus &&
+          completionStatus !== "completed" && (
+            <div
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs mt-2 ${
+                completionStatus === "interrupted"
                   ? "bg-yellow-950/50 text-yellow-400 border border-yellow-900/50"
                   : "bg-red-950/50 text-red-400 border border-red-900/50"
-            }`}
-          >
-            <span>
-              {completionStatus === "completed"
-                ? "Session completed — the Manager Agent has been notified."
-                : completionStatus === "interrupted"
+              }`}
+            >
+              <span>
+                {completionStatus === "interrupted"
                   ? "Session interrupted."
-                  : `Session ended with an error${completionError ? `: ${completionError}` : "."}  The Manager Agent has been notified.`}
-            </span>
-          </div>
-        )}
+                  : `Session ended with an error${completionError ? `: ${completionError}` : "."}`}
+              </span>
+            </div>
+          )}
       </div>
       {showScrollButton && (
         <button
