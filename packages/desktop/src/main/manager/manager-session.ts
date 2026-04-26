@@ -216,6 +216,17 @@ export class ManagerSession {
     return this.activeStream;
   }
 
+  get forwardingMode(): "remote" | "local" {
+    return this.mode;
+  }
+
+  /** Immediately switch back to remote mode, cancelling any pending idle timer. */
+  returnToRemote(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+    this.mode = "remote";
+  }
+
   /** MCP server status for the Manager's provider — used by the ToolsPopover. */
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
     if (!this.provider?.getMcpServerStatus) return [];

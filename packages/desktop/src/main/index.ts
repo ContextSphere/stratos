@@ -352,6 +352,21 @@ if (!gotLock) {
                 } as Electron.MenuItemConstructorOptions,
               ]
             : []),
+          ...(waStatus === "connected"
+            ? [
+                {
+                  label:
+                    managerSession?.forwardingMode === "remote"
+                      ? "◉ Forwarding replies to WhatsApp"
+                      : "○ Forward replies to WhatsApp",
+                  enabled: managerSession?.forwardingMode !== "remote",
+                  click: () => {
+                    managerSession?.returnToRemote();
+                    rebuildMenu();
+                  },
+                } as Electron.MenuItemConstructorOptions,
+              ]
+            : []),
           { type: "separator" },
           {
             label: "Quit Stratos",
