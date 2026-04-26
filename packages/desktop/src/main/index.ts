@@ -1,5 +1,13 @@
 import { execFileSync } from "child_process";
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  shell,
+  Tray,
+  Menu,
+  nativeImage,
+} from "electron";
 import { join } from "path";
 
 // Fix PATH and environment for packaged macOS apps
@@ -135,6 +143,7 @@ if (!gotLock) {
   let agentManager: AgentManager | null = null;
   let schedulerManager: SchedulerManager | null = null;
   let managerSession: ManagerSession | null = null;
+  let tray: Tray | null = null;
 
   function createWindow(): void {
     mainWindow = new BrowserWindow({
@@ -156,6 +165,18 @@ if (!gotLock) {
         nodeIntegration: false,
         webviewTag: true,
       },
+    });
+
+    mainWindow.on("close", (e) => {
+      // Hide to tray instead of destroying the window so background services
+      // keep running. The Tray "Quit" menu item does a real quit.
+      if (tray) {
+        e.preventDefault();
+        mainWindow!.hide();
+        if (process.platform === "darwin") {
+          app.dock?.hide();
+        }
+      }
     });
 
     mainWindow.on("ready-to-show", () => {
@@ -268,34 +289,107 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     ensureClaudeCodeThinkingSummaries();
+
+    // Enable auto-launch at login (packaged builds only — dev shouldn't pollute
+    // login items). Idempotent: Electron skips the write if already set.
+    if (!isDev) {
+      app.setLoginItemSettings({ openAtLogin: true });
+    }
+
     if (process.platform === "darwin" && worktree) {
       const isLinked = !statSync(join(worktree.root, ".git")).isDirectory();
       app.dock?.setIcon(generateDockIcon(worktree.hash, isLinked));
     }
+
     createWindow();
+
+    // System tray: keep the app alive and accessible even when the window is
+    // closed. Only create one tray per instance.
+    if (!tray) {
+      const iconPath = isDev
+        ? join(__dirname, "../../../../build/icon.png")
+        : join(process.resourcesPath, "icon.png");
+      let trayIcon = nativeImage.createFromPath(iconPath);
+      // Resize to 16×16 for the menu bar (template image on macOS)
+      if (!trayIcon.isEmpty()) {
+        trayIcon = trayIcon.resize({ width: 16, height: 16 });
+        trayIcon.setTemplateImage(true);
+      } else {
+        trayIcon = nativeImage.createEmpty();
+      }
+      tray = new Tray(trayIcon);
+      tray.setToolTip(worktree ? `Stratos — ${worktree.name}` : "Stratos");
+
+      const buildMenu = () =>
+        Menu.buildFromTemplate([
+          {
+            label: "Show Stratos",
+            click: () => {
+              if (process.platform === "darwin") app.dock?.show();
+              if (mainWindow) {
+                if (mainWindow.isMinimized()) mainWindow.restore();
+                mainWindow.show();
+                mainWindow.focus();
+              } else {
+                createWindow();
+              }
+            },
+          },
+          { type: "separator" },
+          {
+            label: "Quit Stratos",
+            click: () => {
+              // Full teardown before quitting
+              managerSession?.dispose();
+              schedulerManager?.dispose();
+              agentManager?.dispose();
+              ipcMain.removeHandler(IPC_CHANNELS.APP_INFO);
+              ipcMain.removeHandler(IPC_CHANNELS.SHELL_OPEN_EXTERNAL);
+              unregisterManagerIpc();
+              unregisterSchedulerIpc();
+              unregisterThreadIpc();
+              unregisterGitHubIpc();
+              unregisterClaudeIpc();
+              unregisterCodexIpc();
+              unregisterWhatsAppIpc();
+              unregisterDirectoryIpc();
+              unregisterSettingsIpc();
+              unregisterSkillsIpc();
+              unregisterFilesIpc();
+              unregisterTerminalIpc();
+              tray?.destroy();
+              tray = null;
+              app.quit();
+            },
+          },
+        ]);
+
+      tray.setContextMenu(buildMenu());
+      // Double-click / left-click on macOS shows the window
+      tray.on("double-click", () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      });
+    }
+
     app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      // Re-show the window when the dock icon is clicked
+      if (process.platform === "darwin") app.dock?.show();
+      if (mainWindow) {
+        mainWindow.show();
+        mainWindow.focus();
+      } else {
+        createWindow();
+      }
     });
   });
 
   app.on("window-all-closed", () => {
-    managerSession?.dispose();
-    schedulerManager?.dispose();
-    agentManager?.dispose();
-    ipcMain.removeHandler(IPC_CHANNELS.APP_INFO);
-    ipcMain.removeHandler(IPC_CHANNELS.SHELL_OPEN_EXTERNAL);
-    unregisterManagerIpc();
-    unregisterSchedulerIpc();
-    unregisterThreadIpc();
-    unregisterGitHubIpc();
-    unregisterClaudeIpc();
-    unregisterCodexIpc();
-    unregisterWhatsAppIpc();
-    unregisterDirectoryIpc();
-    unregisterSettingsIpc();
-    unregisterSkillsIpc();
-    unregisterFilesIpc();
-    unregisterTerminalIpc();
-    if (process.platform !== "darwin") app.quit();
+    // Hide to tray rather than quitting — keeps the background services
+    // (Manager, WhatsApp gateway, scheduler) running when the user closes
+    // the window. "Quit Stratos" in the tray menu does a real quit.
+    mainWindow = null;
   });
 }

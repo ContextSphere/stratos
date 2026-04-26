@@ -9,17 +9,9 @@ const WA_GREEN_DARK = "#128C7E";
 const E164_RE = /^\+[1-9]\d{7,14}$/;
 const LID_RE = /^\d+@lid$/;
 
-function isValidEntry(v: string): boolean {
+function isValidPhone(v: string): boolean {
   const t = v.trim();
   return E164_RE.test(t) || LID_RE.test(t);
-}
-
-function entryHint(v: string): string {
-  const t = v.trim();
-  if (!t) return "";
-  if (!E164_RE.test(t) && !LID_RE.test(t))
-    return "E.164 phone (+15551234567) or WhatsApp LID (123456@lid)";
-  return "";
 }
 
 function WaIcon({ size = 40 }: { size?: number }) {
@@ -332,166 +324,114 @@ function DisconnectedPanel({
   );
 }
 
-function AllowListEditor({
-  numbers,
+function TrustedPhoneEditor({
+  phone,
   onSave,
 }: {
-  numbers: string[];
-  onSave: (list: string[]) => void;
+  phone: string;
+  onSave: (phone: string) => void;
 }) {
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(phone);
   const [inputError, setInputError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  function validateAndAdd() {
+  // Keep local input in sync when parent state changes (e.g. on mount)
+  useEffect(() => {
+    setInput(phone);
+  }, [phone]);
+
+  function handleSave() {
     const val = input.trim();
-    if (!val) return;
-    if (!isValidEntry(val)) {
-      setInputError("E.164 phone (+15551234567) or WhatsApp LID (123456@lid)");
+    if (!val) {
+      // Allow clearing
+      onSave("");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
       return;
     }
-    if (numbers.includes(val)) {
-      setInputError("Already in the list");
+    if (!isValidPhone(val)) {
+      setInputError("Enter a valid E.164 phone (+15551234567) or WhatsApp LID");
       return;
     }
-    onSave([...numbers, val]);
-    setInput("");
     setInputError(null);
+    onSave(val);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter") {
       e.preventDefault();
-      validateAndAdd();
+      handleSave();
     }
     if (e.key === "Escape") {
-      setInput("");
+      setInput(phone);
       setInputError(null);
     }
   }
 
   function handleInputChange(val: string) {
     setInput(val);
-    const hint = entryHint(val);
-    setInputError(hint || null);
+    if (val.trim() && !isValidPhone(val)) {
+      setInputError("E.164 phone (+15551234567) or WhatsApp LID (123456@lid)");
+    } else {
+      setInputError(null);
+    }
   }
 
-  function remove(num: string) {
-    onSave(numbers.filter((n) => n !== num));
-  }
+  const isDirty = input.trim() !== phone.trim();
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {/* Existing numbers */}
-      {numbers.length === 0 ? (
-        <div
-          className="text-xs text-center py-3 rounded-lg"
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input
+          ref={inputRef}
+          type="tel"
+          value={input}
+          onChange={(e) => handleInputChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="+15551234567"
+          className="text-sm font-mono rounded-lg px-3"
           style={{
-            color: "var(--text-muted)",
+            flex: 1,
+            height: 34,
             background: "var(--bg-root)",
-            border: "1px dashed var(--border)",
+            border: `1px solid ${inputError ? "#ef4444" : "var(--border)"}`,
+            color: "var(--text)",
+            outline: "none",
+          }}
+        />
+        <button
+          onClick={handleSave}
+          disabled={!isDirty && !saved}
+          className="text-sm font-semibold rounded-lg px-3"
+          style={{
+            background: saved
+              ? "#22c55e"
+              : isDirty
+                ? WA_GREEN
+                : "var(--bg-root)",
+            color: saved || isDirty ? "#fff" : "var(--text-muted)",
+            border: `1px solid ${saved ? "#22c55e" : isDirty ? WA_GREEN : "var(--border)"}`,
+            cursor: isDirty ? "pointer" : "default",
+            height: 34,
+            flexShrink: 0,
+            transition: "background 0.2s, color 0.2s",
           }}
         >
-          No numbers added yet
-        </div>
-      ) : (
-        <div
-          className="rounded-lg"
-          style={{
-            border: "1px solid var(--border)",
-            background: "var(--bg-root)",
-            overflow: "hidden",
-          }}
-        >
-          {numbers.map((num, i) => (
-            <div
-              key={num}
-              className="flex items-center justify-between px-3"
-              style={{
-                height: 36,
-                borderTop: i > 0 ? "1px solid var(--border)" : undefined,
-              }}
-            >
-              <span
-                className="text-sm font-mono"
-                style={{ color: "var(--text)" }}
-              >
-                {num}
-              </span>
-              <button
-                onClick={() => remove(num)}
-                title="Remove"
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: "2px 4px",
-                  borderRadius: 4,
-                  color: "var(--text-muted)",
-                  lineHeight: 1,
-                  fontSize: 16,
-                }}
-                onMouseEnter={(e) =>
-                  ((e.currentTarget as HTMLButtonElement).style.color =
-                    "#ef4444")
-                }
-                onMouseLeave={(e) =>
-                  ((e.currentTarget as HTMLButtonElement).style.color =
-                    "var(--text-muted)")
-                }
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Add input */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ display: "flex", gap: 6 }}>
-          <input
-            ref={inputRef}
-            type="tel"
-            value={input}
-            onChange={(e) => handleInputChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="+15551234567 or 136180628725982@lid"
-            className="text-sm font-mono rounded-lg px-3"
-            style={{
-              flex: 1,
-              height: 34,
-              background: "var(--bg-root)",
-              border: `1px solid ${inputError ? "#ef4444" : "var(--border)"}`,
-              color: "var(--text)",
-              outline: "none",
-            }}
-          />
-          <button
-            onClick={validateAndAdd}
-            className="text-sm font-semibold rounded-lg px-3"
-            style={{
-              background: WA_GREEN,
-              color: "#fff",
-              border: "none",
-              cursor: "pointer",
-              height: 34,
-              flexShrink: 0,
-            }}
-          >
-            Add
-          </button>
-        </div>
-        {inputError ? (
-          <span className="text-xs" style={{ color: "#ef4444" }}>
-            {inputError}
-          </span>
-        ) : (
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            E.164 phone or WhatsApp LID (copy from Gateway Log) · Enter to add
-          </span>
-        )}
+          {saved ? "Saved ✓" : "Save"}
+        </button>
       </div>
+      {inputError ? (
+        <span className="text-xs" style={{ color: "#ef4444" }}>
+          {inputError}
+        </span>
+      ) : (
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+          Only messages from this number will be forwarded to the Manager.
+        </span>
+      )}
     </div>
   );
 }
@@ -501,7 +441,7 @@ export function WhatsAppSettings(): React.ReactElement {
   const [status, setStatus] = useState<WhatsAppStatus>("disconnected");
   const [qr, setQr] = useState<string | null>(null);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
-  const [allowList, setAllowList] = useState<string[]>([]);
+  const [trustedPhone, setTrustedPhone] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
@@ -513,7 +453,7 @@ export function WhatsAppSettings(): React.ReactElement {
     bridge.getState().then((s) => {
       setStatus(s.status);
       setQr(s.qr);
-      setAllowList(s.allowList);
+      setTrustedPhone(s.trustedPhone);
     });
     const unStatus = bridge.onStatus(setStatus);
     const unQr = bridge.onQr((q) => setQr(q));
@@ -578,9 +518,9 @@ export function WhatsAppSettings(): React.ReactElement {
     }
   }
 
-  async function handleAllowListSave(list: string[]) {
-    setAllowList(list);
-    await bridge!.saveSettings({ allowList: list }).catch(console.error);
+  async function handleTrustedPhoneSave(phone: string) {
+    setTrustedPhone(phone);
+    await bridge!.saveSettings({ trustedPhone: phone }).catch(console.error);
   }
 
   return (
@@ -606,7 +546,7 @@ export function WhatsAppSettings(): React.ReactElement {
         </div>
       )}
 
-      {/* Allow list */}
+      {/* Trusted phone */}
       <div
         className="rounded-xl"
         style={{
@@ -622,10 +562,13 @@ export function WhatsAppSettings(): React.ReactElement {
           className="text-xs font-semibold uppercase tracking-wider"
           style={{ color: "var(--text-muted)" }}
         >
-          Allow List
+          Trusted Number
         </label>
 
-        <AllowListEditor numbers={allowList} onSave={handleAllowListSave} />
+        <TrustedPhoneEditor
+          phone={trustedPhone}
+          onSave={handleTrustedPhoneSave}
+        />
       </div>
 
       {/* Gateway log */}

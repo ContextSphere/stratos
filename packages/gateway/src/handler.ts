@@ -1,6 +1,5 @@
 import type { WASocket, BaileysEventMap } from "@whiskeysockets/baileys";
 import type { ResolveJid } from "./client.js";
-import type { GatewayConfig } from "./index.js";
 import { sendReply, startTyping, stopTyping } from "./sender.js";
 
 type MessageUpsert = BaileysEventMap["messages.upsert"];
@@ -13,15 +12,17 @@ function extractText(msg: MessageUpsert["messages"][0]): string {
   ).trim();
 }
 
-function isAllowed(jid: string, allowList: string[]): boolean {
+function isTrusted(jid: string, trustedPhone: string): boolean {
+  if (!trustedPhone) return false;
   const digits = jid.split("@")[0].split(":")[0]; // strip multi-device suffix (:0, :1…)
   const e164 = digits.startsWith("+") ? digits : "+" + digits;
-  return allowList.includes(e164) || allowList.includes(jid);
+  const trusted = trustedPhone.trim();
+  return e164 === trusted || jid === trusted;
 }
 
 export function createMessageHandler(
   sock: WASocket,
-  config: GatewayConfig,
+  getTrustedPhone: () => string,
   resolveJid: ResolveJid,
   onMessage: (from: string, text: string) => Promise<string>,
   onLog: (line: string) => void,
@@ -38,7 +39,7 @@ export function createMessageHandler(
       const text = extractText(msg);
       if (!text) continue;
 
-      if (!isAllowed(jid, config.allowList)) {
+      if (!isTrusted(jid, getTrustedPhone())) {
         onLog(`[handler] blocked: ${jid}`);
         continue;
       }

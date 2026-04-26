@@ -7,7 +7,7 @@ import {
 import { createMessageHandler } from "./handler.js";
 
 export interface GatewayConfig {
-  allowList: string[];
+  trustedPhone: string;
   authDir: string; // absolute path
 }
 
@@ -21,9 +21,9 @@ export interface GatewayCallbacks {
 let stopped = false;
 let liveConfig: GatewayConfig | null = null;
 
-/** Update the allow list in the running gateway without reconnecting. */
-export function updateGatewayAllowList(allowList: string[]): void {
-  if (liveConfig) liveConfig.allowList = allowList;
+/** Update the trusted phone in the running gateway without reconnecting. */
+export function updateGatewayTrustedPhone(trustedPhone: string): void {
+  if (liveConfig) liveConfig.trustedPhone = trustedPhone;
 }
 
 export async function startGateway(
@@ -39,7 +39,7 @@ export async function startGateway(
     (sock, resolveJid) => {
       const handler = createMessageHandler(
         sock,
-        config,
+        () => liveConfig?.trustedPhone ?? config.trustedPhone,
         resolveJid,
         callbacks.onMessage,
         callbacks.onLog,
