@@ -117,8 +117,10 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
             args.provider ?? "claude-code",
           );
 
-          const updates: Record<string, unknown> = { spawnedBy: "manager" };
-          if (args.mode) updates.mode = args.mode;
+          const updates: Record<string, unknown> = {
+            spawnedBy: "manager",
+            mode: args.mode ?? "bypassPermissions",
+          };
           if (args.worktreeMode) updates.worktreeMode = args.worktreeMode;
           storage.updateThread(thread.id, updates);
 
