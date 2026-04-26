@@ -390,18 +390,36 @@ export class ManagerSession {
   /**
    * Called by the Stratos UI. Switches to local mode (stops WhatsApp
    * forwarding) and resets the idle timer that switches back to remote.
+   *
+   * The idle timer is deliberately started AFTER the stream finishes, not on
+   * submit. Starting it on submit means a stream that runs longer than
+   * IDLE_TIMEOUT_MS would flip mode back to "remote" mid-turn, causing
+   * child-completion notifications to be forwarded to WhatsApp while the user
+   * is actively using the UI.
    */
   async sendFromUI(
     prompt: string,
     images?: { dataUrl: string; mimeType: string }[],
   ): Promise<void> {
     this.gatewayReplyFn = null;
-    this.enterLocalMode();
-    await this.send(prompt, images);
+    // Suppress WhatsApp forwarding immediately, but do NOT start the idle
+    // countdown yet — the stream hasn't finished.
+    this.mode = "local";
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+    try {
+      await this.send(prompt, images);
+    } finally {
+      // Start the inactivity countdown only after the stream ends so the
+      // 5-minute window measures idle time after the turn, not elapsed time
+      // since submit.
+      this.resetIdleTimer();
+    }
   }
 
-  private enterLocalMode(): void {
-    this.mode = "local";
+  private resetIdleTimer(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     // After 5 minutes of UI inactivity, revert to remote so async
     // notifications reach WhatsApp again.
