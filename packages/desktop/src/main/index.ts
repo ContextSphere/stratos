@@ -307,7 +307,7 @@ if (!gotLock) {
     // closed. Only create one tray per instance.
     if (!tray) {
       const iconPath = isDev
-        ? join(__dirname, "../../../../build/icon.png")
+        ? join(__dirname, "../../build/icon.png")
         : join(process.resourcesPath, "icon.png");
       let trayIcon = nativeImage.createFromPath(iconPath);
       // Resize to 16×16 for the menu bar (template image on macOS)
