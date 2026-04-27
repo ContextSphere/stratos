@@ -264,6 +264,7 @@ function buildOllamaCustomProvider(): Record<
 
 export interface StreamCompletedEvent {
   threadId: string;
+  runId: string;
   status: "completed" | "error" | "interrupted";
   errorMessage?: string;
 }
@@ -923,6 +924,13 @@ export class AgentManager {
     // late-arriving events from a previous (interrupted) stream on the same thread.
     // Declared here (before worktree creation) so worktree progress messages can carry it.
     const streamId = `${threadId}-${Date.now()}`;
+    // runId aliases streamId and is persisted immediately so that a crash
+    // between stream start and completion leaves lastRunId !== lastReportedRunId,
+    // enabling reconcile-on-startup to re-queue the missed notification.
+    const runId = streamId;
+    if (thread.spawnedBy === "manager") {
+      this.storage.updateThread(threadId, { lastRunId: runId });
+    }
 
     // Lazy worktree creation: if user selected worktree mode but no worktree exists yet
     if (thread.worktreeMode === "worktree" && !thread.worktree && thread.cwd) {
@@ -1367,6 +1375,7 @@ export class AgentManager {
 
         this.emitStreamCompleted({
           threadId,
+          runId,
           status,
           ...(caughtError && typeof (caughtError as any)?.message === "string"
             ? { errorMessage: (caughtError as any).message }

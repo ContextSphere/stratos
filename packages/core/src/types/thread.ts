@@ -86,8 +86,16 @@ export interface Thread {
    * back to the manager. */
   spawnedBy?: "manager";
   /** True once a completion notification has been dispatched to the Manager
-   * Agent for this thread. Prevents duplicate notifications on restart. */
+   * Agent for this thread. Prevents duplicate notifications on restart.
+   * @deprecated Use lastReportedRunId for per-run deduplication instead. */
   reportedToManager?: boolean;
+  /** Unique ID of the most recent stream run. Set at stream start so a crash
+   * mid-run still leaves a lastRunId that differs from lastReportedRunId,
+   * enabling reconcile-on-startup to re-queue the missed notification. */
+  lastRunId?: string;
+  /** The lastRunId whose completion notification was successfully enqueued.
+   * When lastRunId === lastReportedRunId the notification was already sent. */
+  lastReportedRunId?: string;
   /** Final status of the last completed stream — persisted so the UI can show
    * a completion indicator after reload without relying on transient state. */
   lastCompletionStatus?: "completed" | "error" | "interrupted";
