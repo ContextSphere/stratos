@@ -14,12 +14,14 @@ import {
   createProvider,
   FileStorageAdapter,
   appendTraceEntry,
+  appendScheduleRun,
 } from "@stratosapp/core";
 import type {
   AgentProvider,
   AgentMessage,
   McpServerInfo,
   ProviderType,
+  ScheduleRunRecord,
 } from "@stratosapp/core";
 import { resolveClaudePathOrUndefined } from "../integrations/claude-path";
 import { loadSettings } from "../settings/settings.store";
@@ -67,6 +69,23 @@ Before every reply that goes beyond a single sentence, ask yourself: "Could an a
 - Relay messages between the user and sessions.
 - Summarize session transcripts when the user asks what an agent did.
 - Schedule recurring triggers via \`mcp__stratos__schedule_*\` when the user asks.
+- Query the log of past scheduled-prompt runs via \`mcp__stratos__schedule_runs\`.
+
+## Scheduled Task Dispatch
+When you receive a message prefixed with [SCHEDULED TASK], it means a routeToManager schedule fired and is asking you to dispatch the work. Follow this protocol exactly:
+1. DO NOT modify, summarize, or rewrite the task prompt — pass it verbatim to \`create_session\`.
+2. Briefly check \`list_sessions\` for any in-progress session doing the same work. If a clear conflict exists, DO NOT spawn a duplicate — reply with the existing threadId and skip dispatch.
+3. Otherwise, call \`create_session\` with workspace, provider, model, AND \`scheduledPromptId\` set to the Schedule ID from the context block. The scheduledPromptId is REQUIRED so the scheduler can track this run's status and summary. Pass the task prompt unchanged.
+4. Reply with the spawned threadId only, no commentary. Brevity matters — these notifications must not bloat your context.
+
+## Schedule Authoring (when the user asks you to create a schedule)
+- Use \`mcp__stratos__schedule_create\` to create scheduled prompts.
+- Default behavior is direct execution — the schedule fires, a thread is created, the prompt runs autonomously. Pick this for simple, deterministic tasks (run a script, check a URL, generate a daily report).
+- Set \`routeToManager: true\` ONLY when the work genuinely benefits from Manager intelligence — e.g., the schedule should check for in-progress related work before dispatching, batch with another schedule firing close in time, or contextually rewrite the prompt before execution. For ordinary cron-style automations, do NOT set this flag.
+- When you set \`routeToManager: true\`, the prompt MUST be fully self-describing. Include every relevant detail — workspace, goals, constraints, expected output format. By the time the schedule fires (potentially weeks later), your conversation history from creation time will be gone.
+
+## Scheduled Run Reports
+When a scheduled run completes, the agent that ran it may have called \`schedule_report\` to deposit a summary. The summary becomes part of the run record visible via \`schedule_runs\`. Failed scheduled runs are reported to you as a [SCHEDULE FAILURE] notification — when you receive one, decide whether to retry, alert the user, investigate the thread, or disable the schedule, then reply with a brief 1-2 sentence summary.
 
 ## Conversational relay
 - "Tell cosmic-fox to X" → call \`send_message\` with prompt exactly "X". Don't rephrase. Then tell the user it was sent.
@@ -124,6 +143,17 @@ export class ManagerSession {
   private completionUnsub?: () => void;
   private isNotificationInFlight = false;
   private notificationBackoffUntil = 0;
+
+  /**
+   * Pending callbacks for routeToManager: true schedules. Keyed by scheduleId.
+   * When a child thread with thread.scheduledPromptId === <id> completes, we
+   * invoke and clear the callback so the SchedulerManager can update its
+   * bookkeeping (lastRunStatus, one-time disable, etc.).
+   */
+  private schedulerCallbacks = new Map<
+    string,
+    (status: "completed" | "error", err?: string) => void
+  >();
 
   /**
    * "remote" — Manager replies and notifications are forwarded to WhatsApp.
@@ -512,6 +542,80 @@ export class ManagerSession {
     }
   }
 
+  /**
+   * Append a scheduled-run record to the persistent run log. Does NOT trigger
+   * a Manager LLM turn — the Manager only sees this entry if it explicitly
+   * queries the run log. Used for successful runs where no decision is
+   * required.
+   */
+  recordScheduleRun(record: ScheduleRunRecord): void {
+    try {
+      appendScheduleRun(record);
+    } catch (err) {
+      console.error("[manager-session] failed to record schedule run:", err);
+    }
+    // Notify the renderer so any UI surface can refresh.
+    this.sendToRenderer(IPC_CHANNELS.MANAGER_SCHEDULE_RUN_RECORDED, record);
+  }
+
+  /**
+   * Trigger a Manager LLM turn for a failed scheduled run. The Manager can
+   * then decide whether to retry, alert the user, investigate the thread, or
+   * disable the schedule. Queued via the standard notification queue so it
+   * waits if the Manager is mid-turn.
+   */
+  reportScheduleFailure(record: ScheduleRunRecord): void {
+    const summaryLine = record.summary
+      ? `Summary: ${record.summary}`
+      : "Summary: agent did not file a report";
+    const directive = [
+      `[SCHEDULE FAILURE] "${record.scheduleName}" failed after ${Math.round(record.durationMs / 1000)}s`,
+      `Schedule ID: ${record.scheduleId}`,
+      `Thread: ${record.threadId}`,
+      `Workspace: ${record.workspace}`,
+      `Provider: ${record.provider}`,
+      `Error: ${record.errorMessage ?? "(no error message)"}`,
+      summaryLine,
+      "",
+      "Decide whether to retry (run schedule_run_now), notify the user, investigate the thread (mcp__stratos__get_session with includeTranscript=true), or disable the schedule (mcp__stratos__schedule_disable). Reply with a brief 1-2 sentence summary of what happened and the action you took.",
+    ].join("\n");
+
+    this.notificationQueue.push({ prompt: directive });
+    this.drainNotificationQueue();
+  }
+
+  /**
+   * Dispatch a routeToManager: true scheduled prompt to the Manager. The
+   * Manager will receive the task and own its execution (typically by
+   * calling create_session). Caller registers an onComplete callback so
+   * the scheduler can update its bookkeeping when the spawned child finishes.
+   */
+  sendFromScheduler(
+    prompt: import("@stratosapp/core").ScheduledPrompt,
+    workspace: string,
+    onComplete: (status: "completed" | "error", err?: string) => void,
+  ): void {
+    // Register the callback against the scheduleId; handleChildCompletion
+    // looks it up when a thread with this scheduledPromptId completes.
+    this.schedulerCallbacks.set(prompt.id, onComplete);
+
+    const directive = [
+      `[SCHEDULED TASK — ${prompt.name}]`,
+      `Schedule ID: ${prompt.id}`,
+      `Workspace: ${workspace}`,
+      `Provider: ${prompt.provider}`,
+      ...(prompt.model ? [`Model: ${prompt.model}`] : []),
+      "",
+      "Task:",
+      prompt.prompt,
+      "",
+      "Dispatch this task: check list_sessions for any in-progress conflicting work, then call create_session with the workspace and provider above. Pass the task verbatim — do NOT rewrite or summarize it. Set the spawned thread's scheduledPromptId metadata so completion is tracked. Reply with the spawned threadId only.",
+    ].join("\n");
+
+    this.notificationQueue.push({ prompt: directive });
+    this.drainNotificationQueue();
+  }
+
   dispose(): void {
     this.completionUnsub?.();
     this.completionUnsub = undefined;
@@ -519,6 +623,7 @@ export class ManagerSession {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = undefined;
     }
+    this.schedulerCallbacks.clear();
     if (this.idleTimer) {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
@@ -548,6 +653,26 @@ export class ManagerSession {
       if (thread.lastReportedRunId === event.runId) return;
     } else {
       if (thread.reportedToManager) return;
+    }
+
+    // If this thread was spawned by Manager in response to a routeToManager
+    // schedule (carries a scheduledPromptId), invoke the registered scheduler
+    // callback so SchedulerManager can update bookkeeping. Skip the standard
+    // child-completion notification — the scheduler will emit its own
+    // scheduled-run record, which is the canonical channel for scheduled work.
+    if (thread.scheduledPromptId) {
+      const cb = this.schedulerCallbacks.get(thread.scheduledPromptId);
+      if (cb) {
+        this.schedulerCallbacks.delete(thread.scheduledPromptId);
+        const status: "completed" | "error" =
+          event.status === "completed" ? "completed" : "error";
+        try {
+          cb(status, event.errorMessage);
+        } catch (err) {
+          console.error("[manager-session] scheduler callback threw:", err);
+        }
+        return;
+      }
     }
 
     const title = thread.title?.trim() || event.threadId;

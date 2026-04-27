@@ -950,12 +950,16 @@ export class AgentManager {
         const worktreeDir = join(homedir(), ".stratos", "worktrees", threadId);
         mkdirSync(worktreeDir, { recursive: true });
 
-        execFileSync("git", ["worktree", "add", "-b", branchName, worktreeDir], {
-          cwd: thread.cwd,
-          encoding: "utf-8",
-          timeout: 30000,
-          stdio: ["pipe", "pipe", "pipe"],
-        });
+        execFileSync(
+          "git",
+          ["worktree", "add", "-b", branchName, worktreeDir],
+          {
+            cwd: thread.cwd,
+            encoding: "utf-8",
+            timeout: 30000,
+            stdio: ["pipe", "pipe", "pipe"],
+          },
+        );
 
         await this.storage.updateThread(threadId, {
           worktree: {
@@ -1779,6 +1783,7 @@ export class AgentManager {
                   `# Stratos MCP`,
                   `The \`stratos\` MCP server exposes:`,
                   `- \`schedule_create\`, \`schedule_list\`, \`schedule_folders\` — manage scheduled prompts`,
+                  `- \`schedule_report\` — call this at the end of your run with a 1-3 sentence summary of what you did. Look for a [SCHEDULED TASK] context block in your prompt with the scheduleId. Your summary is forwarded to the Manager as a status update.`,
                   `- \`preview_open_file(file_path, title?)\` / \`preview_close()\` — control the side preview pane (use absolute paths)`,
                 ].join("\n"),
               },

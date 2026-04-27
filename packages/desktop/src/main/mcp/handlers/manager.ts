@@ -5,10 +5,12 @@ import { z } from "zod";
 import type { BrowserWindow } from "electron";
 import type { AgentManager } from "../../agent-manager";
 import type { FileStorageAdapter, StoredMessage } from "@stratosapp/core";
+import { getScheduledPrompt } from "@stratosapp/core";
 import { IPC_CHANNELS } from "../../../common/ipc-channels";
 import { getManagerTurnImages } from "../../manager/turn-state";
 import { type HandlerDef, defineHandler, textResult } from "./types";
 import { getManagerRef } from "../../manager/manager-ref";
+import { decoratePromptWithSchedule } from "../../scheduler/decorate-prompt";
 
 const imagesSchema = z
   .array(
@@ -75,7 +77,7 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
     defineHandler({
       name: "create_session",
       description:
-        "Start a new agent session in a workspace. Returns the thread ID immediately (non-blocking). Use get_session later to check status.",
+        "Start a new agent session in a workspace. Returns the thread ID immediately (non-blocking). Use get_session later to check status. When dispatching a [SCHEDULED TASK], pass the Schedule ID via the scheduledPromptId parameter so the run is tracked.",
       inputSchema: {
         workspace: z
           .string()
@@ -101,6 +103,12 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
           .enum(["local", "worktree"])
           .optional()
           .describe("Git worktree isolation"),
+        scheduledPromptId: z
+          .string()
+          .optional()
+          .describe(
+            "When dispatching a [SCHEDULED TASK], pass the Schedule ID from the context block. Required for scheduler bookkeeping (lastRunStatus, summary record). Omit otherwise.",
+          ),
         images: imagesSchema,
       },
       handler: async (args) => {
@@ -122,6 +130,8 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
             mode: args.mode ?? "bypassPermissions",
           };
           if (args.worktreeMode) updates.worktreeMode = args.worktreeMode;
+          if (args.scheduledPromptId)
+            updates.scheduledPromptId = args.scheduledPromptId;
           storage.updateThread(thread.id, updates);
 
           if (previousActive && previousActive !== thread.id) {
@@ -131,9 +141,25 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
           if (folderAdded) broadcast(window, IPC_CHANNELS.FOLDERS_CHANGED);
           broadcast(window, IPC_CHANNELS.THREADS_CHANGED);
 
+          // When this session was spawned for a scheduled task, append the
+          // [SCHEDULED TASK] postscript so the agent has the scheduleId it
+          // needs to call schedule_report. Single source of truth: the same
+          // helper used by SchedulerManager.executeDirect.
+          let promptToRun = args.prompt;
+          if (args.scheduledPromptId) {
+            const sched = getScheduledPrompt(args.scheduledPromptId);
+            if (sched) {
+              promptToRun = decoratePromptWithSchedule({
+                promptText: args.prompt,
+                prompt: sched,
+                workspace: args.workspace,
+              });
+            }
+          }
+
           const images = resolveImages(args.images);
           agentManager
-            .startStream(thread.id, args.prompt, images)
+            .startStream(thread.id, promptToRun, images)
             .catch((err) => {
               console.error(
                 `[mcp:manager] stream error for thread ${thread.id}:`,

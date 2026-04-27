@@ -38,6 +38,40 @@ export interface ScheduledPrompt {
   lastRunAt?: number;
   lastRunThreadId?: string;
   lastRunStatus?: "running" | "completed" | "error";
+  /**
+   * When true, the schedule fires by posting to the Manager agent instead of
+   * running the prompt directly. The Manager decides how to dispatch — useful
+   * for agent-authored schedules that need orchestration intelligence
+   * (batching, conflict checks, contextual rewriting).
+   *
+   * Set this only via the schedule_create MCP tool — the UI form does not
+   * expose it. Prompts with routeToManager must be fully self-describing
+   * since Manager's conversation history from creation time will be gone
+   * by the time the schedule fires.
+   */
+  routeToManager?: boolean;
+}
+
+/**
+ * Record the scheduler emits to the Manager when a scheduled run completes.
+ * Combines run metadata with an optional agent-authored summary deposited via
+ * the `schedule_report` MCP tool. The notification is unconditional — if the
+ * agent did not call schedule_report, `summary` is omitted but the record is
+ * still sent.
+ */
+export interface ScheduleRunRecord {
+  scheduleId: string;
+  scheduleName: string;
+  threadId: string;
+  workspace: string;
+  provider: ProviderType;
+  status: "completed" | "error";
+  /** Agent-authored 1-3 sentence summary; absent if schedule_report wasn't called */
+  summary?: string;
+  durationMs: number;
+  errorMessage?: string;
+  startedAt: number;
+  completedAt: number;
 }
 
 /** Convert a friendly ScheduleConfig to a cron expression for node-cron. */
