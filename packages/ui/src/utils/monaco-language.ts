@@ -114,6 +114,40 @@ export function isBinaryFile(filePath: string): boolean {
   return binaryExts.has(ext);
 }
 
+const IMAGE_EXTS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "svg",
+  "bmp",
+  "ico",
+  "tiff",
+  "tif",
+]);
+
+export function isImageFile(filePath: string): boolean {
+  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+  return IMAGE_EXTS.has(ext);
+}
+
+/** Try to extract a data: URL from a Claude SDK tool-result output for an image Read. */
+export function extractImageDataUrl(output: string): string | null {
+  try {
+    const parsed = JSON.parse(output);
+    const blocks = Array.isArray(parsed) ? parsed : [parsed];
+    for (const block of blocks) {
+      if (block?.type === "image" && block?.source?.type === "base64") {
+        return `data:${block.source.media_type};base64,${block.source.data}`;
+      }
+    }
+  } catch {
+    // not JSON — ignore
+  }
+  return null;
+}
+
 /**
  * Count lines in content string
  * @param content - The content to count lines in

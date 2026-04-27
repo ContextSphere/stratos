@@ -6,6 +6,8 @@ import {
   getLanguageFromPath,
   MONO_FONT_FAMILY,
   isBinaryFile,
+  isImageFile,
+  extractImageDataUrl,
   calculateEditorHeight,
   countLines,
   getFileName,
@@ -142,6 +144,10 @@ export function FileChangeViewer({
   const filePath = extractFilePath(toolCall.input);
   const fileName = getFileName(filePath);
   const isBinary = isBinaryFile(filePath);
+  const isImage = isImageFile(filePath);
+  const imageDataUrl = isImage
+    ? extractImageDataUrl(toolCall.output ?? "")
+    : null;
   const language = getLanguageFromPath(filePath);
 
   // Debounce Monaco rendering to prevent janky animation on first expand.
@@ -215,9 +221,25 @@ export function FileChangeViewer({
             {statusLabels[toolCall.status]}
           </span>
         </div>
-        <div className="mt-2 text-[var(--text-muted)] text-xs">
-          📦 Binary file ({fileName.split(".").pop()?.toUpperCase()})
-        </div>
+        {imageDataUrl ? (
+          <div className="mt-2">
+            <img
+              src={imageDataUrl}
+              alt={fileName}
+              className="max-h-48 max-w-full rounded object-contain"
+              style={{
+                backgroundImage:
+                  "linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%)",
+                backgroundSize: "10px 10px",
+                backgroundPosition: "0 0, 0 5px, 5px -5px, -5px 0px",
+              }}
+            />
+          </div>
+        ) : (
+          <div className="mt-2 text-[var(--text-muted)] text-xs">
+            📦 Binary file ({fileName.split(".").pop()?.toUpperCase()})
+          </div>
+        )}
       </div>
     );
   }
