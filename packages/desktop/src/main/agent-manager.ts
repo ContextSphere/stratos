@@ -1072,6 +1072,13 @@ export class AgentManager {
     this.touchSession(threadId);
     this.evictIdleSessions();
 
+    // Reset reportedToManager for manager-spawned threads so each new stream
+    // run can trigger its own completion notification. The flag guards against
+    // duplicate notifications for the same run, not across separate runs.
+    if (thread.spawnedBy === "manager") {
+      this.storage.updateThread(threadId, { reportedToManager: false });
+    }
+
     // Track active stream
     this.activeStreams.add(threadId);
 
