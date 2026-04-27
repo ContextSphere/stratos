@@ -42,8 +42,32 @@ export function createPreviewHandlers(deps: PreviewDeps): HandlerDef[] {
         const fileName = args.title ?? basename(args.file_path);
         const ext = extname(args.file_path).toLowerCase();
         if (IMAGE_EXTENSIONS.has(ext)) {
+          let imageDataUrl: string;
+          try {
+            const buf = await fsPromises.readFile(args.file_path);
+            const mime =
+              ext === ".svg"
+                ? "image/svg+xml"
+                : ext === ".jpg" || ext === ".jpeg"
+                  ? "image/jpeg"
+                  : ext === ".gif"
+                    ? "image/gif"
+                    : ext === ".webp"
+                      ? "image/webp"
+                      : ext === ".bmp"
+                        ? "image/bmp"
+                        : ext === ".ico"
+                          ? "image/x-icon"
+                          : ext === ".tiff"
+                            ? "image/tiff"
+                            : "image/png";
+            imageDataUrl = `data:${mime};base64,${buf.toString("base64")}`;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return textResult(`Cannot read file: ${msg}`, true);
+          }
           sendToRenderer(IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN, {
-            content: "",
+            content: imageDataUrl,
             title: fileName,
             filePath: args.file_path,
             isImage: true,

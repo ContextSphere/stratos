@@ -15,6 +15,7 @@ export interface PreviewState {
   artifactContent?: string;
   artifactFilePath?: string;
   imageFilePath?: string;
+  imageDataUrl?: string;
   cwd?: string;
   targetFilePath?: string;
   targetLine?: number;

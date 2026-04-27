@@ -43,14 +43,18 @@ export function usePreview(activeThreadId?: string | null) {
     [],
   );
 
-  const openImage = useCallback((filePath: string, title: string) => {
-    setPreview({
-      isOpen: true,
-      type: "image",
-      title,
-      imageFilePath: filePath,
-    });
-  }, []);
+  const openImage = useCallback(
+    (filePath: string, title: string, dataUrl: string) => {
+      setPreview({
+        isOpen: true,
+        type: "image",
+        title,
+        imageFilePath: filePath,
+        imageDataUrl: dataUrl,
+      });
+    },
+    [],
+  );
 
   const openFileExplorer = useCallback(
     (cwd: string, targetFilePath?: string, targetLine?: number) => {
@@ -90,7 +94,7 @@ export function usePreview(activeThreadId?: string | null) {
         )
           return;
         if (isImage && filePath) {
-          openImage(filePath, title);
+          openImage(filePath, title, content);
         } else if (filePath) {
           openArtifactEditor(content, filePath);
         } else {

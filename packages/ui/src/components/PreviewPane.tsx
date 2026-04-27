@@ -112,7 +112,7 @@ export function PreviewPane({
         <MarkdownPreview content={preview.markdownContent} />
       ) : preview.type === "terminal" ? (
         <TerminalPane cwd={preview.cwd ?? ""} />
-      ) : preview.type === "image" && preview.imageFilePath ? (
+      ) : preview.type === "image" && preview.imageDataUrl ? (
         <div
           className="flex-1 flex items-center justify-center overflow-auto p-4"
           style={{
@@ -123,7 +123,7 @@ export function PreviewPane({
           }}
         >
           <img
-            src={`file://${preview.imageFilePath}`}
+            src={preview.imageDataUrl}
             alt={preview.title}
             style={{
               maxWidth: "100%",
