@@ -119,7 +119,8 @@ export class ManagerSession {
   private gatewayReplyFn: ((reply: string) => void) | null = null;
   private notificationForwardFn: ((text: string) => Promise<void>) | null =
     null;
-  private notificationQueue: Array<{ prompt: string }> = [];
+  private notificationQueue: Array<{ prompt: string; threadId?: string }> = [];
+  private heartbeatTimer?: ReturnType<typeof setInterval>;
   private completionUnsub?: () => void;
   private isNotificationInFlight = false;
   private notificationBackoffUntil = 0;
@@ -189,6 +190,17 @@ export class ManagerSession {
     // Manager chat so it can summarise the result for the user — no polling.
     this.completionUnsub = this.agentManager.onStreamCompleted((event) =>
       this.handleChildCompletion(event),
+    );
+
+    // Re-queue any completions that completed but were never acknowledged
+    // (e.g. process crashed between stream end and ack write).
+    this.reconcileOnStartup();
+
+    // Heartbeat: drain the notification queue every 60 s in case the Manager
+    // goes idle with items still queued (e.g. after a backoff expires).
+    this.heartbeatTimer = setInterval(
+      () => this.drainNotificationQueue(),
+      60_000,
     );
   }
 
@@ -469,6 +481,10 @@ export class ManagerSession {
     this.isNotificationInFlight = false;
     this.notificationBackoffUntil = 0;
     this.currentProvider = provider;
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
+    }
 
     // 2. Wipe persisted state that belongs to the old provider.
     //    clearPersistedSessionId removes thread.sessionId so loadMessages
@@ -499,6 +515,10 @@ export class ManagerSession {
   dispose(): void {
     this.completionUnsub?.();
     this.completionUnsub = undefined;
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
+    }
     if (this.idleTimer) {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
@@ -520,12 +540,15 @@ export class ManagerSession {
   private handleChildCompletion(event: StreamCompletedEvent): void {
     const thread = this.storage.getThread(event.threadId);
     if (!thread || thread.spawnedBy !== "manager") return;
-    if (thread.reportedToManager) return;
 
-    // Set the flag before queueing so a crash between here and the inject
-    // won't cause duplicate notifications on restart. Accepted tradeoff:
-    // may rarely miss a notification if the process dies mid-call.
-    this.storage.updateThread(event.threadId, { reportedToManager: true });
+    // Run-ID deduplication: each stream run is identified by a unique runId.
+    // Skip if this exact run was already acknowledged.
+    // Fall back to the legacy boolean for threads that pre-date run IDs.
+    if (event.runId) {
+      if (thread.lastReportedRunId === event.runId) return;
+    } else {
+      if (thread.reportedToManager) return;
+    }
 
     const title = thread.title?.trim() || event.threadId;
     const provider = thread.provider ?? "claude-code";
@@ -543,8 +566,53 @@ export class ManagerSession {
       `Use mcp__stratos__get_session with includeTranscript=true to fetch the result, then give the user a concise 2–3 sentence summary of what the agent did and any notable output. If the session errored, say so.`,
     ].join("\n");
 
-    this.notificationQueue.push({ prompt: directive });
+    // Coalesce: if there is already a pending notification for this thread,
+    // replace it with the newer one (more recent completion wins).
+    const existingIdx = this.notificationQueue.findIndex(
+      (n) => n.threadId === event.threadId,
+    );
+    if (existingIdx >= 0) {
+      this.notificationQueue[existingIdx] = {
+        prompt: directive,
+        threadId: event.threadId,
+      };
+    } else {
+      this.notificationQueue.push({ prompt: directive, threadId: event.threadId });
+    }
+
+    // Acknowledge AFTER enqueuing. If the process crashes between the push
+    // above and this write, reconcileOnStartup() will re-queue from
+    // lastRunId !== lastReportedRunId. This is safer than acking before
+    // enqueue (which silently swallows the notification on crash).
+    this.storage.updateThread(event.threadId, {
+      lastReportedRunId: event.runId,
+      reportedToManager: true, // keep legacy flag in sync
+    });
+
     this.drainNotificationQueue();
+  }
+
+  /**
+   * On startup, scan all manager-spawned threads for runs that completed but
+   * were never acknowledged (lastRunId set but lastReportedRunId doesn't match).
+   * This covers the crash window between stream end and the ack write.
+   */
+  private reconcileOnStartup(): void {
+    const threads = this.storage.listThreads();
+    for (const thread of threads) {
+      if (thread.spawnedBy !== "manager") continue;
+      if (!thread.lastRunId) continue;
+      if (thread.lastReportedRunId === thread.lastRunId) continue;
+      if (!thread.lastCompletionStatus) continue;
+      this.handleChildCompletion({
+        threadId: thread.id,
+        runId: thread.lastRunId,
+        status: thread.lastCompletionStatus,
+        ...(thread.lastCompletionError
+          ? { errorMessage: thread.lastCompletionError }
+          : {}),
+      });
+    }
   }
 
   private drainNotificationQueue(): void {
