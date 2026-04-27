@@ -8,6 +8,17 @@ import { IPC_CHANNELS } from "../../../common/ipc-channels";
 import { type HandlerDef, defineHandler, textResult } from "./types";
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
+const IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".svg",
+  ".bmp",
+  ".ico",
+  ".tiff",
+]);
 
 export interface PreviewDeps {
   sendToRenderer: (channel: string, data: unknown) => void;
@@ -28,6 +39,17 @@ export function createPreviewHandlers(deps: PreviewDeps): HandlerDef[] {
           .describe("Optional display title (defaults to the filename)"),
       },
       handler: async (args) => {
+        const fileName = args.title ?? basename(args.file_path);
+        const ext = extname(args.file_path).toLowerCase();
+        if (IMAGE_EXTENSIONS.has(ext)) {
+          sendToRenderer(IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN, {
+            content: "",
+            title: fileName,
+            filePath: args.file_path,
+            isImage: true,
+          });
+          return textResult(`Preview opened: ${args.file_path}`);
+        }
         let content: string;
         try {
           content = await fsPromises.readFile(args.file_path, "utf-8");
@@ -35,8 +57,6 @@ export function createPreviewHandlers(deps: PreviewDeps): HandlerDef[] {
           const msg = err instanceof Error ? err.message : String(err);
           return textResult(`Cannot read file: ${msg}`, true);
         }
-        const fileName = args.title ?? basename(args.file_path);
-        const ext = extname(args.file_path).toLowerCase();
         const isMarkdown = MARKDOWN_EXTENSIONS.has(ext);
         sendToRenderer(
           IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,

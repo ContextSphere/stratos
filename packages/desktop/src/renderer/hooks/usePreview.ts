@@ -43,6 +43,15 @@ export function usePreview(activeThreadId?: string | null) {
     [],
   );
 
+  const openImage = useCallback((filePath: string, title: string) => {
+    setPreview({
+      isOpen: true,
+      type: "image",
+      title,
+      imageFilePath: filePath,
+    });
+  }, []);
+
   const openFileExplorer = useCallback(
     (cwd: string, targetFilePath?: string, targetLine?: number) => {
       setPreview({
@@ -73,14 +82,16 @@ export function usePreview(activeThreadId?: string | null) {
   useEffect(() => {
     window.api.onPreviewOpenUrl(openUrl);
     window.api.onPreviewOpenMarkdown(
-      ({ content, title, filePath, threadId }) => {
+      ({ content, title, filePath, isImage, threadId }) => {
         if (
           threadId &&
           activeThreadIdRef.current &&
           threadId !== activeThreadIdRef.current
         )
           return;
-        if (filePath) {
+        if (isImage && filePath) {
+          openImage(filePath, title);
+        } else if (filePath) {
           openArtifactEditor(content, filePath);
         } else {
           openMarkdown(content, title);
@@ -88,13 +99,14 @@ export function usePreview(activeThreadId?: string | null) {
       },
     );
     window.api.onPreviewClose(close);
-  }, [openUrl, openMarkdown, openArtifactEditor, close]);
+  }, [openUrl, openMarkdown, openArtifactEditor, openImage, close]);
 
   return {
     preview,
     openUrl,
     openMarkdown,
     openArtifactEditor,
+    openImage,
     openFileExplorer,
     openTerminal,
     close,

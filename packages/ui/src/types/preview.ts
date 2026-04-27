@@ -3,7 +3,8 @@ export type PreviewType =
   | "markdown"
   | "artifact-editor"
   | "file-explorer"
-  | "terminal";
+  | "terminal"
+  | "image";
 
 export interface PreviewState {
   isOpen: boolean;
@@ -13,6 +14,7 @@ export interface PreviewState {
   title: string;
   artifactContent?: string;
   artifactFilePath?: string;
+  imageFilePath?: string;
   cwd?: string;
   targetFilePath?: string;
   targetLine?: number;

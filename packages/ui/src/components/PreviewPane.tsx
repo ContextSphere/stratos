@@ -18,6 +18,7 @@ const TYPE_LABELS: Record<string, string> = {
   "artifact-editor": "Editor",
   "file-explorer": "Files",
   terminal: "Terminal",
+  image: "Image",
 };
 
 export function PreviewPane({
@@ -111,6 +112,26 @@ export function PreviewPane({
         <MarkdownPreview content={preview.markdownContent} />
       ) : preview.type === "terminal" ? (
         <TerminalPane cwd={preview.cwd ?? ""} />
+      ) : preview.type === "image" && preview.imageFilePath ? (
+        <div
+          className="flex-1 flex items-center justify-center overflow-auto p-4"
+          style={{
+            backgroundImage:
+              "linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%)",
+            backgroundSize: "16px 16px",
+            backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
+          }}
+        >
+          <img
+            src={`file://${preview.imageFilePath}`}
+            alt={preview.title}
+            style={{
+              maxWidth: "100%",
+              maxHeight: "100%",
+              objectFit: "contain",
+            }}
+          />
+        </div>
       ) : preview.url ? (
         <WebviewPreview url={preview.url} />
       ) : null}

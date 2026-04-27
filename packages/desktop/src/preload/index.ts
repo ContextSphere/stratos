@@ -370,7 +370,8 @@ const api = {
     callback: (data: {
       content: string;
       title: string;
-      filePath: string;
+      filePath?: string;
+      isImage?: boolean;
       threadId?: string;
     }) => void,
   ): void => {
@@ -378,7 +379,12 @@ const api = {
       IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
       (
         _event,
-        data: { content: string; title: string; filePath: string },
+        data: {
+          content: string;
+          title: string;
+          filePath?: string;
+          isImage?: boolean;
+        },
         threadId?: string,
       ) => callback({ ...data, threadId }),
     );
