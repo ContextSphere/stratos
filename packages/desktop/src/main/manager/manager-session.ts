@@ -688,7 +688,8 @@ export class ManagerSession {
       `[stratos-notification] session="${event.threadId}" title="${title}" provider="${provider}" status="${event.status}"`,
       "",
       `Session "${title}" (threadId: ${event.threadId}, provider: ${provider}) ${statusLine}.`,
-      `Use mcp__stratos__get_session with includeTranscript=true to fetch the result, then give the user a concise 2–3 sentence summary of what the agent did and any notable output. If the session errored, say so.`,
+      `Use mcp__stratos__get_session with includeTranscript=true to fetch the result, then give the user a concise 2–3 sentence summary of what the agent did in THIS turn and any notable output. If the session errored, say so.`,
+      `IMPORTANT: A session fires one notification per completed turn — the same session can notify multiple times (e.g. after a follow-up message is sent to it). Do NOT treat this as a duplicate just because you have summarized this session before. Always fetch the latest transcript and summarize only the NEW work done since the last notification.`,
     ].join("\n");
 
     // Coalesce: if there is already a pending notification for this thread,
