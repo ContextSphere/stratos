@@ -202,18 +202,24 @@ describe("AgentManager (integration)", () => {
 
       (manager as any).emitStreamCompleted({
         threadId: "t1",
+        runId: "t1-1",
         status: "completed",
+        origin: "manager",
       });
       expect(listener).toHaveBeenCalledTimes(1);
       expect(listener).toHaveBeenCalledWith({
         threadId: "t1",
+        runId: "t1-1",
         status: "completed",
+        origin: "manager",
       });
 
       unsub();
       (manager as any).emitStreamCompleted({
         threadId: "t2",
+        runId: "t2-1",
         status: "error",
+        origin: "manager",
       });
       // After unsubscribe no further calls
       expect(listener).toHaveBeenCalledTimes(1);
@@ -233,7 +239,9 @@ describe("AgentManager (integration)", () => {
       expect(() =>
         (manager as any).emitStreamCompleted({
           threadId: "t1",
+          runId: "t1-1",
           status: "completed",
+          origin: "manager",
         }),
       ).not.toThrow();
       expect(bad).toHaveBeenCalledTimes(1);
