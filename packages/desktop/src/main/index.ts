@@ -114,13 +114,31 @@ if (worktree) {
 }
 
 // Crash-capture telemetry: rotating memory log + threshold heap dumps +
-// near-OOM auto-snapshot. Set up early so we capture the entire process
-// lifetime. State collector is wired later once AgentManager exists.
+// near-OOM auto-snapshot. **Dev builds only** — packaged DMG/zip releases
+// don't enable it (heap snapshots can be 30–500 MB and we don't want to
+// surprise users with disk usage in their Application Support dir).
+// Override with STRATOS_FORCE_CRASH_CAPTURE=1 to enable it on a packaged
+// build for one-off production debugging.
 let collectAppState: () => Record<string, unknown> = () => ({});
-const crashCapture: CrashCaptureHandle = startCrashCapture({
-  baseDir: app.getPath("userData"),
-  collectAppState: () => collectAppState(),
-});
+const crashCaptureEnabled =
+  isDev || process.env.STRATOS_FORCE_CRASH_CAPTURE === "1";
+const crashCapture: CrashCaptureHandle = crashCaptureEnabled
+  ? startCrashCapture({
+      baseDir: app.getPath("userData"),
+      collectAppState: () => collectAppState(),
+    })
+  : {
+      dispose() {},
+      forceSnapshot() {
+        return null;
+      },
+      dumpDir() {
+        return "";
+      },
+      memLogPath() {
+        return "";
+      },
+    };
 
 // Single instance per worktree
 const gotLock = app.requestSingleInstanceLock();
