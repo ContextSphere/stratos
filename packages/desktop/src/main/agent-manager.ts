@@ -262,11 +262,18 @@ function buildOllamaCustomProvider(): Record<
   };
 }
 
+export type RunOrigin = "user" | "manager" | "scheduler";
+
 export interface StreamCompletedEvent {
   threadId: string;
   runId: string;
   status: "completed" | "error" | "interrupted";
   errorMessage?: string;
+  /** Who initiated this stream run. Used by the Manager to decide whether to
+   * surface a completion directive — "user" runs are silent so the Manager
+   * doesn't auto-respond (or forward to WhatsApp) when the user talks to a
+   * manager-spawned agent directly. */
+  origin: RunOrigin;
 }
 
 interface ThreadSession {
@@ -926,6 +933,7 @@ export class AgentManager {
     threadId: string,
     prompt: string,
     images?: { dataUrl: string; mimeType: string }[],
+    origin: RunOrigin = "user",
   ): Promise<void> {
     // Each new stream attempt clears any prior interrupt intent so that a
     // user-triggered stop followed by a fresh send works correctly.
@@ -974,7 +982,10 @@ export class AgentManager {
     // enabling reconcile-on-startup to re-queue the missed notification.
     const runId = streamId;
     if (thread.spawnedBy === "manager") {
-      this.storage.updateThread(threadId, { lastRunId: runId });
+      this.storage.updateThread(threadId, {
+        lastRunId: runId,
+        lastRunOrigin: origin,
+      });
     }
 
     // Lazy worktree creation: if user selected worktree mode but no worktree exists yet
@@ -1371,7 +1382,7 @@ export class AgentManager {
         isRetrying = true;
         this.activeStreams.delete(threadId);
         this.threadEffectiveModes.delete(threadId);
-        return this.runStream(threadId, prompt, images);
+        return this.runStream(threadId, prompt, images, origin);
       }
 
       if (!specificErrorSent) {
@@ -1426,6 +1437,7 @@ export class AgentManager {
           threadId,
           runId,
           status,
+          origin,
           ...(caughtError && typeof (caughtError as any)?.message === "string"
             ? { errorMessage: (caughtError as any).message }
             : {}),
@@ -2034,13 +2046,17 @@ export class AgentManager {
     return this.activeStreams.has(threadId);
   }
 
-  /** Start a stream for a thread (used by ManagerSession bridge). */
+  /** Start a stream for a thread (used by ManagerSession bridge and MCP
+   * handlers). `origin` defaults to "manager" because all current callers of
+   * this public method are manager-driven; user-initiated runs go through
+   * the IPC SEND_MESSAGE handler which calls runStream directly. */
   async startStream(
     threadId: string,
     prompt: string,
     images?: { dataUrl: string; mimeType: string }[],
+    origin: RunOrigin = "manager",
   ): Promise<void> {
-    return this.runStream(threadId, prompt, images);
+    return this.runStream(threadId, prompt, images, origin);
   }
 
   /** Interrupt a running session (used by ManagerSession bridge). */

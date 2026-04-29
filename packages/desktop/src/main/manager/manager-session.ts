@@ -655,6 +655,18 @@ export class ManagerSession {
       if (thread.reportedToManager) return;
     }
 
+    // User-direct followup: the user typed in the spawned agent's chat (not
+    // through the Manager). Persist the ack so we don't re-process this run,
+    // but do NOT enqueue any notification — the Manager wasn't involved and
+    // shouldn't react (must not auto-forward to WhatsApp either).
+    if (event.origin === "user") {
+      this.storage.updateThread(event.threadId, {
+        lastReportedRunId: event.runId,
+        reportedToManager: true,
+      });
+      return;
+    }
+
     // If this thread was spawned by Manager in response to a routeToManager
     // schedule (carries a scheduledPromptId), invoke the registered scheduler
     // callback so SchedulerManager can update bookkeeping. Skip the standard
@@ -703,7 +715,10 @@ export class ManagerSession {
         threadId: event.threadId,
       };
     } else {
-      this.notificationQueue.push({ prompt: directive, threadId: event.threadId });
+      this.notificationQueue.push({
+        prompt: directive,
+        threadId: event.threadId,
+      });
     }
 
     // Acknowledge AFTER enqueuing. If the process crashes between the push
@@ -734,6 +749,10 @@ export class ManagerSession {
         threadId: thread.id,
         runId: thread.lastRunId,
         status: thread.lastCompletionStatus,
+        // Pre-existing threads from before lastRunOrigin was tracked default
+        // to "manager" — that matches the historical behavior of always
+        // notifying the Manager on reconcile.
+        origin: thread.lastRunOrigin ?? "manager",
         ...(thread.lastCompletionError
           ? { errorMessage: thread.lastCompletionError }
           : {}),

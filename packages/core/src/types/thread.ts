@@ -96,6 +96,12 @@ export interface Thread {
   /** The lastRunId whose completion notification was successfully enqueued.
    * When lastRunId === lastReportedRunId the notification was already sent. */
   lastReportedRunId?: string;
+  /** Origin of the most recent stream run, persisted at run start so that
+   * reconcile-on-startup (after a crash) can reconstruct the right
+   * notification behavior. "user" runs are silent (no Manager turn);
+   * "manager" runs trigger the standard completion directive; "scheduler"
+   * runs invoke the scheduler callback. */
+  lastRunOrigin?: "user" | "manager" | "scheduler";
   /** Final status of the last completed stream — persisted so the UI can show
    * a completion indicator after reload without relying on transient state. */
   lastCompletionStatus?: "completed" | "error" | "interrupted";
