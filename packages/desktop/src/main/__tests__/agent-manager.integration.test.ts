@@ -53,6 +53,7 @@ describe("AgentManager (integration)", () => {
       isFocused: vi.fn().mockReturnValue(true),
       webContents: {
         isDestroyed: vi.fn().mockReturnValue(false),
+        on: vi.fn(),
         send: vi.fn((channel: string, data: unknown, threadId?: string) => {
           sentMessages.push({ channel, data, threadId });
         }),
@@ -83,6 +84,83 @@ describe("AgentManager (integration)", () => {
   it("getRunningThreadIds returns empty array initially", () => {
     const manager = new AgentManager(mockWindow);
     expect(manager.getRunningThreadIds()).toEqual([]);
+    manager.dispose();
+  });
+
+  it("clearSession rejects pending requests for that thread (memory leak fix)", () => {
+    const manager = new AgentManager(mockWindow);
+    const permResolve = vi.fn();
+    const questionResolve = vi.fn();
+    const planResolve = vi.fn();
+    const elicitResolve = vi.fn();
+    // Pending entries for thread t1 (should be rejected)
+    (manager as any).pendingPermissions.set("p1", {
+      threadId: "t1",
+      resolve: permResolve,
+    });
+    (manager as any).pendingQuestions.set("q1", {
+      threadId: "t1",
+      resolve: questionResolve,
+      input: { questions: [] },
+    });
+    (manager as any).pendingPlanReviews.set("pr1", {
+      threadId: "t1",
+      resolve: planResolve,
+      input: {},
+    });
+    (manager as any).pendingElicitations.set("e1", {
+      threadId: "t1",
+      resolve: elicitResolve,
+    });
+    // Pending entries for thread t2 (should remain untouched)
+    const otherPerm = vi.fn();
+    (manager as any).pendingPermissions.set("p2", {
+      threadId: "t2",
+      resolve: otherPerm,
+    });
+
+    manager.clearSession("t1");
+
+    expect(permResolve).toHaveBeenCalledWith(
+      expect.objectContaining({ approved: false }),
+    );
+    expect(questionResolve).toHaveBeenCalledWith({ approved: false });
+    expect(planResolve).toHaveBeenCalledWith(
+      expect.objectContaining({ approved: false }),
+    );
+    expect(elicitResolve).toHaveBeenCalledWith({ action: "cancel" });
+    expect(otherPerm).not.toHaveBeenCalled();
+    expect((manager as any).pendingPermissions.size).toBe(1);
+    expect((manager as any).pendingQuestions.size).toBe(0);
+    expect((manager as any).pendingPlanReviews.size).toBe(0);
+    expect((manager as any).pendingElicitations.size).toBe(0);
+
+    manager.dispose();
+  });
+
+  it("rejects all pending requests when renderer reloads (memory leak fix)", () => {
+    const manager = new AgentManager(mockWindow);
+    const permResolve = vi.fn();
+    const questionResolve = vi.fn();
+    (manager as any).pendingPermissions.set("p1", {
+      threadId: "t1",
+      resolve: permResolve,
+    });
+    (manager as any).pendingQuestions.set("q1", {
+      threadId: "t2",
+      resolve: questionResolve,
+      input: {},
+    });
+
+    // Simulate the renderer reload path
+    (manager as any).rejectAllPendingForRendererGone("test-reload");
+
+    expect(permResolve).toHaveBeenCalledWith(
+      expect.objectContaining({ approved: false }),
+    );
+    expect(questionResolve).toHaveBeenCalledWith({ approved: false });
+    expect((manager as any).pendingPermissions.size).toBe(0);
+    expect((manager as any).pendingQuestions.size).toBe(0);
     manager.dispose();
   });
 

@@ -302,6 +302,7 @@ export class AgentManager {
   private pendingPermissions = new Map<
     string,
     {
+      threadId: string;
       resolve: (result: {
         approved: boolean;
         modifiedInput?: Record<string, unknown>;
@@ -314,6 +315,7 @@ export class AgentManager {
   private pendingQuestions = new Map<
     string,
     {
+      threadId: string;
       resolve: (result: {
         approved: boolean;
         modifiedInput?: Record<string, unknown>;
@@ -336,6 +338,7 @@ export class AgentManager {
   private pendingElicitations = new Map<
     string,
     {
+      threadId: string;
       resolve: (result: {
         action: "accept" | "decline" | "cancel";
         content?: Record<string, unknown>;
@@ -352,6 +355,17 @@ export class AgentManager {
   private cachedSlashCommands: { name: string; description?: string }[] = [];
   private mcpSocketPath: string;
   private mcpSocketServer: StratosMcpSocketServer;
+  /** Background notifications: track live ones so we can drop their listeners. */
+  private activeNotifications = new Set<Notification>();
+  /** Per-(threadId,type) timestamp of the last notification, for debouncing. */
+  private lastNotificationAt = new Map<string, number>();
+  private static readonly NOTIFICATION_COOLDOWN_MS = 30_000;
+  // Periodic idle-session eviction. evictIdleSessions() only runs when a new
+  // stream starts. If many threads stream, complete, and then sit idle without
+  // a new stream starting, their SDK control queries (each holding a child
+  // claude CLI process and Node-side state) accumulate. Periodic sweep catches
+  // this case.
+  private idleEvictTimer?: ReturnType<typeof setInterval>;
 
   constructor(window: BrowserWindow, storage?: FileStorageAdapter) {
     this.window = window;
@@ -381,6 +395,37 @@ export class AgentManager {
     this.detectOrphanedThreads().catch((err) => {
       safeLog(console.error, "[agent-manager] orphan detection failed:", err);
     });
+
+    // When the renderer navigates away (HMR reload, F5, devtools refresh,
+    // crash-recovery reload), every in-flight pending* IPC request becomes
+    // un-resolvable. The closures in those Maps retain `input` payloads and
+    // resolve callbacks, which root the runStream() async-generator state.
+    // Reject and drop them so they can be GC'd.
+    const onRendererGone = (reason: string) => {
+      this.rejectAllPendingForRendererGone(reason);
+    };
+    this.window.webContents.on(
+      "did-start-navigation",
+      (_event, _url, isInPlace, isMainFrame) => {
+        if (isMainFrame && !isInPlace) onRendererGone("did-start-navigation");
+      },
+    );
+    this.window.webContents.on("did-finish-load", () => {
+      onRendererGone("did-finish-load");
+    });
+    this.window.webContents.on("destroyed", () => {
+      onRendererGone("destroyed");
+    });
+
+    // Periodic idle-session sweep. See field comment for rationale.
+    this.idleEvictTimer = setInterval(() => {
+      try {
+        this.evictIdleSessions();
+      } catch (err) {
+        safeLog(console.error, "[agent-manager] idle eviction error:", err);
+      }
+    }, 60_000);
+    this.idleEvictTimer.unref?.();
   }
 
   private registerIpc(): void {
@@ -1140,7 +1185,7 @@ export class AgentManager {
       );
       this.notifyIfBackground(threadId, "permission");
       return new Promise((resolve) => {
-        this.pendingPermissions.set(requestId, { resolve });
+        this.pendingPermissions.set(requestId, { threadId, resolve });
       });
     };
 
@@ -1174,7 +1219,7 @@ export class AgentManager {
         threadId,
       );
       return new Promise((resolve) => {
-        this.pendingElicitations.set(requestId, { resolve });
+        this.pendingElicitations.set(requestId, { threadId, resolve });
       });
     };
 
@@ -1385,6 +1430,11 @@ export class AgentManager {
             ? { errorMessage: (caughtError as any).message }
             : {}),
         });
+
+        // Stream just ended — this session is now idle. If the idle pool is
+        // over MAX_IDLE_SESSIONS, evict the oldest now (instead of waiting
+        // for the next stream start or the periodic timer).
+        this.evictIdleSessions();
       }
     }
   }
@@ -1544,6 +1594,18 @@ export class AgentManager {
   ): void {
     if (this.window.isDestroyed() || this.window.isFocused()) return;
 
+    // Debounce: skip if we've already fired a notification for this thread+type
+    // within the cooldown window. Without this, a chatty agent (many tool
+    // calls in a row) spawns a new NSUserNotification per call — each retains
+    // a click-handler closure capturing `this.window` and `threadId`, and macOS
+    // holds onto the NSObject until the user interacts. This is also the
+    // suspected source of the `representedObject` log spam.
+    const key = `${threadId}|${type}`;
+    const now = Date.now();
+    const last = this.lastNotificationAt.get(key) ?? 0;
+    if (now - last < AgentManager.NOTIFICATION_COOLDOWN_MS) return;
+    this.lastNotificationAt.set(key, now);
+
     const titles: Record<string, string> = {
       permission: "Permission Required",
       question: "Question from Agent",
@@ -1559,11 +1621,23 @@ export class AgentManager {
       title: titles[type],
       body: bodies[type],
     });
+    // Drop refs to the notification + its click listener once macOS is done
+    // with it. Without these handlers the closure (which captures `this.window`
+    // and `threadId`) lives until the JS GC notices — which can be a long time
+    // because Notification keeps an internal C++ reference.
+    const drop = () => {
+      notification.removeAllListeners();
+      this.activeNotifications.delete(notification);
+    };
     notification.on("click", () => {
       this.window.show();
       this.window.focus();
       this.sendToRenderer(IPC_CHANNELS.THREAD_ACTIVATE, { threadId });
+      drop();
     });
+    notification.on("close", drop);
+    notification.on("failed", drop);
+    this.activeNotifications.add(notification);
     notification.show();
   }
 
@@ -1609,7 +1683,11 @@ export class AgentManager {
   ): Promise<{ approved: boolean; modifiedInput?: Record<string, unknown> }> {
     const requestId = `question_${++this.questionCounter}`;
     return new Promise((resolve) => {
-      this.pendingQuestions.set(requestId, { resolve, input });
+      this.pendingQuestions.set(requestId, {
+        threadId: threadId ?? "",
+        resolve,
+        input,
+      });
       this.sendToRenderer(
         IPC_CHANNELS.ASK_USER_QUESTION,
         {
@@ -1899,6 +1977,52 @@ export class AgentManager {
     this.sessionAccessOrder = this.sessionAccessOrder.filter(
       (id) => id !== threadId,
     );
+    this.threadEffectiveModes.delete(threadId);
+    this.rejectPendingForThread(threadId, "session cleared");
+  }
+
+  /**
+   * Resolve and remove every pending* request that belongs to a thread.
+   * Called when a session is evicted or a thread is deleted so that closures
+   * in those Maps (which retain `input` payloads and keep runStream's async
+   * generator alive) can finally be GC'd.
+   */
+  private rejectPendingForThread(threadId: string, reason: string): void {
+    let count = 0;
+    for (const [id, p] of this.pendingPermissions) {
+      if (p.threadId === threadId) {
+        p.resolve({ approved: false, denyMessage: reason });
+        this.pendingPermissions.delete(id);
+        count++;
+      }
+    }
+    for (const [id, p] of this.pendingQuestions) {
+      if (p.threadId === threadId) {
+        p.resolve({ approved: false });
+        this.pendingQuestions.delete(id);
+        count++;
+      }
+    }
+    for (const [id, p] of this.pendingPlanReviews) {
+      if (p.threadId === threadId) {
+        p.resolve({ approved: false, denyMessage: reason });
+        this.pendingPlanReviews.delete(id);
+        count++;
+      }
+    }
+    for (const [id, p] of this.pendingElicitations) {
+      if (p.threadId === threadId) {
+        p.resolve({ action: "cancel" });
+        this.pendingElicitations.delete(id);
+        count++;
+      }
+    }
+    if (count > 0) {
+      safeLog(
+        console.log,
+        `[agent-manager] rejected ${count} pending request(s) for thread ${threadId} (${reason})`,
+      );
+    }
   }
 
   getRunningThreadIds(): string[] {
@@ -1966,6 +2090,42 @@ export class AgentManager {
     }
   }
 
+  /**
+   * Reject and drop all pending* requests when the renderer goes away
+   * (reload, navigation, crash). Without this, the closures retain `input`
+   * payloads and `resolve` callbacks indefinitely — and the resolve callbacks
+   * root the runStream async-generator state, so the SDK keeps streaming
+   * into a void.
+   */
+  private rejectAllPendingForRendererGone(reason: string): void {
+    const total =
+      this.pendingPermissions.size +
+      this.pendingQuestions.size +
+      this.pendingPlanReviews.size +
+      this.pendingElicitations.size;
+    if (total === 0) return;
+    safeLog(
+      console.log,
+      `[agent-manager] renderer ${reason} — rejecting ${total} pending request(s)`,
+    );
+    for (const [, pending] of this.pendingPermissions) {
+      pending.resolve({ approved: false, denyMessage: "renderer reloaded" });
+    }
+    for (const [, pending] of this.pendingQuestions) {
+      pending.resolve({ approved: false });
+    }
+    for (const [, pending] of this.pendingPlanReviews) {
+      pending.resolve({ approved: false, denyMessage: "renderer reloaded" });
+    }
+    for (const [, pending] of this.pendingElicitations) {
+      pending.resolve({ action: "cancel" });
+    }
+    this.pendingPermissions.clear();
+    this.pendingQuestions.clear();
+    this.pendingPlanReviews.clear();
+    this.pendingElicitations.clear();
+  }
+
   unregisterIpc(): void {
     ipcMain.removeHandler(IPC_CHANNELS.SEND_MESSAGE);
     ipcMain.removeHandler(IPC_CHANNELS.INTERRUPT);
@@ -2005,6 +2165,18 @@ export class AgentManager {
     this.pendingQuestions.clear();
     this.pendingPlanReviews.clear();
     this.pendingElicitations.clear();
+    for (const n of this.activeNotifications) {
+      try {
+        n.removeAllListeners();
+        n.close();
+      } catch {}
+    }
+    this.activeNotifications.clear();
+    this.lastNotificationAt.clear();
+    if (this.idleEvictTimer) {
+      clearInterval(this.idleEvictTimer);
+      this.idleEvictTimer = undefined;
+    }
     this.mcpSocketServer.close().catch(() => {});
     this.unregisterIpc();
   }

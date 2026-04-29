@@ -14,6 +14,27 @@ import { join } from "path";
 // Always strip CLAUDECODE to prevent nested-session detection by the SDK
 delete process.env.CLAUDECODE;
 
+// Heap-snapshot debug helper (opt-in via STRATOS_HEAP_DUMP=1).
+// `kill -USR2 <pid>` writes a V8 heap snapshot to /tmp for offline analysis.
+if (process.env.STRATOS_HEAP_DUMP === "1") {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const v8 = require("v8") as typeof import("v8");
+  process.on("SIGUSR2", () => {
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const file = `/tmp/stratos-main-${process.pid}-${ts}.heapsnapshot`;
+    try {
+      v8.writeHeapSnapshot(file);
+      // eslint-disable-next-line no-console
+      console.log(`[heap-dump] wrote ${file}`);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("[heap-dump] failed", e);
+    }
+  });
+  // eslint-disable-next-line no-console
+  console.log(`[heap-dump] SIGUSR2 ready, pid=${process.pid}`);
+}
+
 // `process.defaultApp` stays true for the renamed dev Electron binary, while
 // packaged builds should ignore any inherited ELECTRON_RENDERER_URL from the shell.
 const isDev = !!process.defaultApp || !app.isPackaged;
