@@ -145,6 +145,13 @@ export function registerFilesIpc(): void {
           activeWatcher = null;
           activeCwd = null;
         }
+        // Pending debounce timers each capture a `webContents` reference
+        // and the changed-dir string. Without this clear, they stay rooted
+        // until each timer ticks (100 ms) — fine in steady state but a
+        // burst of fs events at watcher-error time can leave thousands of
+        // pending timers all retaining stale state.
+        for (const t of debounceTimers.values()) clearTimeout(t);
+        debounceTimers.clear();
       });
 
       activeWatcher = watcher;

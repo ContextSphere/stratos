@@ -29,6 +29,10 @@ export class SchedulerManager {
   private window: BrowserWindow;
   private fileWatcher: FSWatcher | null = null;
   private managerSession: ManagerSession | null = null;
+  /** Live notifications — kept so we can drop their click-listener closures
+   *  once macOS is done with them. macOS retains the underlying NSObject
+   *  until the user dismisses, which roots `this.window` capture. */
+  private activeNotifications = new Set<Notification>();
 
   constructor(
     agentManager: AgentManager,
@@ -354,6 +358,13 @@ export class SchedulerManager {
       clearTimeout(timer);
     }
     this.timers.clear();
+    for (const n of this.activeNotifications) {
+      try {
+        n.removeAllListeners();
+        n.close();
+      } catch {}
+    }
+    this.activeNotifications.clear();
   }
 
   /** Watch scheduled-prompts.json for external changes (e.g. from CLI). */
@@ -440,16 +451,29 @@ export class SchedulerManager {
       : `"${prompt.name}" finished running.`;
 
     const notification = new Notification({ title, body });
+    // Drop refs once macOS is done with the notification so the click
+    // closure (which captures `this.window` and `threadId`) can be GC'd.
+    // Without these, the NSUserNotification + delegate stays alive in the
+    // OS until dismissed, and the JS closure with it.
+    const drop = () => {
+      notification.removeAllListeners();
+      this.activeNotifications.delete(notification);
+    };
     notification.on("click", () => {
-      if (this.window.isDestroyed()) return;
-      this.window.show();
-      this.window.focus();
-      if (!this.window.webContents.isDestroyed()) {
-        this.window.webContents.send(IPC_CHANNELS.THREAD_ACTIVATE, {
-          threadId,
-        });
+      if (!this.window.isDestroyed()) {
+        this.window.show();
+        this.window.focus();
+        if (!this.window.webContents.isDestroyed()) {
+          this.window.webContents.send(IPC_CHANNELS.THREAD_ACTIVATE, {
+            threadId,
+          });
+        }
       }
+      drop();
     });
+    notification.on("close", drop);
+    notification.on("failed", drop);
+    this.activeNotifications.add(notification);
     notification.show();
 
     if (!this.window.webContents.isDestroyed()) {

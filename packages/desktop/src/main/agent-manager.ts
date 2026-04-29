@@ -2041,6 +2041,30 @@ export class AgentManager {
     return Array.from(this.activeStreams);
   }
 
+  /**
+   * Snapshot of in-memory collection sizes — used by crash-capture
+   * telemetry so each memory log line / threshold heap dump records
+   * "what was the app doing at this point". Cheap to call.
+   */
+  getDiagnosticState(): Record<string, number> {
+    return {
+      sessions: this.sessions.size,
+      sessionAccessOrder: this.sessionAccessOrder.length,
+      activeStreams: this.activeStreams.size,
+      modelsCache: this.modelsCache.size,
+      pendingPermissions: this.pendingPermissions.size,
+      pendingQuestions: this.pendingQuestions.size,
+      pendingPlanReviews: this.pendingPlanReviews.size,
+      pendingElicitations: this.pendingElicitations.size,
+      threadEffectiveModes: this.threadEffectiveModes.size,
+      previewFileWatchers: this.previewFileWatchers.size,
+      completionListeners: this.completionListeners.size,
+      cachedSlashCommands: this.cachedSlashCommands.length,
+      activeNotifications: this.activeNotifications.size,
+      lastNotificationAt: this.lastNotificationAt.size,
+    };
+  }
+
   /** Check if a thread is currently streaming. */
   isStreaming(threadId: string): boolean {
     return this.activeStreams.has(threadId);

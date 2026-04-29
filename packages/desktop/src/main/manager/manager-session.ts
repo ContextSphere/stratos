@@ -138,7 +138,16 @@ export class ManagerSession {
   private gatewayReplyFn: ((reply: string) => void) | null = null;
   private notificationForwardFn: ((text: string) => Promise<void>) | null =
     null;
-  private notificationQueue: Array<{ prompt: string; threadId?: string }> = [];
+  private notificationQueue: Array<{
+    prompt: string;
+    threadId?: string;
+    scheduleId?: string;
+  }> = [];
+  /** Hard cap so a permanently-broken Manager (auth expired, model
+   *  unavailable) doesn't grow the queue unboundedly while schedule fires
+   *  + child completions keep coming in. When exceeded we drop the
+   *  oldest non-coalesced entry. */
+  private static readonly MAX_NOTIFICATION_QUEUE = 100;
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private completionUnsub?: () => void;
   private isNotificationInFlight = false;
@@ -580,7 +589,10 @@ export class ManagerSession {
       "Decide whether to retry (run schedule_run_now), notify the user, investigate the thread (mcp__stratos__get_session with includeTranscript=true), or disable the schedule (mcp__stratos__schedule_disable). Reply with a brief 1-2 sentence summary of what happened and the action you took.",
     ].join("\n");
 
-    this.notificationQueue.push({ prompt: directive });
+    this.enqueueNotification({
+      prompt: directive,
+      scheduleId: record.scheduleId,
+    });
     this.drainNotificationQueue();
   }
 
@@ -612,8 +624,54 @@ export class ManagerSession {
       "Dispatch this task: check list_sessions for any in-progress conflicting work, then call create_session with the workspace and provider above. Pass the task verbatim — do NOT rewrite or summarize it. Set the spawned thread's scheduledPromptId metadata so completion is tracked. Reply with the spawned threadId only.",
     ].join("\n");
 
-    this.notificationQueue.push({ prompt: directive });
+    this.enqueueNotification({ prompt: directive, scheduleId: prompt.id });
     this.drainNotificationQueue();
+  }
+
+  /**
+   * Push a notification onto the Manager's queue, with coalescing and a
+   * hard cap. If `scheduleId` is provided and an entry already exists for
+   * the same schedule, replace it in-place — newer schedule fires/failures
+   * supersede older ones for the same schedule. If the queue would exceed
+   * MAX_NOTIFICATION_QUEUE, drop the oldest entry without a `threadId` /
+   * `scheduleId` (i.e. the least-coalescable, like raw notifications) and
+   * fall back to dropping the head if all entries are coalesced.
+   *
+   * Without this, a permanently-broken Manager LLM provider grows the
+   * queue forever while schedules + child completions keep arriving.
+   */
+  private enqueueNotification(entry: {
+    prompt: string;
+    threadId?: string;
+    scheduleId?: string;
+  }): void {
+    if (entry.scheduleId) {
+      const idx = this.notificationQueue.findIndex(
+        (n) => n.scheduleId === entry.scheduleId,
+      );
+      if (idx >= 0) {
+        this.notificationQueue[idx] = entry;
+        return;
+      }
+    }
+    if (
+      this.notificationQueue.length >= ManagerSession.MAX_NOTIFICATION_QUEUE
+    ) {
+      // Drop the oldest non-coalesced entry to make room — keep the more
+      // valuable child-completion / scheduled-task entries.
+      const dropIdx = this.notificationQueue.findIndex(
+        (n) => !n.threadId && !n.scheduleId,
+      );
+      if (dropIdx >= 0) {
+        this.notificationQueue.splice(dropIdx, 1);
+      } else {
+        this.notificationQueue.shift();
+      }
+      console.warn(
+        `[manager-session] notification queue at cap (${ManagerSession.MAX_NOTIFICATION_QUEUE}); dropped oldest`,
+      );
+    }
+    this.notificationQueue.push(entry);
   }
 
   dispose(): void {
@@ -704,8 +762,7 @@ export class ManagerSession {
       `IMPORTANT: A session fires one notification per completed turn — the same session can notify multiple times (e.g. after a follow-up message is sent to it). Do NOT treat this as a duplicate just because you have summarized this session before. Always fetch the latest transcript and summarize only the NEW work done since the last notification.`,
     ].join("\n");
 
-    // Coalesce: if there is already a pending notification for this thread,
-    // replace it with the newer one (more recent completion wins).
+    // Coalesce by threadId; the helper also enforces the queue cap.
     const existingIdx = this.notificationQueue.findIndex(
       (n) => n.threadId === event.threadId,
     );
@@ -715,7 +772,7 @@ export class ManagerSession {
         threadId: event.threadId,
       };
     } else {
-      this.notificationQueue.push({
+      this.enqueueNotification({
         prompt: directive,
         threadId: event.threadId,
       });

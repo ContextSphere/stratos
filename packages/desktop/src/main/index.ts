@@ -14,27 +14,6 @@ import { join } from "path";
 // Always strip CLAUDECODE to prevent nested-session detection by the SDK
 delete process.env.CLAUDECODE;
 
-// Heap-snapshot debug helper (opt-in via STRATOS_HEAP_DUMP=1).
-// `kill -USR2 <pid>` writes a V8 heap snapshot to /tmp for offline analysis.
-if (process.env.STRATOS_HEAP_DUMP === "1") {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const v8 = require("v8") as typeof import("v8");
-  process.on("SIGUSR2", () => {
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const file = `/tmp/stratos-main-${process.pid}-${ts}.heapsnapshot`;
-    try {
-      v8.writeHeapSnapshot(file);
-      // eslint-disable-next-line no-console
-      console.log(`[heap-dump] wrote ${file}`);
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error("[heap-dump] failed", e);
-    }
-  });
-  // eslint-disable-next-line no-console
-  console.log(`[heap-dump] SIGUSR2 ready, pid=${process.pid}`);
-}
-
 // `process.defaultApp` stays true for the renamed dev Electron binary, while
 // packaged builds should ignore any inherited ELECTRON_RENDERER_URL from the shell.
 const isDev = !!process.defaultApp || !app.isPackaged;
@@ -118,6 +97,10 @@ import { statSync } from "fs";
 import { FileStorageAdapter, getWorktreeInfo } from "@stratosapp/core";
 import { generateDockIcon } from "./dock-icon";
 import { ensureClaudeCodeThinkingSummaries } from "./claude-settings";
+import {
+  startCrashCapture,
+  type CrashCaptureHandle,
+} from "./diagnostics/crash-capture";
 
 // Worktree instance isolation (automatic in dev mode, like ContextSphere)
 const worktree = isDev ? getWorktreeInfo() : null;
@@ -129,6 +112,15 @@ if (worktree) {
   app.name = "stratos";
   app.setName("Stratos");
 }
+
+// Crash-capture telemetry: rotating memory log + threshold heap dumps +
+// near-OOM auto-snapshot. Set up early so we capture the entire process
+// lifetime. State collector is wired later once AgentManager exists.
+let collectAppState: () => Record<string, unknown> = () => ({});
+const crashCapture: CrashCaptureHandle = startCrashCapture({
+  baseDir: app.getPath("userData"),
+  collectAppState: () => collectAppState(),
+});
 
 // Single instance per worktree
 const gotLock = app.requestSingleInstanceLock();
@@ -312,6 +304,11 @@ if (!gotLock) {
     // wiring is post-construction since ManagerSession is a singleton
     // initialized after SchedulerManager.
     schedulerManager.setManagerSession(managerSession);
+
+    // Wire app-state collector for crash-capture telemetry. Each periodic
+    // memory log line + each threshold heap dump records this snapshot so
+    // we know what the app was doing when memory was at each threshold.
+    collectAppState = () => agentManager?.getDiagnosticState() ?? {};
   }
 
   app.on("web-contents-created", (_event, contents) => {
@@ -413,6 +410,7 @@ if (!gotLock) {
               unregisterSkillsIpc();
               unregisterFilesIpc();
               unregisterTerminalIpc();
+              crashCapture.dispose();
               tray?.destroy();
               tray = null;
               app.quit();
