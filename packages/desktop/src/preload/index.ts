@@ -607,6 +607,36 @@ const api = {
     },
   },
 
+  // Telegram gateway
+  telegram: {
+    isEnabled: (): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_IS_ENABLED),
+    getState: () => ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_GET_STATE),
+    connect: () => ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_CONNECT),
+    disconnect: () => ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_DISCONNECT),
+    saveSettings: (s: { botToken?: string; trustedChatId?: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_SAVE_SETTINGS, s),
+    onStatus: (
+      cb: (
+        status: "connected" | "disconnected" | "connecting" | "error",
+      ) => void,
+    ) => {
+      const handler = (
+        _: unknown,
+        status: "connected" | "disconnected" | "connecting" | "error",
+      ) => cb(status);
+      ipcRenderer.on(IPC_CHANNELS.TELEGRAM_STATUS, handler);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.TELEGRAM_STATUS, handler);
+    },
+    onLog: (cb: (line: string) => void) => {
+      const handler = (_: unknown, line: string) => cb(line);
+      ipcRenderer.on(IPC_CHANNELS.TELEGRAM_LOG, handler);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.TELEGRAM_LOG, handler);
+    },
+  },
+
   // Skills
   skills: {
     list: (): Promise<

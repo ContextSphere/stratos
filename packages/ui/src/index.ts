@@ -47,6 +47,8 @@ export {
   useSettingsBridge,
   usePreviewBridge,
   useFilesBridge,
+  useWhatsAppBridge,
+  useTelegramBridge,
 } from "./bridges/StratosProvider";
 export type { StratosContextValue } from "./bridges/StratosProvider";
 export type {
@@ -57,12 +59,15 @@ export type {
   FilesBridge,
   WhatsAppBridge,
   WhatsAppStatus,
+  TelegramBridge,
+  TelegramStatus,
   DirEntry,
   StreamEvent,
   ImageAttachment as BridgeImageAttachment,
   McpServerInfo,
 } from "./bridges/types";
 export { WhatsAppSettings } from "./components/WhatsAppSettings";
+export { TelegramSettings } from "./components/TelegramSettings";
 
 // Theme
 export {

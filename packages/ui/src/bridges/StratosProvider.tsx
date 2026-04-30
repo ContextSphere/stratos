@@ -6,6 +6,7 @@ import type {
   PreviewBridge,
   FilesBridge,
   WhatsAppBridge,
+  TelegramBridge,
 } from "./types";
 
 export interface StratosContextValue {
@@ -15,6 +16,7 @@ export interface StratosContextValue {
   preview?: PreviewBridge;
   files?: FilesBridge;
   whatsapp?: WhatsAppBridge;
+  telegram?: TelegramBridge;
 }
 
 const StratosContext = createContext<StratosContextValue | null>(null);
@@ -61,4 +63,8 @@ export function useFilesBridge(): FilesBridge | undefined {
 
 export function useWhatsAppBridge(): WhatsAppBridge | undefined {
   return useStratos().whatsapp;
+}
+
+export function useTelegramBridge(): TelegramBridge | undefined {
+  return useStratos().telegram;
 }

@@ -1,7 +1,7 @@
 {
   "name": "@stratosapp/gateway",
   "version": "0.0.1",
-  "description": "Stratos WhatsApp gateway — in-process WhatsApp bridge for the Manager Agent",
+  "description": "Stratos messaging gateways — in-process WhatsApp + Telegram bridges for the Manager Agent",
   "license": "Apache-2.0",
   "type": "commonjs",
   "main": "./dist/index.js",
@@ -23,10 +23,12 @@
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "7.0.0-rc.9",
+    "node-telegram-bot-api": "^0.66.0",
     "pino": "^9.6.0"
   },
   "devDependencies": {
     "@types/node": "^25.2.3",
+    "@types/node-telegram-bot-api": "^0.64.7",
     "typescript": "^5.9.3"
   }
 }
