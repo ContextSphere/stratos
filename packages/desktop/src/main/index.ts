@@ -345,6 +345,33 @@ if (!gotLock) {
     collectAppState = () => agentManager?.getDiagnosticState() ?? {};
   }
 
+  // M7: dump heap on child-process death (renderer / utility / GPU). When
+  // any of these die, Electron's parent often follows with SIGKILL (exit
+  // 137) before the next memory-log poll fires — without an immediate dump
+  // we lose the only evidence of what state the main process was in.
+  // We log + dump regardless of exit reason so we have a snapshot at the
+  // moment the cascade starts. Each unique reason fires at most once per
+  // process to avoid a flood when something flaps.
+  const childCrashReasonsSeen = new Set<string>();
+  app.on("child-process-gone", (_event, details) => {
+    const key = `${details.type}:${details.reason}`;
+    console.warn(
+      `[crash-capture] child-process-gone type=${details.type} reason=${details.reason} exitCode=${details.exitCode} name=${details.name ?? ""}`,
+    );
+    if (childCrashReasonsSeen.has(key)) return;
+    childCrashReasonsSeen.add(key);
+    crashCapture.forceSnapshot(`child-${details.type}-${details.reason}`);
+  });
+  app.on("render-process-gone", (_event, _wc, details) => {
+    const key = `renderer:${details.reason}`;
+    console.warn(
+      `[crash-capture] render-process-gone reason=${details.reason} exitCode=${details.exitCode}`,
+    );
+    if (childCrashReasonsSeen.has(key)) return;
+    childCrashReasonsSeen.add(key);
+    crashCapture.forceSnapshot(`renderer-${details.reason}`);
+  });
+
   app.on("web-contents-created", (_event, contents) => {
     if (contents.getType() === "webview") {
       contents.setWindowOpenHandler((details) => {
