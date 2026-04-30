@@ -1,8 +1,8 @@
 # CLAUDE.md — Stratos
 
-## WhatsApp Gateway Log
+## Messaging Gateway Log
 
-Gateway activity (connections, messages, errors) is written to a rotating log file — **not** shown in the UI.
+Gateway activity for both WhatsApp and Telegram (connections, messages, errors) is written to a single rotating log file — **not** shown in the UI.
 
 | Environment     | Path                                                     |
 | --------------- | -------------------------------------------------------- |

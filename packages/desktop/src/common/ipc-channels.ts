@@ -174,6 +174,15 @@ export const IPC_CHANNELS = {
   WHATSAPP_LOG: "whatsapp:log", // event → log line string
   WHATSAPP_IS_ENABLED: "whatsapp:is-enabled",
 
+  // Telegram gateway
+  TELEGRAM_GET_STATE: "telegram:get-state",
+  TELEGRAM_CONNECT: "telegram:connect",
+  TELEGRAM_DISCONNECT: "telegram:disconnect",
+  TELEGRAM_SAVE_SETTINGS: "telegram:save-settings",
+  TELEGRAM_STATUS: "telegram:status", // event → "connected" | "disconnected" | "connecting" | "error"
+  TELEGRAM_LOG: "telegram:log", // event → log line string
+  TELEGRAM_IS_ENABLED: "telegram:is-enabled",
+
   // Terminal
   TERMINAL_CREATE: "terminal:create",
   TERMINAL_WRITE: "terminal:write",

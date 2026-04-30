@@ -86,6 +86,15 @@ export function createDesktopBridge(): StratosContextValue {
       onLog: (cb) => window.api.whatsapp.onLog(cb),
     },
 
+    telegram: {
+      getState: () => window.api.telegram.getState(),
+      connect: () => window.api.telegram.connect(),
+      disconnect: () => window.api.telegram.disconnect(),
+      saveSettings: (s) => window.api.telegram.saveSettings(s),
+      onStatus: (cb) => window.api.telegram.onStatus(cb),
+      onLog: (cb) => window.api.telegram.onLog(cb),
+    },
+
     files: {
       listDirectory: (dirPath, rootPath) =>
         window.api.filesListDir(dirPath, rootPath),

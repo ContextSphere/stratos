@@ -63,3 +63,13 @@ export function stopGateway(): void {
 }
 
 export { sendProactiveWhatsApp };
+
+// Telegram gateway
+export {
+  startTelegramGateway,
+  stopTelegramGateway,
+  updateGatewayTrustedChatId,
+  sendProactiveTelegram,
+  type TelegramGatewayConfig,
+  type TelegramGatewayCallbacks,
+} from "./telegram/index.js";

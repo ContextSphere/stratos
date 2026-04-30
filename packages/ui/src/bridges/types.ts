@@ -136,6 +136,28 @@ export interface WhatsAppBridge {
   onLog(cb: (line: string) => void): () => void;
 }
 
+export type TelegramStatus =
+  | "connected"
+  | "disconnected"
+  | "connecting"
+  | "error";
+
+export interface TelegramBridge {
+  getState(): Promise<{
+    status: TelegramStatus;
+    botTokenSet: boolean;
+    trustedChatId: string;
+  }>;
+  connect(): Promise<{ ok: boolean; error?: string }>;
+  disconnect(): Promise<{ ok: boolean }>;
+  saveSettings(s: {
+    botToken?: string;
+    trustedChatId?: string;
+  }): Promise<{ ok: boolean }>;
+  onStatus(cb: (status: TelegramStatus) => void): () => void;
+  onLog(cb: (line: string) => void): () => void;
+}
+
 export interface FilesBridge {
   listDirectory(dirPath: string, rootPath: string): Promise<DirEntry[]>;
   readFile(

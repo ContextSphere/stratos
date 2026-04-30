@@ -67,6 +67,14 @@ import {
 } from "./integrations/whatsapp.ipc";
 import { isWhatsAppEnabled } from "./integrations/whatsapp-flag";
 import {
+  registerTelegramIpc,
+  unregisterTelegramIpc,
+  getTelegramStatus,
+  onTelegramStatusChange,
+  connectTelegram,
+} from "./integrations/telegram.ipc";
+import { isTelegramEnabled } from "./integrations/telegram-flag";
+import {
   registerDirectoryIpc,
   unregisterDirectoryIpc,
 } from "./settings/directory.ipc";
@@ -298,6 +306,10 @@ if (!gotLock) {
     if (isWhatsAppEnabled()) {
       registerWhatsAppIpc(mainWindow);
     }
+    ipcMain.handle(IPC_CHANNELS.TELEGRAM_IS_ENABLED, () => isTelegramEnabled());
+    if (isTelegramEnabled()) {
+      registerTelegramIpc(mainWindow);
+    }
     registerDirectoryIpc(mainWindow);
     registerSettingsIpc(mainWindow);
     setSlashCommandsGetter(() => agentManager?.getSlashCommands() ?? []);
@@ -414,6 +426,28 @@ if (!gotLock) {
           items.push({ type: "separator" });
         }
 
+        if (isTelegramEnabled()) {
+          const tgStatus = getTelegramStatus();
+          const tgLabel =
+            tgStatus === "connected"
+              ? "● Telegram Connected"
+              : tgStatus === "connecting"
+                ? "◌ Telegram — connecting…"
+                : tgStatus === "error"
+                  ? "⚠ Telegram Error"
+                  : "○ Telegram Disconnected";
+          items.push({ label: tgLabel, enabled: false });
+          if (tgStatus === "disconnected" || tgStatus === "error") {
+            items.push({
+              label: "Connect Telegram",
+              click: () => {
+                connectTelegram().catch(console.error);
+              },
+            });
+          }
+          items.push({ type: "separator" });
+        }
+
         items.push({
           label: "Quit Stratos",
           click: () => {
@@ -423,6 +457,7 @@ if (!gotLock) {
             ipcMain.removeHandler(IPC_CHANNELS.APP_INFO);
             ipcMain.removeHandler(IPC_CHANNELS.SHELL_OPEN_EXTERNAL);
             ipcMain.removeHandler(IPC_CHANNELS.WHATSAPP_IS_ENABLED);
+            ipcMain.removeHandler(IPC_CHANNELS.TELEGRAM_IS_ENABLED);
             unregisterManagerIpc();
             unregisterSchedulerIpc();
             unregisterThreadIpc();
@@ -430,6 +465,7 @@ if (!gotLock) {
             unregisterClaudeIpc();
             unregisterCodexIpc();
             if (isWhatsAppEnabled()) unregisterWhatsAppIpc();
+            if (isTelegramEnabled()) unregisterTelegramIpc();
             unregisterDirectoryIpc();
             unregisterSettingsIpc();
             unregisterSkillsIpc();
@@ -447,6 +483,7 @@ if (!gotLock) {
 
       rebuildMenu();
       if (isWhatsAppEnabled()) onWhatsAppStatusChange(() => rebuildMenu());
+      if (isTelegramEnabled()) onTelegramStatusChange(() => rebuildMenu());
       // Double-click / left-click on macOS shows the window
       tray.on("double-click", () => {
         if (mainWindow) {
