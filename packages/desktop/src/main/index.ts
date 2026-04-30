@@ -65,6 +65,7 @@ import {
   onWhatsAppStatusChange,
   connectGateway,
 } from "./integrations/whatsapp.ipc";
+import { isWhatsAppEnabled } from "./integrations/whatsapp-flag";
 import {
   registerDirectoryIpc,
   unregisterDirectoryIpc,
@@ -293,7 +294,10 @@ if (!gotLock) {
     registerGitHubIpc(mainWindow);
     registerClaudeIpc(mainWindow);
     registerCodexIpc(mainWindow);
-    registerWhatsAppIpc(mainWindow);
+    ipcMain.handle(IPC_CHANNELS.WHATSAPP_IS_ENABLED, () => isWhatsAppEnabled());
+    if (isWhatsAppEnabled()) {
+      registerWhatsAppIpc(mainWindow);
+    }
     registerDirectoryIpc(mainWindow);
     registerSettingsIpc(mainWindow);
     setSlashCommandsGetter(() => agentManager?.getSlashCommands() ?? []);
@@ -373,14 +377,6 @@ if (!gotLock) {
       tray.setToolTip(worktree ? `Stratos — ${worktree.name}` : "Stratos");
 
       const rebuildMenu = () => {
-        const waStatus = getWhatsAppStatus();
-        const waLabel =
-          waStatus === "connected"
-            ? "● WhatsApp Connected"
-            : waStatus === "qr"
-              ? "◌ WhatsApp — scan QR…"
-              : "○ WhatsApp Disconnected";
-
         const items: Electron.MenuItemConstructorOptions[] = [
           {
             label: "Show Stratos",
@@ -396,51 +392,61 @@ if (!gotLock) {
             },
           },
           { type: "separator" },
-          { label: waLabel, enabled: false },
-          ...(waStatus === "disconnected"
-            ? [
-                {
-                  label: "Connect WhatsApp",
-                  click: () => {
-                    connectGateway().catch(console.error);
-                  },
-                } as Electron.MenuItemConstructorOptions,
-              ]
-            : []),
-          { type: "separator" },
-          {
-            label: "Quit Stratos",
-            click: () => {
-              managerSession?.dispose();
-              schedulerManager?.dispose();
-              agentManager?.dispose();
-              ipcMain.removeHandler(IPC_CHANNELS.APP_INFO);
-              ipcMain.removeHandler(IPC_CHANNELS.SHELL_OPEN_EXTERNAL);
-              unregisterManagerIpc();
-              unregisterSchedulerIpc();
-              unregisterThreadIpc();
-              unregisterGitHubIpc();
-              unregisterClaudeIpc();
-              unregisterCodexIpc();
-              unregisterWhatsAppIpc();
-              unregisterDirectoryIpc();
-              unregisterSettingsIpc();
-              unregisterSkillsIpc();
-              unregisterFilesIpc();
-              unregisterTerminalIpc();
-              crashCapture.dispose();
-              tray?.destroy();
-              tray = null;
-              app.quit();
-            },
-          },
         ];
+
+        if (isWhatsAppEnabled()) {
+          const waStatus = getWhatsAppStatus();
+          const waLabel =
+            waStatus === "connected"
+              ? "● WhatsApp Connected"
+              : waStatus === "qr"
+                ? "◌ WhatsApp — scan QR…"
+                : "○ WhatsApp Disconnected";
+          items.push({ label: waLabel, enabled: false });
+          if (waStatus === "disconnected") {
+            items.push({
+              label: "Connect WhatsApp",
+              click: () => {
+                connectGateway().catch(console.error);
+              },
+            });
+          }
+          items.push({ type: "separator" });
+        }
+
+        items.push({
+          label: "Quit Stratos",
+          click: () => {
+            managerSession?.dispose();
+            schedulerManager?.dispose();
+            agentManager?.dispose();
+            ipcMain.removeHandler(IPC_CHANNELS.APP_INFO);
+            ipcMain.removeHandler(IPC_CHANNELS.SHELL_OPEN_EXTERNAL);
+            ipcMain.removeHandler(IPC_CHANNELS.WHATSAPP_IS_ENABLED);
+            unregisterManagerIpc();
+            unregisterSchedulerIpc();
+            unregisterThreadIpc();
+            unregisterGitHubIpc();
+            unregisterClaudeIpc();
+            unregisterCodexIpc();
+            if (isWhatsAppEnabled()) unregisterWhatsAppIpc();
+            unregisterDirectoryIpc();
+            unregisterSettingsIpc();
+            unregisterSkillsIpc();
+            unregisterFilesIpc();
+            unregisterTerminalIpc();
+            crashCapture.dispose();
+            tray?.destroy();
+            tray = null;
+            app.quit();
+          },
+        });
 
         tray!.setContextMenu(Menu.buildFromTemplate(items));
       };
 
       rebuildMenu();
-      onWhatsAppStatusChange(() => rebuildMenu());
+      if (isWhatsAppEnabled()) onWhatsAppStatusChange(() => rebuildMenu());
       // Double-click / left-click on macOS shows the window
       tray.on("double-click", () => {
         if (mainWindow) {

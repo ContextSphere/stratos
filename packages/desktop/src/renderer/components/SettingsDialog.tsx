@@ -1,4 +1,8 @@
+import { useState, useEffect } from "react";
 import { Dialog, DialogBody, Button, WhatsAppSettings } from "@stratosapp/ui";
+import type { ElectronAPI } from "../../preload/index";
+
+declare const window: Window & typeof globalThis & { api: ElectronAPI };
 
 type AppTheme = "dark" | "light";
 
@@ -44,6 +48,11 @@ export function SettingsDialog({
   theme,
   onThemeChange,
 }: Props): React.ReactElement | null {
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  useEffect(() => {
+    window.api.whatsapp.isEnabled().then(setWhatsappEnabled);
+  }, []);
+
   return (
     <Dialog
       isOpen={isOpen}
@@ -159,16 +168,18 @@ export function SettingsDialog({
             </div>
           </section>
 
-          {/* WhatsApp */}
-          <section>
-            <h3
-              className="text-xs font-semibold uppercase tracking-wider mb-3"
-              style={{ color: "var(--text-muted)" }}
-            >
-              WhatsApp
-            </h3>
-            <WhatsAppSettings />
-          </section>
+          {/* WhatsApp — only shown when ~/.stratos/whatsapp.json exists */}
+          {whatsappEnabled && (
+            <section>
+              <h3
+                className="text-xs font-semibold uppercase tracking-wider mb-3"
+                style={{ color: "var(--text-muted)" }}
+              >
+                WhatsApp
+              </h3>
+              <WhatsAppSettings />
+            </section>
+          )}
 
           <div className="flex gap-2 justify-end pt-1">
             <Button variant="secondary" onClick={onClose}>

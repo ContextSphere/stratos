@@ -577,6 +577,8 @@ const api = {
 
   // WhatsApp gateway
   whatsapp: {
+    isEnabled: (): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_IS_ENABLED),
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_GET_STATE),
     connect: () => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_CONNECT),
     disconnect: () => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_DISCONNECT),

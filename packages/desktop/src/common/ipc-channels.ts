@@ -172,6 +172,7 @@ export const IPC_CHANNELS = {
   WHATSAPP_STATUS: "whatsapp:status", // event → "connected" | "disconnected" | "qr"
   WHATSAPP_QR: "whatsapp:qr", // event → qr string
   WHATSAPP_LOG: "whatsapp:log", // event → log line string
+  WHATSAPP_IS_ENABLED: "whatsapp:is-enabled",
 
   // Terminal
   TERMINAL_CREATE: "terminal:create",
