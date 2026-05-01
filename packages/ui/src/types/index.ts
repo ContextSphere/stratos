@@ -125,6 +125,19 @@ export interface PermissionRequest {
   decisionReason?: string;
 }
 
+export type GitFileState =
+  | "staged"
+  | "unstaged"
+  | "mixed"
+  | "untracked"
+  | "committed";
+
+export interface GitStatus {
+  branch: string | null;
+  files: Record<string, GitFileState>;
+  root: string;
+}
+
 export interface ModelInfo {
   value: string;
   displayName: string;

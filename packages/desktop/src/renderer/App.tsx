@@ -49,6 +49,7 @@ import { useCodex } from "./hooks/useCodex";
 import { useOpencodeStatus } from "./hooks/useOpencodeStatus";
 import { usePreview } from "./hooks/usePreview";
 import { useSessionChanges } from "@stratosapp/ui";
+import { useGitStatus } from "./hooks/useGitStatus";
 import { ConnectGitHubDialog } from "./components/ConnectGitHubDialog";
 import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
 import { ConnectCodexDialog } from "./components/ConnectCodexDialog";
@@ -150,6 +151,7 @@ function AppInner(): React.ReactElement {
     close: closePreview,
   } = usePreview(activeThreadId);
   const sessionChanges = useSessionChanges(messages);
+  const gitStatus = useGitStatus(activeThread?.cwd, messages.length);
   const { latestTodoData, showTaskPanel, setShowTaskPanel } =
     useTodoData(messages);
 
@@ -1329,6 +1331,7 @@ function AppInner(): React.ReactElement {
                   onClose={closePreview}
                   filesBridge={filesBridge}
                   sessionChanges={sessionChanges}
+                  gitStatus={gitStatus}
                 />
               </Panel>
             </>

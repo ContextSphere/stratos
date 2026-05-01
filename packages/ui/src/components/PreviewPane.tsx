@@ -7,12 +7,14 @@ import { TerminalPane } from "./TerminalPane";
 import { WebviewPreview } from "./preview/WebviewPreview";
 import { SessionChangesPane } from "./SessionChangesPane";
 import type { SessionChanges } from "../hooks/useSessionChanges";
+import type { GitStatus } from "../types";
 
 interface Props {
   preview: PreviewState;
   onClose: () => void;
   filesBridge?: FilesBridge;
   sessionChanges?: SessionChanges;
+  gitStatus?: GitStatus;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -30,6 +32,7 @@ export function PreviewPane({
   onClose,
   filesBridge,
   sessionChanges,
+  gitStatus,
 }: Props): React.ReactElement {
   const handleOpenExternal = (): void => {
     if (preview.url) {
@@ -138,7 +141,7 @@ export function PreviewPane({
           />
         </div>
       ) : preview.type === "file-changes" && sessionChanges ? (
-        <SessionChangesPane changes={sessionChanges} />
+        <SessionChangesPane changes={sessionChanges} gitStatus={gitStatus} />
       ) : preview.url ? (
         <WebviewPreview url={preview.url} />
       ) : null}

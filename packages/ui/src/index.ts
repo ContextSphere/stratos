@@ -107,3 +107,4 @@ export type {
   WorktreeProgressData,
 } from "./types";
 export type { PreviewState, PreviewType } from "./types/preview";
+export type { GitFileState, GitStatus } from "./types";

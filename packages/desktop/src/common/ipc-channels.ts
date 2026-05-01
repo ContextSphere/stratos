@@ -45,8 +45,9 @@ export const IPC_CHANNELS = {
   FOLDERS_REMOVE: "chat:folders:remove",
   FOLDERS_UPDATE: "chat:folders:update",
 
-  // Git detection
+  // Git detection + status
   CHECK_IS_GIT_REPO: "settings:check-is-git-repo",
+  GIT_STATUS: "git:status",
 
   // GitHub — connection management (gh CLI)
   GITHUB_CHECK_CLI: "integration:github:check-cli",

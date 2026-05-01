@@ -27,6 +27,14 @@ const api = {
   checkIsGitRepo: (dirPath: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC_CHANNELS.CHECK_IS_GIT_REPO, dirPath),
 
+  gitStatus: (
+    cwd: string,
+  ): Promise<{
+    branch: string | null;
+    files: Record<string, string>;
+    root: string;
+  }> => ipcRenderer.invoke(IPC_CHANNELS.GIT_STATUS, cwd),
+
   onStreamMessage: (
     callback: (data: unknown, threadId: string | null) => void,
   ): void => {

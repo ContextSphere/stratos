@@ -128,6 +128,62 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
     },
   );
 
+  // Git status (branch + per-file staged/unstaged/mixed/untracked state)
+  ipcMain.handle(IPC_CHANNELS.GIT_STATUS, async (_event, cwd: string) => {
+    try {
+      const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+        cwd,
+        encoding: "utf-8",
+        timeout: 3000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+
+      const branch =
+        execFileSync("git", ["branch", "--show-current"], {
+          cwd: root,
+          encoding: "utf-8",
+          timeout: 3000,
+          stdio: ["pipe", "pipe", "pipe"],
+        }).trim() || null;
+
+      const statusOutput = execFileSync("git", ["status", "--porcelain=v1"], {
+        cwd: root,
+        encoding: "utf-8",
+        timeout: 3000,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      const files: Record<string, string> = {};
+      for (const line of statusOutput.split("\n")) {
+        if (line.length < 3) continue;
+        const x = line[0];
+        const y = line[1];
+        let filePath = line.slice(3);
+        // Renames: "old -> new" — take the new name
+        const arrowIdx = filePath.indexOf(" -> ");
+        if (arrowIdx !== -1) filePath = filePath.slice(arrowIdx + 4);
+        filePath = filePath.trim();
+        if (!filePath) continue;
+
+        let state: string;
+        if (x === "?" && y === "?") {
+          state = "untracked";
+        } else if (x !== " " && y === " ") {
+          state = "staged";
+        } else if (x === " " && y !== " ") {
+          state = "unstaged";
+        } else {
+          state = "mixed";
+        }
+        files[filePath] = state;
+      }
+
+      return { branch, files, root };
+    } catch {
+      return { branch: null, files: {}, root: cwd };
+    }
+  });
+
   // Thread worktree creation
   ipcMain.handle(
     IPC_CHANNELS.THREADS_CREATE_WORKTREE,
@@ -360,6 +416,7 @@ export function unregisterThreadIpc(): void {
   ipcMain.removeHandler(IPC_CHANNELS.THREADS_CLEAR_TRACE);
   ipcMain.removeHandler(IPC_CHANNELS.THREADS_RUNNING);
   ipcMain.removeHandler(IPC_CHANNELS.CHECK_IS_GIT_REPO);
+  ipcMain.removeHandler(IPC_CHANNELS.GIT_STATUS);
   ipcMain.removeHandler(IPC_CHANNELS.THREADS_CREATE_WORKTREE);
   ipcMain.removeHandler(IPC_CHANNELS.THREADS_CLEANUP_WORKTREE);
   ipcMain.removeHandler(IPC_CHANNELS.FOLDERS_LIST);
