@@ -242,5 +242,46 @@ describe("ManagerSession.handleChildCompletion — run origin behavior", () => {
     expect(cb).toHaveBeenCalledWith("completed", undefined);
     // No standard directive enqueued.
     expect((session.notificationQueue as unknown[]).length).toBe(0);
+    // Ack MUST be written so reconcileOnStartup doesn't re-process after restart.
+    expect(storage.updateThread).toHaveBeenCalledWith("t1", {
+      lastReportedRunId: "r1",
+      reportedToManager: true,
+    });
+  });
+
+  it("scheduler-routed thread with no callback (orphaned after restart) acks silently — never enqueues standard directive", async () => {
+    // Scenario: process restarted after a routeToManager schedule ran.
+    // schedulerCallbacks is empty (in-memory), but the thread still has
+    // scheduledPromptId set. reconcileOnStartup calls handleChildCompletion.
+    // Without the fix this fell through to the standard notification path,
+    // the Manager learned about the old thread, and on the next tick called
+    // send_message(old-thread) → "Thread not found".
+    const threads: Record<string, FakeThread> = {
+      t1: {
+        id: "t1",
+        spawnedBy: "manager",
+        scheduledPromptId: "sched-orphan",
+      },
+    };
+    const storage = makeStorage(threads);
+    const session = await makeSession(storage);
+    // No callback registered — simulates post-restart state.
+
+    (
+      session as { handleChildCompletion: (e: unknown) => void }
+    ).handleChildCompletion({
+      threadId: "t1",
+      runId: "r2",
+      status: "completed",
+      origin: "manager",
+    });
+
+    // No notification enqueued — Manager must not learn about this thread.
+    expect((session.notificationQueue as unknown[]).length).toBe(0);
+    // Ack written so reconcileOnStartup doesn't re-process on next restart.
+    expect(storage.updateThread).toHaveBeenCalledWith("t1", {
+      lastReportedRunId: "r2",
+      reportedToManager: true,
+    });
   });
 });

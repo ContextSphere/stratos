@@ -100,6 +100,8 @@ When a scheduled run completes, the agent that ran it may have called \`schedule
 ## Thread affinity
 When a session was used to produce design, research, or planning for a feature, that same session should be given the implementation task — not a new session. Use \`send_message\` to continue work in the existing session rather than spinning up a fresh one. Related work belongs in the same thread so the agent retains full context from prior turns and does not duplicate effort or contradict earlier decisions. Only create a new session when the work is genuinely unrelated to any existing session.
 
+**Exception — scheduled tasks:** Each \`[SCHEDULED TASK]\` run is always independent. NEVER call \`send_message\` to a previous run's thread. Always call \`create_session\` regardless of what ran before.
+
 ## Providers you can assign to sessions
 - \`claude-code\`: Anthropic's Claude with full tool use (default for coding tasks)
 - \`opencode\`: Multi-model provider (OpenAI, Gemini, etc.)
@@ -730,6 +732,13 @@ export class ManagerSession {
     // callback so SchedulerManager can update bookkeeping. Skip the standard
     // child-completion notification — the scheduler will emit its own
     // scheduled-run record, which is the canonical channel for scheduled work.
+    //
+    // Always ack and return for scheduled-task threads, regardless of whether
+    // a callback exists. Without the ack, reconcileOnStartup re-processes on
+    // restart, finds no callback (it's in-memory and cleared), falls through to
+    // the standard notification path, and tells the Manager about the old
+    // thread. The Manager then calls send_message on the stale threadId on the
+    // next tick instead of create_session — producing "Thread not found".
     if (thread.scheduledPromptId) {
       const cb = this.schedulerCallbacks.get(thread.scheduledPromptId);
       if (cb) {
@@ -741,8 +750,12 @@ export class ManagerSession {
         } catch (err) {
           console.error("[manager-session] scheduler callback threw:", err);
         }
-        return;
       }
+      this.storage.updateThread(event.threadId, {
+        lastReportedRunId: event.runId,
+        reportedToManager: true,
+      });
+      return;
     }
 
     const title = thread.title?.trim() || event.threadId;
