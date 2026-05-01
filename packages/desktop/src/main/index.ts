@@ -208,7 +208,6 @@ if (!gotLock) {
     mainWindow.on("ready-to-show", () => {
       mainWindow!.show();
       if (isDev) {
-        mainWindow!.webContents.openDevTools({ mode: "detach" });
         if (worktree) {
           console.log(`[worktree] name=${worktree.name} hash=${worktree.hash}`);
           console.log(`[worktree] userData=${worktree.userDataPath}`);
@@ -218,6 +217,20 @@ if (!gotLock) {
           console.log(
             `[worktree] chrome-devtools-mcp: npx chrome-devtools-mcp --browser-url=http://127.0.0.1:${cdpPort}`,
           );
+        }
+      }
+    });
+
+    // F12 → toggle DevTools docked to the right
+    mainWindow.webContents.on("before-input-event", (event, input) => {
+      if (input.type === "keyDown" && input.key === "F12") {
+        event.preventDefault();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          if (mainWindow.webContents.isDevToolsOpened()) {
+            mainWindow.webContents.closeDevTools();
+          } else {
+            mainWindow.webContents.openDevTools({ mode: "right" });
+          }
         }
       }
     });
