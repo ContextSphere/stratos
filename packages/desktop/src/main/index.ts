@@ -1,13 +1,5 @@
 import { execFileSync } from "child_process";
-import {
-  app,
-  BrowserWindow,
-  ipcMain,
-  shell,
-  Tray,
-  Menu,
-  nativeImage,
-} from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { join } from "path";
 
 // Fix PATH and environment for packaged macOS apps
@@ -186,7 +178,6 @@ if (!gotLock) {
   let agentManager: AgentManager | null = null;
   let schedulerManager: SchedulerManager | null = null;
   let managerSession: ManagerSession | null = null;
-  let tray: Tray | null = null;
 
   function createWindow(): void {
     mainWindow = new BrowserWindow({
@@ -210,16 +201,8 @@ if (!gotLock) {
       },
     });
 
-    mainWindow.on("close", (e) => {
-      // Hide to tray instead of destroying the window so background services
-      // keep running. The Tray "Quit" menu item does a real quit.
-      if (tray) {
-        e.preventDefault();
-        mainWindow!.hide();
-        if (process.platform === "darwin") {
-          app.dock?.hide();
-        }
-      }
+    mainWindow.on("close", () => {
+      mainWindow = null;
     });
 
     mainWindow.on("ready-to-show", () => {
@@ -404,122 +387,6 @@ if (!gotLock) {
 
     createWindow();
 
-    // System tray: keep the app alive and accessible even when the window is
-    // closed. Only create one tray per instance.
-    if (!tray) {
-      const trayIconPath = isDev
-        ? join(__dirname, "../../build/tray-icon.png")
-        : join(process.resourcesPath, "tray-icon.png");
-      const trayIcon = nativeImage.createFromPath(trayIconPath);
-      trayIcon.setTemplateImage(true);
-      tray = new Tray(trayIcon);
-      tray.setToolTip(worktree ? `Stratos — ${worktree.name}` : "Stratos");
-
-      const rebuildMenu = () => {
-        const items: Electron.MenuItemConstructorOptions[] = [
-          {
-            label: "Show Stratos",
-            click: () => {
-              if (process.platform === "darwin") app.dock?.show();
-              if (mainWindow) {
-                if (mainWindow.isMinimized()) mainWindow.restore();
-                mainWindow.show();
-                mainWindow.focus();
-              } else {
-                createWindow();
-              }
-            },
-          },
-          { type: "separator" },
-        ];
-
-        if (isWhatsAppEnabled()) {
-          const waStatus = getWhatsAppStatus();
-          const waLabel =
-            waStatus === "connected"
-              ? "● WhatsApp Connected"
-              : waStatus === "qr"
-                ? "◌ WhatsApp — scan QR…"
-                : "○ WhatsApp Disconnected";
-          items.push({ label: waLabel, enabled: false });
-          if (waStatus === "disconnected") {
-            items.push({
-              label: "Connect WhatsApp",
-              click: () => {
-                connectGateway().catch(console.error);
-              },
-            });
-          }
-          items.push({ type: "separator" });
-        }
-
-        if (isTelegramEnabled()) {
-          const tgStatus = getTelegramStatus();
-          const tgLabel =
-            tgStatus === "connected"
-              ? "● Telegram Connected"
-              : tgStatus === "connecting"
-                ? "◌ Telegram — connecting…"
-                : tgStatus === "error"
-                  ? "⚠ Telegram Error"
-                  : "○ Telegram Disconnected";
-          items.push({ label: tgLabel, enabled: false });
-          if (tgStatus === "disconnected" || tgStatus === "error") {
-            items.push({
-              label: "Connect Telegram",
-              click: () => {
-                connectTelegram().catch(console.error);
-              },
-            });
-          }
-          items.push({ type: "separator" });
-        }
-
-        items.push({
-          label: "Quit Stratos",
-          click: () => {
-            managerSession?.dispose();
-            schedulerManager?.dispose();
-            agentManager?.dispose();
-            ipcMain.removeHandler(IPC_CHANNELS.APP_INFO);
-            ipcMain.removeHandler(IPC_CHANNELS.SHELL_OPEN_EXTERNAL);
-            ipcMain.removeHandler(IPC_CHANNELS.WHATSAPP_IS_ENABLED);
-            ipcMain.removeHandler(IPC_CHANNELS.TELEGRAM_IS_ENABLED);
-            unregisterManagerIpc();
-            unregisterSchedulerIpc();
-            unregisterThreadIpc();
-            unregisterGitHubIpc();
-            unregisterClaudeIpc();
-            unregisterCodexIpc();
-            if (isWhatsAppEnabled()) unregisterWhatsAppIpc();
-            if (isTelegramEnabled()) unregisterTelegramIpc();
-            unregisterDirectoryIpc();
-            unregisterSettingsIpc();
-            unregisterSkillsIpc();
-            unregisterFilesIpc();
-            unregisterTerminalIpc();
-            crashCapture.dispose();
-            tray?.destroy();
-            tray = null;
-            app.quit();
-          },
-        });
-
-        tray!.setContextMenu(Menu.buildFromTemplate(items));
-      };
-
-      rebuildMenu();
-      if (isWhatsAppEnabled()) onWhatsAppStatusChange(() => rebuildMenu());
-      if (isTelegramEnabled()) onTelegramStatusChange(() => rebuildMenu());
-      // Double-click / left-click on macOS shows the window
-      tray.on("double-click", () => {
-        if (mainWindow) {
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      });
-    }
-
     app.on("activate", () => {
       // Re-show the window when the dock icon is clicked
       if (process.platform === "darwin") app.dock?.show();
@@ -533,9 +400,6 @@ if (!gotLock) {
   });
 
   app.on("window-all-closed", () => {
-    // Hide to tray rather than quitting — keeps the background services
-    // (Manager, WhatsApp gateway, scheduler) running when the user closes
-    // the window. "Quit Stratos" in the tray menu does a real quit.
-    mainWindow = null;
+    app.quit();
   });
 }
