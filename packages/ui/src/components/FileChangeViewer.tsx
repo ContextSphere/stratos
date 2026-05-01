@@ -463,7 +463,7 @@ export function FileChangeViewer({
                 }}
                 options={{
                   readOnly: true,
-                  renderSideBySide: true,
+                  renderSideBySide: false,
                   minimap: { enabled: false },
                   scrollBeyondLastLine: false,
                   fontSize: 12,

@@ -47,12 +47,35 @@ export function PreviewPane({
         <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--border)] text-gray-400 uppercase tracking-wide">
           {TYPE_LABELS[preview.type] || "Preview"}
         </span>
-        <span
-          className="text-xs text-gray-500 truncate flex-1"
-          title={preview.title}
-        >
-          {preview.title}
-        </span>
+        {preview.type === "file-changes" ? (
+          gitStatus?.branch ? (
+            <span className="flex items-center gap-1 text-xs text-gray-500 truncate flex-1 font-mono">
+              <svg
+                className="w-3 h-3 flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 3v12m0 0a3 3 0 100 6 3 3 0 000-6zm0 0h6a3 3 0 100-6 3 3 0 000 6H6z"
+                />
+              </svg>
+              {gitStatus.branch}
+            </span>
+          ) : (
+            <span className="flex-1" />
+          )
+        ) : (
+          <span
+            className="text-xs text-gray-500 truncate flex-1"
+            title={preview.title}
+          >
+            {preview.title}
+          </span>
+        )}
         {preview.url && (
           <button
             onClick={handleOpenExternal}

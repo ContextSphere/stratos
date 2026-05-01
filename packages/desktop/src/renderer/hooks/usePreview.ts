@@ -82,11 +82,11 @@ export function usePreview(activeThreadId?: string | null) {
   }, []);
 
   const openFileChanges = useCallback(() => {
-    setPreview({
-      isOpen: true,
-      type: "file-changes",
-      title: "Changes",
-    });
+    setPreview((current) =>
+      current.isOpen && current.type === "file-changes"
+        ? INITIAL_STATE
+        : { isOpen: true, type: "file-changes", title: "Changes" },
+    );
   }, []);
 
   const close = useCallback(() => {
