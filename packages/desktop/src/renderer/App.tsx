@@ -48,6 +48,7 @@ import { useClaude } from "./hooks/useClaude";
 import { useCodex } from "./hooks/useCodex";
 import { useOpencodeStatus } from "./hooks/useOpencodeStatus";
 import { usePreview } from "./hooks/usePreview";
+import { useSessionChanges } from "@stratosapp/ui";
 import { ConnectGitHubDialog } from "./components/ConnectGitHubDialog";
 import { ConnectClaudeDialog } from "./components/ConnectClaudeDialog";
 import { ConnectCodexDialog } from "./components/ConnectCodexDialog";
@@ -145,8 +146,10 @@ function AppInner(): React.ReactElement {
     openMarkdown,
     openArtifactEditor,
     openFileExplorer,
+    openFileChanges,
     close: closePreview,
   } = usePreview(activeThreadId);
+  const sessionChanges = useSessionChanges(messages);
   const { latestTodoData, showTaskPanel, setShowTaskPanel } =
     useTodoData(messages);
 
@@ -1150,6 +1153,8 @@ function AppInner(): React.ReactElement {
                           }
                         : undefined
                     }
+                    sessionChanges={sessionChanges}
+                    onOpenSessionChanges={openFileChanges}
                   />
 
                   {/* Chat messages */}
@@ -1315,11 +1320,15 @@ function AppInner(): React.ReactElement {
           {preview.isOpen && (
             <>
               <Separator className="w-1.5 bg-[var(--bg-surface)] hover:bg-blue-600 transition-colors cursor-col-resize" />
-              <Panel defaultSize={30} minSize={20}>
+              <Panel
+                defaultSize={preview.type === "file-changes" ? 40 : 30}
+                minSize={preview.type === "file-changes" ? 32 : 20}
+              >
                 <PreviewPane
                   preview={preview}
                   onClose={closePreview}
                   filesBridge={filesBridge}
+                  sessionChanges={sessionChanges}
                 />
               </Panel>
             </>

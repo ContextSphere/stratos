@@ -1,6 +1,7 @@
 import React from "react";
 import type { TodoData } from "../types";
 import type { McpServerInfo } from "../bridges/types";
+import type { SessionChanges } from "../hooks/useSessionChanges";
 import { basename } from "../utils/path";
 import { ToolsBadge } from "./ToolsBadge";
 import WorktreeToggle from "./WorktreeToggle";
@@ -31,6 +32,8 @@ interface ChatInfoBarProps {
   onToggleMcpServer?: (serverName: string, enabled: boolean) => void;
   onOpenMcpConfig?: (configPath: string) => void;
   onReconnectMcpServer?: (serverName: string) => void;
+  sessionChanges?: SessionChanges;
+  onOpenSessionChanges?: () => void;
 }
 
 export function ChatInfoBar({
@@ -50,6 +53,8 @@ export function ChatInfoBar({
   onToggleMcpServer,
   onOpenMcpConfig,
   onReconnectMcpServer,
+  sessionChanges,
+  onOpenSessionChanges,
 }: ChatInfoBarProps): React.ReactElement {
   const hasToolsBadge =
     (sessionTools?.length ?? 0) > 0 || (mcpServers?.length ?? 0) > 0;
@@ -175,6 +180,26 @@ export function ChatInfoBar({
               </svg>
             </button>
           )}
+
+          {sessionChanges &&
+            sessionChanges.files.length > 0 &&
+            onOpenSessionChanges && (
+              <button
+                onClick={onOpenSessionChanges}
+                title={`${sessionChanges.files.length} file${sessionChanges.files.length !== 1 ? "s" : ""} changed — click to view diffs`}
+                className="no-drag flex items-center gap-1 px-2 py-0.5 rounded-md bg-[var(--bg-surface)] hover:bg-[var(--border)] transition-colors font-mono text-[11px]"
+              >
+                {sessionChanges.hasRunning && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
+                )}
+                <span className="text-green-400">
+                  +{sessionChanges.totalAdded}
+                </span>
+                <span className="text-red-400">
+                  -{sessionChanges.totalRemoved}
+                </span>
+              </button>
+            )}
         </div>
       </div>
     </div>

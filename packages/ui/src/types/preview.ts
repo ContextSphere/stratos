@@ -4,7 +4,8 @@ export type PreviewType =
   | "artifact-editor"
   | "file-explorer"
   | "terminal"
-  | "image";
+  | "image"
+  | "file-changes";
 
 export interface PreviewState {
   isOpen: boolean;

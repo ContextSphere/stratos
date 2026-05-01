@@ -16,6 +16,8 @@ export function usePreview(activeThreadId?: string | null) {
   const [preview, setPreview] = useState<PreviewState>(INITIAL_STATE);
   const activeThreadIdRef = useRef(activeThreadId);
   activeThreadIdRef.current = activeThreadId;
+  const previewTypeRef = useRef(preview.type);
+  previewTypeRef.current = preview.type;
 
   const openUrl = useCallback((url: string) => {
     setPreview({ isOpen: true, type: "url", url, title: titleFromUrl(url) });
@@ -79,6 +81,14 @@ export function usePreview(activeThreadId?: string | null) {
     });
   }, []);
 
+  const openFileChanges = useCallback(() => {
+    setPreview({
+      isOpen: true,
+      type: "file-changes",
+      title: "Changes",
+    });
+  }, []);
+
   const close = useCallback(() => {
     setPreview(INITIAL_STATE);
   }, []);
@@ -93,6 +103,8 @@ export function usePreview(activeThreadId?: string | null) {
           threadId !== activeThreadIdRef.current
         )
           return;
+        // Don't clobber the Changes panel — the user pinned it intentionally
+        if (previewTypeRef.current === "file-changes") return;
         if (isImage && filePath) {
           openImage(filePath, title, content);
         } else if (filePath) {
@@ -113,6 +125,7 @@ export function usePreview(activeThreadId?: string | null) {
     openImage,
     openFileExplorer,
     openTerminal,
+    openFileChanges,
     close,
   };
 }

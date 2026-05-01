@@ -83,6 +83,11 @@ export { useFileMentions } from "./hooks/useFileMentions";
 export { DiagnosticsProvider, useDiagnostics } from "./hooks/useDiagnostics";
 export type { DiagnosticError } from "./hooks/useDiagnostics";
 export type { FileMentionsBridge } from "./hooks/useFileMentions";
+export { useSessionChanges } from "./hooks/useSessionChanges";
+export type {
+  SessionChanges,
+  SessionFileChange,
+} from "./hooks/useSessionChanges";
 
 // Types
 export type { NavAnchor } from "./types/nav";

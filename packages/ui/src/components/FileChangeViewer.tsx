@@ -35,12 +35,17 @@ const statusLabels: Record<ToolCall["status"], string> = {
 };
 
 // Minimal interfaces for the Monaco scroll APIs we need
+type ModelWithValue = { getValue(): string; setValue(v: string): void };
 type ScrollableEditor = {
   getScrollTop(): number;
   getScrollHeight(): number;
   getLayoutInfo(): { height: number };
+  getModel(): ModelWithValue | null;
 };
-type DiffEditorInstance = { getModifiedEditor(): ScrollableEditor };
+type DiffEditorInstance = {
+  getModifiedEditor(): ScrollableEditor;
+  getModel(): { original: ModelWithValue; modified: ModelWithValue } | null;
+};
 
 const MAX_LINES_INLINE = 500;
 const MAX_VISIBLE_LINES = 30;
@@ -187,6 +192,27 @@ export function FileChangeViewer({
   } else if (toolCall.toolName === "Delete") {
     displayContent = "";
   }
+
+  // When content changes (e.g. a second edit to the same file in the panel),
+  // imperatively push new values into the already-mounted Monaco models so
+  // the diff updates without remounting (which triggers the TextModel race).
+  useEffect(() => {
+    if (!diffEditorRef.current) return;
+    const models = diffEditorRef.current.getModel();
+    if (!models) return;
+    if (models.original.getValue() !== oldContent)
+      models.original.setValue(oldContent);
+    if (models.modified.getValue() !== newContent)
+      models.modified.setValue(newContent);
+  }, [oldContent, newContent]);
+
+  useEffect(() => {
+    if (!editorRef.current) return;
+    const model = editorRef.current.getModel();
+    if (!model) return;
+    const target = unifiedDiff || displayContent;
+    if (model.getValue() !== target) model.setValue(target);
+  }, [unifiedDiff, displayContent]);
 
   const changeStats =
     toolCall.toolName === "Edit" && !unifiedDiff

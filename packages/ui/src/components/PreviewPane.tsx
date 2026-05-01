@@ -5,11 +5,14 @@ import { ArtifactEditorPreview } from "./preview/ArtifactEditorPreview";
 import { FileExplorer } from "./FileExplorer";
 import { TerminalPane } from "./TerminalPane";
 import { WebviewPreview } from "./preview/WebviewPreview";
+import { SessionChangesPane } from "./SessionChangesPane";
+import type { SessionChanges } from "../hooks/useSessionChanges";
 
 interface Props {
   preview: PreviewState;
   onClose: () => void;
   filesBridge?: FilesBridge;
+  sessionChanges?: SessionChanges;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -19,12 +22,14 @@ const TYPE_LABELS: Record<string, string> = {
   "file-explorer": "Files",
   terminal: "Terminal",
   image: "Image",
+  "file-changes": "Changes",
 };
 
 export function PreviewPane({
   preview,
   onClose,
   filesBridge,
+  sessionChanges,
 }: Props): React.ReactElement {
   const handleOpenExternal = (): void => {
     if (preview.url) {
@@ -132,6 +137,8 @@ export function PreviewPane({
             }}
           />
         </div>
+      ) : preview.type === "file-changes" && sessionChanges ? (
+        <SessionChangesPane changes={sessionChanges} />
       ) : preview.url ? (
         <WebviewPreview url={preview.url} />
       ) : null}
