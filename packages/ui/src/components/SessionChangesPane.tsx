@@ -99,15 +99,14 @@ export function SessionChangesPane({ changes }: Props): React.ReactElement {
         </div>
       </div>
 
-      {/* Diff viewer */}
-      <div className="flex-1 min-w-[180px] overflow-y-auto p-3">
+      {/* Diff viewer — no overflow scroll; Monaco fills and scrolls internally */}
+      <div className="flex-1 min-w-[180px] overflow-hidden p-3 flex flex-col">
         {selectedFile ? (
-          // key forces Monaco remount when switching to a different tool call
-          // (different file or new edit to same file), avoiding stale content
           <FileChangeViewer
             key={selectedFile.latestToolCall.toolCallId}
             toolCall={selectedFile.latestToolCall}
             defaultExpanded={true}
+            fillHeight={true}
           />
         ) : null}
       </div>

@@ -18,6 +18,7 @@ import { useTheme, monacoThemeName } from "../context/ThemeContext";
 interface Props {
   toolCall: ToolCall;
   defaultExpanded?: boolean;
+  fillHeight?: boolean;
 }
 
 const statusColors: Record<ToolCall["status"], string> = {
@@ -88,6 +89,7 @@ function calculateChangeStats(
 export function FileChangeViewer({
   toolCall,
   defaultExpanded = true,
+  fillHeight = false,
 }: Props): React.ReactElement {
   useMonacoFontReady();
   const theme = useTheme();
@@ -218,10 +220,14 @@ export function FileChangeViewer({
     toolCall.toolName === "Edit" && !unifiedDiff
       ? calculateChangeStats(oldContent, newContent)
       : null;
-  const height = calculateEditorHeight(
-    toolCall.toolName === "Edit" && !unifiedDiff ? newContent : displayContent,
-    MAX_VISIBLE_LINES,
-  );
+  const height = fillHeight
+    ? "100%"
+    : calculateEditorHeight(
+        toolCall.toolName === "Edit" && !unifiedDiff
+          ? newContent
+          : displayContent,
+        MAX_VISIBLE_LINES,
+      );
 
   const toggleExpand = () => {
     const next = !isExpanded;
@@ -330,7 +336,9 @@ export function FileChangeViewer({
   }
 
   return (
-    <div className="rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] overflow-hidden text-xs">
+    <div
+      className={`rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] overflow-hidden text-xs ${fillHeight ? "flex flex-col h-full" : ""}`}
+    >
       {/* Header - always visible */}
       <button
         onClick={toggleExpand}
@@ -400,10 +408,15 @@ export function FileChangeViewer({
           (hasEverExpandedRef) to avoid Monaco initialization cost on history load. */}
       {shouldRenderMonaco && !isTooLarge && hasEverExpandedRef.current && (
         <div
-          className="border-t border-[var(--border)]"
-          style={{ display: isExpanded ? "block" : "none" }}
+          className={`border-t border-[var(--border)] ${fillHeight ? "flex-1 min-h-0" : ""}`}
+          style={{
+            display: isExpanded ? (fillHeight ? "flex" : "block") : "none",
+          }}
         >
-          <div className="relative" ref={monacoContainerRef}>
+          <div
+            className={`relative ${fillHeight ? "flex-1 h-full" : ""}`}
+            ref={monacoContainerRef}
+          >
             {unifiedDiff ? (
               // Unified diff view (Codex-style)
               <Editor
