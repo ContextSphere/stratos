@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, shell } from "electron";
 import { join } from "path";
 
 // Fix PATH and environment for packaged macOS apps
@@ -221,20 +221,6 @@ if (!gotLock) {
       }
     });
 
-    // F12 → toggle DevTools docked to the right
-    mainWindow.webContents.on("before-input-event", (event, input) => {
-      if (input.type === "keyDown" && input.key === "F12") {
-        event.preventDefault();
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          if (mainWindow.webContents.isDevToolsOpened()) {
-            mainWindow.webContents.closeDevTools();
-          } else {
-            mainWindow.webContents.openDevTools({ mode: "right" });
-          }
-        }
-      }
-    });
-
     // Cmd+P → model picker
     mainWindow.webContents.on("before-input-event", (event, input) => {
       if (
@@ -400,6 +386,18 @@ if (!gotLock) {
 
     createWindow();
 
+    // F12 → toggle DevTools docked to the right (globalShortcut works even
+    // when DevTools has focus, unlike before-input-event on webContents)
+    globalShortcut.register("F12", () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.webContents.isDevToolsOpened()) {
+          mainWindow.webContents.closeDevTools();
+        } else {
+          mainWindow.webContents.openDevTools({ mode: "right" });
+        }
+      }
+    });
+
     app.on("activate", () => {
       // Re-show the window when the dock icon is clicked
       if (process.platform === "darwin") app.dock?.show();
@@ -410,6 +408,10 @@ if (!gotLock) {
         createWindow();
       }
     });
+  });
+
+  app.on("will-quit", () => {
+    globalShortcut.unregisterAll();
   });
 
   app.on("window-all-closed", () => {
