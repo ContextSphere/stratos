@@ -32,6 +32,14 @@ export class ClaudeCodeProvider implements AgentProvider {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private controlQuery?: any;
   private controlCleanup?: () => void;
+  // Auto-close the control query after 5 minutes of inactivity. Each new turn
+  // cancels and resets this timer. Prevents idle claude subprocesses from
+  // accumulating when the user hasn't interacted with a thread for a while.
+  private static readonly CONTROL_QUERY_IDLE_MS = 5 * 60 * 1000;
+  private controlQueryIdleTimer?: ReturnType<typeof setTimeout>;
+  // Last known MCP server status — cached so the MCP panel stays populated
+  // after the control query idles out.
+  private lastKnownMcpStatus: McpServerInfo[] = [];
   // Stored from the last sendMessage call so the control query can handle
   // MCP auth elicitations between turns
   private lastElicitationHandler?: SendMessageParams["onElicitation"];
@@ -293,9 +301,19 @@ export class ClaudeCodeProvider implements AgentProvider {
         // control query closed, expected
       }
     })();
+
+    // Auto-close after idle timeout to prevent long-lived subprocess accumulation.
+    this.controlQueryIdleTimer = setTimeout(() => {
+      this.closeControlQuery();
+    }, ClaudeCodeProvider.CONTROL_QUERY_IDLE_MS);
+    this.controlQueryIdleTimer.unref?.();
   }
 
   private closeControlQuery(): void {
+    if (this.controlQueryIdleTimer) {
+      clearTimeout(this.controlQueryIdleTimer);
+      this.controlQueryIdleTimer = undefined;
+    }
     if (this.controlCleanup) {
       this.controlCleanup();
       this.controlCleanup = undefined;
@@ -401,21 +419,28 @@ export class ClaudeCodeProvider implements AgentProvider {
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
     const q = this.mcpQuery;
     if (!q || typeof q.mcpServerStatus !== "function") {
-      return [];
+      // Control query timed out or not yet created. Return the cached status
+      // so the MCP panel doesn't go blank after idle timeout.
+      return this.lastKnownMcpStatus;
     }
-    const statuses = await q.mcpServerStatus();
-    return statuses.map(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (s: any) => ({
-        name: s.name,
-        status: s.status as McpServerInfo["status"],
-        scope: s.scope,
-        tools: s.tools?.map((t: { name: string }) => t.name ?? t) ?? [],
-        error: s.error,
-        configType: s.config?.type,
-        configId: s.config?.id,
-      }),
-    );
+    try {
+      const statuses = await q.mcpServerStatus();
+      this.lastKnownMcpStatus = statuses.map(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (s: any) => ({
+          name: s.name,
+          status: s.status as McpServerInfo["status"],
+          scope: s.scope,
+          tools: s.tools?.map((t: { name: string }) => t.name ?? t) ?? [],
+          error: s.error,
+          configType: s.config?.type,
+          configId: s.config?.id,
+        }),
+      );
+      return this.lastKnownMcpStatus;
+    } catch {
+      return this.lastKnownMcpStatus;
+    }
   }
 
   async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {

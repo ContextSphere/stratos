@@ -291,13 +291,19 @@ interface ThreadSession {
   interruptRequested?: boolean;
   /** Timer handle for MCP status watcher — polls pending MCPs until connected. */
   mcpWatcherTimer?: ReturnType<typeof setTimeout>;
+  /** Current plan markdown for the pending plan review. Per-thread so
+   *  concurrent plan-mode threads don't thrash each other's content.
+   *  Cleared when the session is evicted (clearSession) or when the plan
+   *  review resolves. Capped at MAX_PLAN_CONTENT_BYTES to prevent a single
+   *  huge plan from bloating memory. */
+  lastPlanMarkdown?: { content: string; title: string };
 }
 
 export class AgentManager {
   private window: BrowserWindow;
   private sessions = new Map<string, ThreadSession>();
   private sessionAccessOrder: string[] = []; // LRU tracking: most recent at end
-  private static readonly MAX_IDLE_SESSIONS = 3;
+  private static readonly MAX_IDLE_SESSIONS = 2;
   private managerMcpStatusProvider?: () => Promise<McpServerInfo[]>;
   private completionListeners = new Set<
     (event: StreamCompletedEvent) => void
@@ -357,7 +363,13 @@ export class AgentManager {
   private elicitationCounter = 0;
   private questionCounter = 0;
   private planReviewCounter = 0;
-  private lastPlanMarkdown: { content: string; title: string } | null = null;
+  /** Creation timestamp for each pending permission/question/plan-review/elicitation request.
+   *  Used by the idle sweep to auto-reject requests that have been pending too long
+   *  (e.g. renderer crash left them unresolvable). */
+  private pendingRequestCreatedAt = new Map<string, number>();
+  private static readonly PENDING_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+  /** 500 KB cap on stored plan content to prevent a single large plan from bloating memory. */
+  private static readonly MAX_PLAN_CONTENT_BYTES = 500_000;
   private previewFileWatchers = new Map<string, FSWatcher>();
   private cachedSlashCommands: { name: string; description?: string }[] = [];
   private mcpSocketPath: string;
@@ -428,6 +440,41 @@ export class AgentManager {
     this.idleEvictTimer = setInterval(() => {
       try {
         this.evictIdleSessions();
+
+        const now = Date.now();
+
+        // Evict expired modelsCache entries so stale model lists don't linger.
+        for (const [k, v] of this.modelsCache) {
+          if (now - v.ts > AgentManager.MODEL_CACHE_TTL_MS) {
+            this.modelsCache.delete(k);
+          }
+        }
+
+        // Auto-reject pending requests that have been waiting longer than the
+        // timeout. This cleans up orphaned requests after renderer crashes where
+        // rejectAllPendingForRendererGone may not have fired in time.
+        for (const [id, ts] of this.pendingRequestCreatedAt) {
+          if (now - ts < AgentManager.PENDING_REQUEST_TIMEOUT_MS) continue;
+          this.pendingRequestCreatedAt.delete(id);
+          if (this.pendingPermissions.has(id)) {
+            this.pendingPermissions
+              .get(id)!
+              .resolve({ approved: false, denyMessage: "Request timed out" });
+            this.pendingPermissions.delete(id);
+          } else if (this.pendingQuestions.has(id)) {
+            this.pendingQuestions.get(id)!.resolve({ approved: false });
+            this.pendingQuestions.delete(id);
+          } else if (this.pendingPlanReviews.has(id)) {
+            this.pendingPlanReviews
+              .get(id)!
+              .resolve({ approved: false, denyMessage: "Request timed out" });
+            this.pendingPlanReviews.delete(id);
+          } else if (this.pendingElicitations.has(id)) {
+            this.pendingElicitations.get(id)!.resolve({ action: "cancel" });
+            this.pendingElicitations.delete(id);
+          }
+          // else: already cleaned up, just remove the timestamp
+        }
       } catch (err) {
         safeLog(console.error, "[agent-manager] idle eviction error:", err);
       }
@@ -612,8 +659,11 @@ export class AgentManager {
         if (!pending) return;
         const { resolve, threadId, input } = pending;
         this.pendingPlanReviews.delete(data.requestId);
-        // Free plan markdown memory — it's been sent to the renderer already
-        this.lastPlanMarkdown = null;
+        // Free per-thread plan markdown — it's been sent to the renderer already
+        if (threadId) {
+          const session = this.sessions.get(threadId);
+          if (session) delete session.lastPlanMarkdown;
+        }
 
         switch (data.decision.type) {
           case "clear-bypass":
@@ -1197,6 +1247,7 @@ export class AgentManager {
       this.notifyIfBackground(threadId, "permission");
       return new Promise((resolve) => {
         this.pendingPermissions.set(requestId, { threadId, resolve });
+        this.pendingRequestCreatedAt.set(requestId, Date.now());
       });
     };
 
@@ -1231,6 +1282,7 @@ export class AgentManager {
       );
       return new Promise((resolve) => {
         this.pendingElicitations.set(requestId, { threadId, resolve });
+        this.pendingRequestCreatedAt.set(requestId, Date.now());
       });
     };
 
@@ -1341,7 +1393,7 @@ export class AgentManager {
       ) {
         const planContent = latestPlanContent.trim();
         const planTitle = "Plan";
-        this.lastPlanMarkdown = { content: planContent, title: planTitle };
+        this.setPlanMarkdown(threadId, planContent, planTitle);
         this.sendToRenderer(
           IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
           {
@@ -1653,6 +1705,21 @@ export class AgentManager {
     notification.show();
   }
 
+  private setPlanMarkdown(
+    threadId: string,
+    content: string,
+    title: string,
+  ): void {
+    const session = this.sessions.get(threadId);
+    if (!session) return;
+    const capped =
+      content.length > AgentManager.MAX_PLAN_CONTENT_BYTES
+        ? content.slice(0, AgentManager.MAX_PLAN_CONTENT_BYTES) +
+          "\n\n[… truncated — plan exceeds 500 KB]"
+        : content;
+    session.lastPlanMarkdown = { content: capped, title };
+  }
+
   private hasPendingPlanReviewForThread(threadId: string): boolean {
     for (const pending of this.pendingPlanReviews.values()) {
       if (pending.threadId === threadId) return true;
@@ -1672,15 +1739,19 @@ export class AgentManager {
     this.notifyIfBackground(threadId ?? "", "plan_review");
     return new Promise((resolve) => {
       this.pendingPlanReviews.set(requestId, { resolve, threadId, input });
+      this.pendingRequestCreatedAt.set(requestId, Date.now());
+      const planMd = threadId
+        ? this.sessions.get(threadId)?.lastPlanMarkdown
+        : undefined;
       this.sendToRenderer(
         IPC_CHANNELS.PLAN_REVIEW,
         {
           requestId,
           input,
-          ...(this.lastPlanMarkdown
+          ...(planMd
             ? {
-                planContent: this.lastPlanMarkdown.content,
-                planTitle: this.lastPlanMarkdown.title,
+                planContent: planMd.content,
+                planTitle: planMd.title,
               }
             : {}),
         },
@@ -1700,6 +1771,7 @@ export class AgentManager {
         resolve,
         input,
       });
+      this.pendingRequestCreatedAt.set(requestId, Date.now());
       this.sendToRenderer(
         IPC_CHANNELS.ASK_USER_QUESTION,
         {
@@ -1739,7 +1811,7 @@ export class AgentManager {
     threadId: string,
   ): void {
     const fileName = basename(filePath);
-    this.lastPlanMarkdown = { content, title: fileName };
+    this.setPlanMarkdown(threadId, content, fileName);
     this.sendToRenderer(
       IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
       { content, title: fileName, filePath },
@@ -1761,7 +1833,7 @@ export class AgentManager {
           try {
             const content = await fsPromises.readFile(filePath, "utf-8");
             const fileName = basename(filePath);
-            this.lastPlanMarkdown = { content, title: fileName };
+            this.setPlanMarkdown(threadId, content, fileName);
             this.sendToRenderer(
               IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
               { content, title: fileName, filePath },
@@ -1990,6 +2062,11 @@ export class AgentManager {
       (id) => id !== threadId,
     );
     this.threadEffectiveModes.delete(threadId);
+    // Prune notification debounce entries for this thread to prevent the map
+    // from growing forever as threads are created, used, and evicted.
+    for (const key of this.lastNotificationAt.keys()) {
+      if (key.startsWith(`${threadId}-`)) this.lastNotificationAt.delete(key);
+    }
     this.rejectPendingForThread(threadId, "session cleared");
   }
 
@@ -2005,6 +2082,7 @@ export class AgentManager {
       if (p.threadId === threadId) {
         p.resolve({ approved: false, denyMessage: reason });
         this.pendingPermissions.delete(id);
+        this.pendingRequestCreatedAt.delete(id);
         count++;
       }
     }
@@ -2012,6 +2090,7 @@ export class AgentManager {
       if (p.threadId === threadId) {
         p.resolve({ approved: false });
         this.pendingQuestions.delete(id);
+        this.pendingRequestCreatedAt.delete(id);
         count++;
       }
     }
@@ -2019,6 +2098,7 @@ export class AgentManager {
       if (p.threadId === threadId) {
         p.resolve({ approved: false, denyMessage: reason });
         this.pendingPlanReviews.delete(id);
+        this.pendingRequestCreatedAt.delete(id);
         count++;
       }
     }
@@ -2026,6 +2106,7 @@ export class AgentManager {
       if (p.threadId === threadId) {
         p.resolve({ action: "cancel" });
         this.pendingElicitations.delete(id);
+        this.pendingRequestCreatedAt.delete(id);
         count++;
       }
     }

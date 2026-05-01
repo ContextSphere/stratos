@@ -331,22 +331,19 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
         const hasMore = startIdx + pageSize < totalCount;
         const nextCursor = hasMore ? `idx:${startIdx + pageSize}` : undefined;
 
-        const sessions = await Promise.all(
-          page.map(async (t) => {
-            const messages = await storage.loadMessages(t.id);
-            return {
-              threadId: t.id,
-              title: t.title,
-              summary: deriveSummary(t, messages),
-              workspace: t.cwd ?? "",
-              provider: t.provider ?? "claude-code",
-              model: t.model ?? undefined,
-              status: agentManager.isStreaming(t.id) ? "running" : "idle",
-              lastActivity: new Date(t.updatedAt).toISOString(),
-              messageCount: messages.length,
-            };
-          }),
-        );
+        // Derive session info from thread metadata only — do NOT load transcripts.
+        // Loading the full SDK JSONL for every thread on a page is the primary
+        // driver of the 3 GB heap spike (see docs/memory-leak-analysis.md #2).
+        const sessions = page.map((t) => ({
+          threadId: t.id,
+          title: t.title,
+          summary: t.title,
+          workspace: t.cwd ?? "",
+          provider: t.provider ?? "claude-code",
+          model: t.model ?? undefined,
+          status: agentManager.isStreaming(t.id) ? "running" : "idle",
+          lastActivity: new Date(t.updatedAt).toISOString(),
+        }));
 
         return textResult(
           JSON.stringify(
@@ -401,12 +398,12 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
     defineHandler({
       name: "search_sessions",
       description:
-        "Search sessions by content or title. Returns paginated results with match context.",
+        "Search sessions by title. Returns paginated results with match context. Note: message-content search is only available for non-claude-code providers (codex/opencode); claude-code sessions are matched by title only.",
       inputSchema: {
         query: z
           .string()
           .describe(
-            "Search query (matches against titles and message content)",
+            "Search query (matches against session titles; message content is only searched for codex/opencode sessions)",
           ),
         workspace: z
           .string()
@@ -437,7 +434,6 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
         };
         const results: Hit[] = [];
         for (const t of threads) {
-          const messages = await storage.loadMessages(t.id);
           const titleMatch = t.title.toLowerCase().includes(lower);
           let matchContext = "";
           let score = 0;
@@ -445,23 +441,30 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
             matchContext = t.title;
             score = 2;
           }
-          for (const m of messages) {
-            if (typeof m.content !== "string") continue;
-            const idx = m.content.toLowerCase().indexOf(lower);
-            if (idx >= 0) {
-              matchContext = m.content.slice(
-                Math.max(0, idx - 50),
-                idx + args.query.length + 50,
-              );
-              score = Math.max(score, 1);
-              break;
+          // Only search message content for non-claude-code threads (disk-backed).
+          // claude-code threads read from the SDK JSONL which can be hundreds of MB;
+          // loading every thread's JSONL for a workspace-wide search causes OOM.
+          // Title search still applies for all threads above.
+          if (!titleMatch && (t.provider ?? "claude-code") !== "claude-code") {
+            const messages = await storage.loadMessages(t.id);
+            for (const m of messages) {
+              if (typeof m.content !== "string") continue;
+              const idx = m.content.toLowerCase().indexOf(lower);
+              if (idx >= 0) {
+                matchContext = m.content.slice(
+                  Math.max(0, idx - 50),
+                  idx + args.query.length + 50,
+                );
+                score = Math.max(score, 1);
+                break;
+              }
             }
           }
           if (score > 0) {
             results.push({
               threadId: t.id,
               title: t.title,
-              summary: deriveSummary(t, messages),
+              summary: t.title,
               matchContext,
               relevanceScore: score,
             });
