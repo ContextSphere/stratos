@@ -266,6 +266,12 @@ export function useChat(
   const activeThreadIdRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const loadingThreadIdRef = useRef<string | null>(null);
+  // Per-thread pending-flush timer for batching streaming React re-renders.
+  // Text/thinking events fire dozens of times per second; batching reduces
+  // redundant renders without adding perceptible latency (50 ms window).
+  const pendingSetRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
   activeThreadIdRef.current = activeThreadId;
   messagesRef.current = messages;
 
@@ -324,6 +330,11 @@ export function useChat(
     // Keep: the new active thread + any threads that are currently running.
     for (const [tid] of streamingThreadsRef.current) {
       if (tid !== activeThreadId && !runningThreadIds.includes(tid)) {
+        const timer = pendingSetRef.current.get(tid);
+        if (timer) {
+          clearTimeout(timer);
+          pendingSetRef.current.delete(tid);
+        }
         streamingThreadsRef.current.delete(tid);
         activeStreamIdRef.current.delete(tid);
       }
@@ -438,7 +449,32 @@ export function useChat(
         const next = updater(state!.messages);
         state!.messages = next;
         if (activeThreadIdRef.current === threadId) {
-          setMessages(next);
+          // Batch React re-renders: replace the pending flush timer instead of
+          // calling setMessages on every streaming event.
+          const existing = pendingSetRef.current.get(threadId);
+          if (existing) clearTimeout(existing);
+          pendingSetRef.current.set(
+            threadId,
+            setTimeout(() => {
+              pendingSetRef.current.delete(threadId);
+              const s = streamingThreadsRef.current.get(threadId);
+              if (s && activeThreadIdRef.current === threadId) {
+                setMessages(s.messages);
+              }
+            }, 50),
+          );
+        }
+      };
+
+      // Flush any pending batched state update immediately, then cancel the timer.
+      const flushPending = () => {
+        const timer = pendingSetRef.current.get(threadId);
+        if (timer) {
+          clearTimeout(timer);
+          pendingSetRef.current.delete(threadId);
+        }
+        if (activeThreadIdRef.current === threadId) {
+          setMessages(state!.messages);
         }
       };
 
@@ -916,6 +952,8 @@ export function useChat(
             })
             .catch(() => {});
 
+          // Flush any pending batched render so the final cost/usage is visible.
+          flushPending();
           state.assistantId = null;
           if (state.messages.length > 0) {
             saveMessages(threadId, state.messages);
@@ -945,6 +983,12 @@ export function useChat(
           // Suppress error messages for intentional interrupts — the user
           // clicked stop, so showing "stream interrupted" is not useful.
           if (state.interrupted) {
+            // Cancel any pending batch flush — no new messages to show.
+            const timer = pendingSetRef.current.get(threadId);
+            if (timer) {
+              clearTimeout(timer);
+              pendingSetRef.current.delete(threadId);
+            }
             state.assistantId = null;
             if (state.messages.length > 0) {
               saveMessages(threadId, state.messages);
@@ -965,6 +1009,7 @@ export function useChat(
               timestamp: Date.now(),
             },
           ]);
+          flushPending();
           state.assistantId = null;
           if (state.messages.length > 0) {
             saveMessages(threadId, state.messages);

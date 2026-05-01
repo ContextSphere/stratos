@@ -250,6 +250,7 @@ export class FileStorageAdapter implements StorageAdapter {
       const sdkMessages = await sdkMessagesToStored(
         thread.sessionId,
         thread.createdAt,
+        thread.cwd,
       );
       // If the current session is empty (e.g. after a stale-session retry created
       // a new session) but we have a disk backup from the previous session, prefer
