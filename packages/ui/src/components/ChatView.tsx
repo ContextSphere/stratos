@@ -167,12 +167,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     anchorTimerRef.current = setTimeout(detectAnchor, 300);
   }, [checkIfNearBottom, detectAnchor]);
 
-  // Auto-scroll only when user is near the bottom
+  // Auto-scroll only when user is near the bottom.
+  // Re-runs on isStreaming so the typing indicator (rendered after isStreaming
+  // flips, often a tick after the user message) gets pulled into view too.
   useEffect(() => {
     if (scrollRef.current && isNearBottomRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, isStreaming]);
 
   // Cleanup debounce timer on unmount
   useEffect(() => {
