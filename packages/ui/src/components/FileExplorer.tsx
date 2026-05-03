@@ -16,6 +16,12 @@ export type { TreeNode };
 export { mergeTreeNodes };
 
 const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB — matches backend cap
+
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico|tiff)$/i;
+function isImagePath(path: string): boolean {
+  return IMAGE_EXT_RE.test(path);
+}
 
 interface Props {
   cwd: string;
@@ -99,6 +105,7 @@ export function FileExplorer({
     path: string;
     content: string;
     isBinary: boolean;
+    isImage?: boolean;
     tooLarge: boolean;
   } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -305,11 +312,13 @@ export function FileExplorer({
 
   const handleFileClick = useCallback(
     async (filePath: string, size?: number, line?: number) => {
-      if (size !== undefined && size > MAX_FILE_SIZE) {
+      const sizeLimit = isImagePath(filePath) ? MAX_IMAGE_SIZE : MAX_FILE_SIZE;
+      if (size !== undefined && size > sizeLimit) {
         setOpenFile({
           path: filePath,
           content: "",
           isBinary: false,
+          isImage: isImagePath(filePath),
           tooLarge: true,
         });
         setEditContent("");
@@ -466,7 +475,33 @@ export function FileExplorer({
           )}
         </div>
         <div className="flex-1 min-h-0">
-          {openFile.isBinary ? (
+          {openFile.isImage ? (
+            openFile.content ? (
+              <div
+                className="flex items-center justify-center h-full overflow-auto p-4"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%)",
+                  backgroundSize: "16px 16px",
+                  backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
+                }}
+              >
+                <img
+                  src={openFile.content}
+                  alt={relativePath}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    objectFit: "contain",
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
+                Image too large to preview (&gt;10MB)
+              </div>
+            )
+          ) : openFile.isBinary ? (
             <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
               Binary file — cannot display
             </div>

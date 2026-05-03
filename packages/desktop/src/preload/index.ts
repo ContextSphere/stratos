@@ -412,7 +412,7 @@ const api = {
   filesReadFile: (
     filePath: string,
     rootPath: string,
-  ): Promise<{ content: string; isBinary: boolean }> =>
+  ): Promise<{ content: string; isBinary: boolean; isImage?: boolean }> =>
     ipcRenderer.invoke(IPC_CHANNELS.FILES_READ_FILE, filePath, rootPath),
 
   filesWriteFile: (

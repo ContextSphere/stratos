@@ -2,7 +2,7 @@ import { ipcMain } from "electron";
 import { readdir, readFile, stat, writeFile } from "fs/promises";
 import { watch as fsWatch } from "fs";
 import type { FSWatcher } from "fs";
-import { join, resolve, dirname, relative } from "path";
+import { extname, join, resolve, dirname, relative } from "path";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
 
 // Watcher state — one watcher per process
@@ -17,6 +17,19 @@ export interface DirEntry {
 }
 
 const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB — base64-encoded over IPC
+
+const IMAGE_MIME_BY_EXT: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
+  ".tiff": "image/tiff",
+};
 
 function isPathWithin(child: string, parent: string): boolean {
   const resolved = resolve(child);
@@ -74,11 +87,24 @@ export function registerFilesIpc(): void {
       _event,
       filePath: string,
       rootPath: string,
-    ): Promise<{ content: string; isBinary: boolean }> => {
+    ): Promise<{ content: string; isBinary: boolean; isImage?: boolean }> => {
       if (!isPathWithin(filePath, rootPath)) {
         throw new Error("Path outside allowed directory");
       }
       const s = await stat(filePath);
+      const ext = extname(filePath).toLowerCase();
+      const imageMime = IMAGE_MIME_BY_EXT[ext];
+      if (imageMime) {
+        if (s.size > MAX_IMAGE_SIZE) {
+          return { content: "", isBinary: true, isImage: true };
+        }
+        const buffer = await readFile(filePath);
+        return {
+          content: `data:${imageMime};base64,${buffer.toString("base64")}`,
+          isBinary: true,
+          isImage: true,
+        };
+      }
       if (s.size > MAX_FILE_SIZE) {
         return { content: "", isBinary: false };
       }

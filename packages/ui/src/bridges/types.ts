@@ -163,7 +163,7 @@ export interface FilesBridge {
   readFile(
     filePath: string,
     rootPath: string,
-  ): Promise<{ content: string; isBinary: boolean }>;
+  ): Promise<{ content: string; isBinary: boolean; isImage?: boolean }>;
   writeFile(filePath: string, content: string, rootPath: string): Promise<void>;
   listAllFiles?(cwd: string): Promise<string[]>;
   watchDirectory?(cwd: string): Promise<void>;
