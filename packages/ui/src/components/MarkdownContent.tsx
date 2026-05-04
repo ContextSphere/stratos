@@ -5,6 +5,84 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { MermaidDiagram } from "./MermaidDiagram";
 
+// Matches file paths like `src/foo/bar.ts:42` or `script.py:10,20,30`
+const FILE_LINK_RE =
+  /([a-zA-Z0-9_.\-/]+\.(?:py|ts|tsx|js|jsx|mjs|cjs|go|rs|java|cs|rb|cpp|cc|c|h|hpp|kt|swift|md|json|yaml|yml|toml|sh|bash|zsh|txt|css|scss|sass|html|vue|svelte|ex|exs|php|dart|lua|r)):(\d+(?:,\d+)*)/g;
+
+/** Remark plugin: converts bare `file.ext:line` text into clickable links. */
+function remarkFileLinks() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (tree: any) => {
+    visitForFileLinks(tree);
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function visitForFileLinks(node: any) {
+  if (!node.children) return;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const next: any[] = [];
+  for (const child of node.children) {
+    // Don't linkify inside code blocks, inline code, or existing links
+    if (
+      child.type === "code" ||
+      child.type === "inlineCode" ||
+      child.type === "link"
+    ) {
+      next.push(child);
+      continue;
+    }
+    if (child.type === "text") {
+      const parts = splitIntoFileLinkNodes(child.value);
+      next.push(...parts);
+    } else {
+      visitForFileLinks(child);
+      next.push(child);
+    }
+  }
+  node.children = next;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function splitIntoFileLinkNodes(text: string): any[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nodes: any[] = [];
+  let lastIndex = 0;
+  FILE_LINK_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = FILE_LINK_RE.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push({ type: "text", value: text.slice(lastIndex, match.index) });
+    }
+    const firstLine = match[2].split(",")[0];
+    nodes.push({
+      type: "link",
+      url: `${match[1]}:${firstLine}`,
+      title: null,
+      children: [{ type: "text", value: match[0] }],
+    });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    nodes.push({ type: "text", value: text.slice(lastIndex) });
+  }
+  return nodes.length > 0 ? nodes : [{ type: "text", value: text }];
+}
+
+/** Recursively extract plain text from React children. */
+function extractTextContent(node: React.ReactNode): string {
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(extractTextContent).join("");
+  if (node && typeof node === "object" && "props" in node) {
+    return extractTextContent(
+      (node as React.ReactElement<{ children?: React.ReactNode }>).props
+        .children,
+    );
+  }
+  return "";
+}
+
 export function buildMarkdownComponents(onLinkClick?: (url: string) => void) {
   return {
     pre({ children }: { children?: React.ReactNode }) {
@@ -114,6 +192,18 @@ export function buildMarkdownComponents(onLinkClick?: (url: string) => void) {
           onClick={(e) => {
             if (onLinkClick && href) {
               e.preventDefault();
+              // When href has no line (e.g. `file.py`) but text says `file.py:90`,
+              // forward the line so the file explorer can jump to it.
+              const hasLine = /:(\d+)$/.test(href) || /#L\d+/i.test(href);
+              if (!hasLine) {
+                const text = extractTextContent(children);
+                const m = text.match(/:(\d+(?:,\d+)*)$/);
+                if (m) {
+                  const firstLine = m[1].split(",")[0];
+                  onLinkClick(`${href}:${firstLine}`);
+                  return;
+                }
+              }
               onLinkClick(href);
             }
           }}
@@ -137,7 +227,10 @@ export function MarkdownContent({
     [onLinkClick],
   );
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkFileLinks]}
+      components={components}
+    >
       {content}
     </ReactMarkdown>
   );
