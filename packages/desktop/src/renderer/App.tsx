@@ -151,7 +151,7 @@ function AppInner(): React.ReactElement {
     close: closePreview,
   } = usePreview(activeThreadId);
   const sessionChanges = useSessionChanges(messages);
-  const gitStatus = useGitStatus(activeThread?.cwd, messages.length);
+  const gitStatus = useGitStatus(activeThread?.cwd, isStreaming);
   const { latestTodoData, showTaskPanel, setShowTaskPanel } =
     useTodoData(messages);
 

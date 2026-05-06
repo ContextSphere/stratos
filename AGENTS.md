@@ -161,3 +161,11 @@ kill $PID
 ## Self-Development (Dual-Instance Workflow)
 
 Stratos can develop itself: run one instance as the "dev tool" (main worktree) and a second as the "dev target" (feature worktree). Each gets a unique CDP port derived from its git root path, a distinct logo color, and a different dock icon. See `.Codex/skills/dev-target.md` for the full workflow.
+
+## Debugging & Learnings
+
+Documented investigations live in `docs/learnings/`. **Read the relevant file before starting any debugging session** — it contains methodology, grep commands, and root causes already confirmed in this codebase.
+
+| Topic                                                                   | File                                                                             |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| GC / OOM crashes, heap analysis, `*Sync`-in-IPC, streaming memory leaks | [`docs/learnings/gc-memory-debugging.md`](docs/learnings/gc-memory-debugging.md) |

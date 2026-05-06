@@ -1,5 +1,6 @@
 import { app, ipcMain, BrowserWindow } from "electron";
-import { execFileSync } from "child_process";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { join, isAbsolute } from "path";
 import { mkdirSync, existsSync } from "fs";
 import { homedir } from "os";
@@ -17,6 +18,8 @@ import type {
   Folder,
   ProviderType,
 } from "@stratosapp/core";
+
+const execFileAsync = promisify(execFile);
 
 // Reference to clearThreadSession — set by main/index.ts
 let clearSessionFn: ((threadId: string) => void) | null = null;
@@ -129,29 +132,30 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
   );
 
   // Git status (branch + per-file staged/unstaged/mixed/untracked state)
+  // Uses async execFile so git commands never block the main-process event loop.
   ipcMain.handle(IPC_CHANNELS.GIT_STATUS, async (_event, cwd: string) => {
     try {
-      const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-        cwd,
-        encoding: "utf-8",
-        timeout: 3000,
-        stdio: ["pipe", "pipe", "pipe"],
-      }).trim();
+      const { stdout: rootRaw } = await execFileAsync(
+        "git",
+        ["rev-parse", "--show-toplevel"],
+        { cwd, encoding: "utf-8", timeout: 3000 },
+      );
+      const root = rootRaw.trim();
 
-      const branch =
-        execFileSync("git", ["branch", "--show-current"], {
-          cwd: root,
-          encoding: "utf-8",
-          timeout: 3000,
-          stdio: ["pipe", "pipe", "pipe"],
-        }).trim() || null;
-
-      const statusOutput = execFileSync("git", ["status", "--porcelain=v1"], {
-        cwd: root,
-        encoding: "utf-8",
-        timeout: 3000,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
+      const [{ stdout: branchRaw }, { stdout: statusOutput }] =
+        await Promise.all([
+          execFileAsync("git", ["branch", "--show-current"], {
+            cwd: root,
+            encoding: "utf-8",
+            timeout: 3000,
+          }),
+          execFileAsync("git", ["status", "--porcelain=v1"], {
+            cwd: root,
+            encoding: "utf-8",
+            timeout: 3000,
+          }),
+        ]);
+      const branch = branchRaw.trim() || null;
 
       const files: Record<string, string> = {};
       for (const line of statusOutput.split("\n")) {

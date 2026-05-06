@@ -1831,6 +1831,9 @@ export class AgentManager {
         if (debounce) clearTimeout(debounce);
         debounce = setTimeout(async () => {
           try {
+            const stat = await fsPromises.stat(filePath);
+            // Skip files > 2 MB to avoid large IPC messages and heap pressure
+            if (stat.size > 2 * 1024 * 1024) return;
             const content = await fsPromises.readFile(filePath, "utf-8");
             const fileName = basename(filePath);
             this.setPlanMarkdown(threadId, content, fileName);
