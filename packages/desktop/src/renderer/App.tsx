@@ -152,8 +152,10 @@ function AppInner(): React.ReactElement {
   } = usePreview(activeThreadId);
   const sessionChanges = useSessionChanges(messages);
   const gitStatus = useGitStatus(activeThread?.cwd, isStreaming);
-  const { latestTodoData, showTaskPanel, setShowTaskPanel } =
-    useTodoData(messages);
+  const { latestTodoData, showTaskPanel, setShowTaskPanel } = useTodoData(
+    messages,
+    activeThreadId,
+  );
 
   const [showClaudeDialog, setShowClaudeDialog] = useState(false);
   const [showGitHubDialog, setShowGitHubDialog] = useState(false);
