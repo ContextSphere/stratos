@@ -7,7 +7,7 @@ import {
 } from "../utils/monaco-language";
 import "../utils/monaco-theme";
 import { useTheme, monacoThemeName } from "../context/ThemeContext";
-import type { DirEntry } from "../bridges/types";
+import type { DirEntry, FileChangeEvent } from "../bridges/types";
 import { type TreeNode, mergeTreeNodes } from "./tree-utils";
 import { MarkdownPreview } from "./preview/MarkdownPreview";
 import { FileIcon } from "./FileIcon";
@@ -40,6 +40,9 @@ interface Props {
   watchDirectory?: (cwd: string) => Promise<void>;
   unwatchDirectory?: () => Promise<void>;
   onDirectoryChanged?: (callback: (dirPath: string) => void) => () => void;
+  watchFile?: (filePath: string, rootPath: string) => Promise<void>;
+  unwatchFile?: (filePath: string) => Promise<void>;
+  onFileChanged?: (callback: (event: FileChangeEvent) => void) => () => void;
 }
 
 function formatSize(bytes: number): string {
@@ -97,6 +100,9 @@ export function FileExplorer({
   watchDirectory,
   unwatchDirectory,
   onDirectoryChanged,
+  watchFile,
+  unwatchFile,
+  onFileChanged,
 }: Props): React.ReactElement {
   useMonacoFontReady();
   const theme = useTheme();
@@ -165,6 +171,10 @@ export function FileExplorer({
     saveStatusRef.current = saveStatus;
   }, [saveStatus]);
 
+  // Directory watcher — drives ONLY tree refresh. Open-file content refresh
+  // is handled by a separate per-file watcher below; mixing the two through
+  // dir events was historically fragile (macOS fs.watch returns inconsistent
+  // filename args, exact-string dir comparison breaks on path quirks).
   useEffect(() => {
     if (!watchDirectory || !unwatchDirectory || !onDirectoryChanged) return;
 
@@ -214,48 +224,6 @@ export function FileExplorer({
 
       const updated = await refreshInTree(currentTree);
       setTree(updated);
-
-      // Re-read the currently open file if it lives in the changed directory
-      const currentOpenFile = openFileRef.current;
-      if (
-        currentOpenFile &&
-        !currentOpenFile.tooLarge &&
-        !currentOpenFile.isBinary
-      ) {
-        const openFileDir = currentOpenFile.path.substring(
-          0,
-          currentOpenFile.path.lastIndexOf("/"),
-        );
-        if (openFileDir === changedDirPath) {
-          // Don't overwrite unsaved markdown edits
-          if (
-            saveStatusRef.current === "unsaved" ||
-            saveStatusRef.current === "saving"
-          ) {
-            return;
-          }
-          try {
-            const result = await readFile(currentOpenFile.path, cwd);
-            if (openFileRef.current?.path === currentOpenFile.path) {
-              setOpenFile({
-                path: currentOpenFile.path,
-                ...result,
-                tooLarge: false,
-              });
-              setEditContent(result.content);
-            }
-          } catch {
-            if (openFileRef.current?.path === currentOpenFile.path) {
-              setOpenFile({
-                path: currentOpenFile.path,
-                content: "File no longer available",
-                isBinary: false,
-                tooLarge: false,
-              });
-            }
-          }
-        }
-      }
     };
 
     // Register listener BEFORE starting watcher — events can arrive before invoke resolves
@@ -272,8 +240,56 @@ export function FileExplorer({
     unwatchDirectory,
     onDirectoryChanged,
     listDirectory,
-    readFile,
   ]);
+
+  // Per-file watcher — uses fs.watchFile (mtime polling) to detect content
+  // changes for the currently-open file. This is bulletproof on macOS,
+  // where fs.watch's recursive option produces unreliable filename args.
+  // Keyed on path only so content updates don't tear down the watcher.
+  const watchedPath = openFile?.path ?? null;
+  useEffect(() => {
+    if (!watchedPath || !watchFile || !unwatchFile || !onFileChanged) return;
+
+    const cleanup = onFileChanged((event) => {
+      if (event.filePath !== watchedPath) return;
+      if (openFileRef.current?.path !== watchedPath) return;
+
+      if (event.isDeleted) {
+        setOpenFile({
+          path: watchedPath,
+          content: "File no longer available",
+          isBinary: false,
+          tooLarge: false,
+        });
+        setEditContent("File no longer available");
+        return;
+      }
+
+      // Don't clobber unsaved markdown edits.
+      if (
+        saveStatusRef.current === "unsaved" ||
+        saveStatusRef.current === "saving"
+      ) {
+        return;
+      }
+
+      setOpenFile({
+        path: watchedPath,
+        content: event.content ?? "",
+        isBinary: event.isBinary ?? false,
+        isImage: event.isImage,
+        tooLarge: event.tooLarge ?? false,
+      });
+      setEditContent(event.content ?? "");
+    });
+
+    void watchFile(watchedPath, cwd);
+
+    return () => {
+      cleanup();
+      void unwatchFile(watchedPath);
+    };
+  }, [watchedPath, watchFile, unwatchFile, onFileChanged, cwd]);
 
   const toggleFolder = useCallback(
     async (nodePath: string) => {

@@ -8,14 +8,21 @@ import {
   getLanguageFromPath,
   MONO_FONT_FAMILY,
 } from "../../utils/monaco-language";
+import type { FilesBridge } from "../../bridges/types";
 
 interface Props {
   content: string;
   filePath: string;
   onSave?: (content: string) => Promise<void>;
+  filesBridge?: FilesBridge;
 }
 
-export function ArtifactEditorPreview({ content, filePath, onSave }: Props) {
+export function ArtifactEditorPreview({
+  content,
+  filePath,
+  onSave,
+  filesBridge,
+}: Props) {
   useMonacoFontReady();
   const theme = useTheme();
   const isMarkdown = filePath.endsWith(".md");
@@ -67,6 +74,43 @@ export function ArtifactEditorPreview({ content, filePath, onSave }: Props) {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, []);
+
+  // Auto-refresh content when the underlying file changes on disk.
+  // Same fs.watchFile-backed bridge used by FileExplorer — bulletproof on
+  // macOS where fs.watch's recursive option is unreliable.
+  const saveStatusRef = useRef(saveStatus);
+  useEffect(() => {
+    saveStatusRef.current = saveStatus;
+  }, [saveStatus]);
+
+  useEffect(() => {
+    if (!filesBridge?.watchFile || !filesBridge.unwatchFile) return;
+    if (!filesBridge.onFileChanged) return;
+
+    const cleanup = filesBridge.onFileChanged((event) => {
+      if (event.filePath !== filePath) return;
+      if (event.isDeleted) return;
+      // Don't clobber the user's unsaved edits.
+      if (
+        saveStatusRef.current === "unsaved" ||
+        saveStatusRef.current === "saving"
+      ) {
+        return;
+      }
+      if (event.content !== undefined) {
+        setCurrentContent(event.content);
+      }
+    });
+    // rootPath = filePath satisfies isPathWithin trivially. preview_open_file
+    // already reads arbitrary absolute paths without a cwd constraint, so the
+    // watcher should mirror that.
+    void filesBridge.watchFile(filePath, filePath);
+
+    return () => {
+      cleanup();
+      void filesBridge.unwatchFile?.(filePath);
+    };
+  }, [filePath, filesBridge]);
 
   const handleEditorMount: OnMount = (editor) => {
     editor.updateOptions({

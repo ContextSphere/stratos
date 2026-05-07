@@ -443,6 +443,41 @@ const api = {
       ipcRenderer.removeListener(IPC_CHANNELS.FILES_DIR_CHANGED, listener);
   },
 
+  filesFileWatchStart: (filePath: string, rootPath: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_FILE_WATCH_START, {
+      filePath,
+      rootPath,
+    }),
+
+  filesFileWatchStop: (filePath: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_FILE_WATCH_STOP, { filePath }),
+
+  filesOnFileChanged: (
+    callback: (event: {
+      filePath: string;
+      content?: string;
+      isBinary?: boolean;
+      isImage?: boolean;
+      tooLarge?: boolean;
+      isDeleted?: boolean;
+    }) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: {
+        filePath: string;
+        content?: string;
+        isBinary?: boolean;
+        isImage?: boolean;
+        tooLarge?: boolean;
+        isDeleted?: boolean;
+      },
+    ) => callback(payload);
+    ipcRenderer.on(IPC_CHANNELS.FILES_FILE_CHANGED, listener);
+    return () =>
+      ipcRenderer.removeListener(IPC_CHANNELS.FILES_FILE_CHANGED, listener);
+  },
+
   // MCP servers
   mcpServerStatus: (threadId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.MCP_SERVER_STATUS, threadId),

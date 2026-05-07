@@ -110,6 +110,9 @@ export const IPC_CHANNELS = {
   FILES_WATCH_START: "files:watch-start",
   FILES_WATCH_STOP: "files:watch-stop",
   FILES_DIR_CHANGED: "files:dir-changed",
+  FILES_FILE_WATCH_START: "files:file-watch-start",
+  FILES_FILE_WATCH_STOP: "files:file-watch-stop",
+  FILES_FILE_CHANGED: "files:file-changed",
   FILES_LIST_ALL: "files:list-all",
 
   // Skills

@@ -131,6 +131,9 @@ export function PreviewPane({
           watchDirectory={filesBridge.watchDirectory}
           unwatchDirectory={filesBridge.unwatchDirectory}
           onDirectoryChanged={filesBridge.onDirectoryChanged}
+          watchFile={filesBridge.watchFile}
+          unwatchFile={filesBridge.unwatchFile}
+          onFileChanged={filesBridge.onFileChanged}
         />
       ) : preview.type === "artifact-editor" &&
         preview.artifactContent !== undefined &&
@@ -138,6 +141,7 @@ export function PreviewPane({
         <ArtifactEditorPreview
           content={preview.artifactContent}
           filePath={preview.artifactFilePath}
+          filesBridge={filesBridge}
         />
       ) : preview.type === "markdown" && preview.markdownContent ? (
         <MarkdownPreview content={preview.markdownContent} />

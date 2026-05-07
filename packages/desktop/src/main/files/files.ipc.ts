@@ -1,14 +1,24 @@
 import { ipcMain } from "electron";
 import { readdir, readFile, stat, writeFile } from "fs/promises";
-import { watch as fsWatch } from "fs";
+import { watch as fsWatch, watchFile, unwatchFile } from "fs";
 import type { FSWatcher } from "fs";
 import { extname, join, resolve, dirname, relative } from "path";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
 
-// Watcher state — one watcher per process
+// Directory watcher state — one watcher per process
 let activeWatcher: FSWatcher | null = null;
 let activeCwd: string | null = null;
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+// Per-file watcher state — keyed by absolute file path. Each entry tracks
+// the listener so we can unwatchFile cleanly. fs.watchFile uses mtime
+// polling under the hood and is bulletproof on macOS where fs.watch's
+// recursive option produces unreliable filename arguments.
+interface FileWatchEntry {
+  listener: (curr: { mtimeMs: number }, prev: { mtimeMs: number }) => void;
+}
+const fileWatchers = new Map<string, FileWatchEntry>();
+const FILE_WATCH_INTERVAL_MS = 1000;
 
 export interface DirEntry {
   name: string;
@@ -194,6 +204,111 @@ export function registerFilesIpc(): void {
     debounceTimers.clear();
   });
 
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_FILE_WATCH_START,
+    (
+      _event,
+      { filePath, rootPath }: { filePath: string; rootPath: string },
+    ): void => {
+      if (!isPathWithin(filePath, rootPath)) {
+        throw new Error("Path outside allowed directory");
+      }
+      const webContents = _event.sender;
+
+      // Idempotent: if already watching this file, do nothing.
+      if (fileWatchers.has(filePath)) return;
+
+      const listener = (
+        curr: { mtimeMs: number },
+        prev: { mtimeMs: number },
+      ): void => {
+        // mtimeMs === 0 means the file no longer exists (deleted). Notify
+        // the renderer with isDeleted so it can show a friendly message.
+        if (curr.mtimeMs === 0 && prev.mtimeMs !== 0) {
+          if (!webContents.isDestroyed()) {
+            webContents.send(IPC_CHANNELS.FILES_FILE_CHANGED, {
+              filePath,
+              isDeleted: true,
+            });
+          }
+          return;
+        }
+        if (curr.mtimeMs === prev.mtimeMs) return;
+        // Re-read the file and ship the new content along with the event.
+        // Doing it main-side avoids a renderer→main roundtrip per change.
+        readFile(filePath)
+          .then((buffer) => {
+            if (webContents.isDestroyed()) return;
+            const ext = extname(filePath).toLowerCase();
+            const imageMime = IMAGE_MIME_BY_EXT[ext];
+            if (imageMime) {
+              if (buffer.byteLength > MAX_IMAGE_SIZE) {
+                webContents.send(IPC_CHANNELS.FILES_FILE_CHANGED, {
+                  filePath,
+                  content: "",
+                  isBinary: true,
+                  isImage: true,
+                  tooLarge: true,
+                });
+                return;
+              }
+              webContents.send(IPC_CHANNELS.FILES_FILE_CHANGED, {
+                filePath,
+                content: `data:${imageMime};base64,${buffer.toString("base64")}`,
+                isBinary: true,
+                isImage: true,
+              });
+              return;
+            }
+            if (buffer.byteLength > MAX_FILE_SIZE) {
+              webContents.send(IPC_CHANNELS.FILES_FILE_CHANGED, {
+                filePath,
+                content: "",
+                isBinary: false,
+                tooLarge: true,
+              });
+              return;
+            }
+            const checkLength = Math.min(buffer.length, 8192);
+            if (hasBinaryBytes(buffer, checkLength)) {
+              webContents.send(IPC_CHANNELS.FILES_FILE_CHANGED, {
+                filePath,
+                content: "",
+                isBinary: true,
+              });
+              return;
+            }
+            webContents.send(IPC_CHANNELS.FILES_FILE_CHANGED, {
+              filePath,
+              content: buffer.toString("utf-8"),
+              isBinary: false,
+            });
+          })
+          .catch(() => {
+            // Read failed — file likely deleted/inaccessible between events.
+            if (webContents.isDestroyed()) return;
+            webContents.send(IPC_CHANNELS.FILES_FILE_CHANGED, {
+              filePath,
+              isDeleted: true,
+            });
+          });
+      };
+
+      watchFile(filePath, { interval: FILE_WATCH_INTERVAL_MS }, listener);
+      fileWatchers.set(filePath, { listener });
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_FILE_WATCH_STOP,
+    (_event, { filePath }: { filePath: string }): void => {
+      const entry = fileWatchers.get(filePath);
+      if (!entry) return;
+      unwatchFile(filePath, entry.listener);
+      fileWatchers.delete(filePath);
+    },
+  );
+
   const SKIP_DIRS = new Set([
     "node_modules",
     ".git",
@@ -246,10 +361,16 @@ export function unregisterFilesIpc(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WRITE_FILE);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WATCH_START);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WATCH_STOP);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_FILE_WATCH_START);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_FILE_WATCH_STOP);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_LIST_ALL);
   if (activeWatcher) {
     activeWatcher.close();
     activeWatcher = null;
   }
   activeCwd = null;
+  for (const [filePath, entry] of fileWatchers) {
+    unwatchFile(filePath, entry.listener);
+  }
+  fileWatchers.clear();
 }

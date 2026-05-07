@@ -106,6 +106,10 @@ export function createDesktopBridge(): StratosContextValue {
       watchDirectory: (cwd) => window.api.filesWatchStart(cwd),
       unwatchDirectory: () => window.api.filesWatchStop(),
       onDirectoryChanged: (callback) => window.api.filesOnDirChanged(callback),
+      watchFile: (filePath, rootPath) =>
+        window.api.filesFileWatchStart(filePath, rootPath),
+      unwatchFile: (filePath) => window.api.filesFileWatchStop(filePath),
+      onFileChanged: (callback) => window.api.filesOnFileChanged(callback),
     },
   };
 }

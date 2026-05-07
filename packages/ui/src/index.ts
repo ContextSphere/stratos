@@ -57,6 +57,7 @@ export type {
   SettingsBridge,
   PreviewBridge,
   FilesBridge,
+  FileChangeEvent,
   WhatsAppBridge,
   WhatsAppStatus,
   TelegramBridge,

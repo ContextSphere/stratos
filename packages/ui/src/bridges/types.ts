@@ -158,6 +158,15 @@ export interface TelegramBridge {
   onLog(cb: (line: string) => void): () => void;
 }
 
+export interface FileChangeEvent {
+  filePath: string;
+  content?: string;
+  isBinary?: boolean;
+  isImage?: boolean;
+  tooLarge?: boolean;
+  isDeleted?: boolean;
+}
+
 export interface FilesBridge {
   listDirectory(dirPath: string, rootPath: string): Promise<DirEntry[]>;
   readFile(
@@ -169,4 +178,7 @@ export interface FilesBridge {
   watchDirectory?(cwd: string): Promise<void>;
   unwatchDirectory?(): Promise<void>;
   onDirectoryChanged?(callback: (dirPath: string) => void): () => void;
+  watchFile?(filePath: string, rootPath: string): Promise<void>;
+  unwatchFile?(filePath: string): Promise<void>;
+  onFileChanged?(callback: (event: FileChangeEvent) => void): () => void;
 }
