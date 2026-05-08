@@ -11,6 +11,7 @@ import { execSync, spawn, type ChildProcess } from "child_process";
 import * as readline from "readline";
 import * as path from "path";
 import * as fs from "fs";
+import { truncateForTrace } from "../storage/trace.store";
 
 /**
  * Translate Stratos's `mcpServers` config into Codex `-c` arg pairs (each
@@ -1121,7 +1122,7 @@ export class CodexProvider implements AgentProvider {
           timestamp: Date.now(),
           sessionId: this.threadId,
           messageType: method,
-          data: p,
+          data: truncateForTrace(p),
         });
       }
 

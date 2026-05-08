@@ -1,8 +1,7 @@
 import { BrowserWindow, ipcMain, Notification, shell } from "electron";
 import type { McpElicitationRequest } from "@stratosapp/core";
 import { execFileSync } from "child_process";
-import { mkdirSync, watch, promises as fsPromises } from "fs";
-import type { FSWatcher } from "fs";
+import { mkdirSync } from "fs";
 import { join, basename } from "path";
 import { homedir } from "os";
 import { IPC_CHANNELS } from "../common/ipc-channels";
@@ -57,6 +56,7 @@ import {
   installStratosMcpProxy,
   cleanupLegacyMcpBinaries,
 } from "./mcp/stdio-proxy";
+import { getFileWatcherCount } from "./files/files.ipc";
 
 /**
  * Build explicit MCP servers for an agent session.
@@ -303,7 +303,11 @@ export class AgentManager {
   private window: BrowserWindow;
   private sessions = new Map<string, ThreadSession>();
   private sessionAccessOrder: string[] = []; // LRU tracking: most recent at end
-  private static readonly MAX_IDLE_SESSIONS = 2;
+  // Each idle Claude subprocess holds 150-400 MB of native memory (its own
+  // V8 heap + pipe buffers). After the recurring OOMs in May 2026, dropped
+  // from 2 → 1 so a single idle subprocess gives snappy resume on the most
+  // recent thread without bloating RSS for less-recent ones.
+  private static readonly MAX_IDLE_SESSIONS = 1;
   private managerMcpStatusProvider?: () => Promise<McpServerInfo[]>;
   private completionListeners = new Set<
     (event: StreamCompletedEvent) => void
@@ -370,7 +374,6 @@ export class AgentManager {
   private static readonly PENDING_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
   /** 500 KB cap on stored plan content to prevent a single large plan from bloating memory. */
   private static readonly MAX_PLAN_CONTENT_BYTES = 500_000;
-  private previewFileWatchers = new Map<string, FSWatcher>();
   private cachedSlashCommands: { name: string; description?: string }[] = [];
   private mcpSocketPath: string;
   private mcpSocketServer: StratosMcpSocketServer;
@@ -1499,6 +1502,7 @@ export class AgentManager {
         // over MAX_IDLE_SESSIONS, evict the oldest now (instead of waiting
         // for the next stream start or the periodic timer).
         this.evictIdleSessions();
+        this.maybeRunPostStreamGc();
       }
     }
   }
@@ -1810,6 +1814,13 @@ export class AgentManager {
     content: string,
     threadId: string,
   ): void {
+    // Out-of-band file modifications are picked up by the renderer-side
+    // fs.watchFile watcher in files.ipc.ts (FILES_FILE_WATCH_START), which
+    // both FileExplorer and ArtifactEditorPreview consume. Keeping a second
+    // fs.watch in the main process here just doubled the file-read + IPC
+    // work on every Write tool result and contributed to the streaming
+    // burst-allocation pattern documented in
+    // docs/learnings/gc-memory-debugging.md.
     const fileName = basename(filePath);
     this.setPlanMarkdown(threadId, content, fileName);
     this.sendToRenderer(
@@ -1817,43 +1828,56 @@ export class AgentManager {
       { content, title: fileName, filePath },
       threadId,
     );
-    this.watchPreviewFile(filePath, threadId);
   }
 
-  private watchPreviewFile(filePath: string, threadId: string): void {
-    // Replace any existing watcher for this thread
-    this.previewFileWatchers.get(threadId)?.close();
-
-    let debounce: NodeJS.Timeout | null = null;
-    let watcher: FSWatcher;
+  /**
+   * Best-effort GC nudge after the LAST stream ends. The streaming hot path
+   * promotes a lot of short-lived strings (parsed SDK messages, IPC payloads,
+   * tool I/O previews) into V8 old_space; without an explicit GC, V8 can sit
+   * at the post-stream high-water mark for a long time, which means the next
+   * stream starts with little headroom and runs hot toward the heap limit.
+   * Requires the renderer/main to be launched with `--expose-gc` (wired in
+   * packages/desktop/src/main/index.ts). No-op when unavailable.
+   */
+  private maybeRunPostStreamGc(): void {
+    if (this.activeStreams.size > 0) return;
+    const gc = (globalThis as { gc?: () => void }).gc;
+    if (typeof gc !== "function") return;
     try {
-      watcher = watch(filePath, { persistent: false }, () => {
-        if (debounce) clearTimeout(debounce);
-        debounce = setTimeout(async () => {
-          try {
-            const stat = await fsPromises.stat(filePath);
-            // Skip files > 2 MB to avoid large IPC messages and heap pressure
-            if (stat.size > 2 * 1024 * 1024) return;
-            const content = await fsPromises.readFile(filePath, "utf-8");
-            const fileName = basename(filePath);
-            this.setPlanMarkdown(threadId, content, fileName);
-            this.sendToRenderer(
-              IPC_CHANNELS.PREVIEW_OPEN_MARKDOWN,
-              { content, title: fileName, filePath },
-              threadId,
-            );
-          } catch {
-            // file deleted or unreadable — ignore
-          }
-        }, 150);
-      });
+      gc();
     } catch {
-      // File doesn't exist or is inaccessible — skip watching
-      return;
+      // best-effort; never let a GC error bubble out of stream cleanup
     }
+  }
 
-    watcher.on("error", () => watcher.close());
-    this.previewFileWatchers.set(threadId, watcher);
+  /**
+   * RSS safety valve: under sustained native-memory pressure, free EVERY
+   * idle session (not just the surplus over MAX_IDLE_SESSIONS) and force a
+   * GC. The crash-capture telemetry calls this when RSS stays above the
+   * configured ceiling while no streams are running — exactly the "post-
+   * spike, RSS stuck at 4 GB" pattern observed in May 2026 OOM crashes.
+   *
+   * Manager thread is exempt (mirrors evictIdleSessions). Returns the number
+   * of sessions evicted so the caller can log it.
+   */
+  forceEvictAllIdleSessions(): number {
+    const idleIds = this.sessionAccessOrder.filter((id) => {
+      if (this.activeStreams.has(id) || !this.sessions.has(id)) return false;
+      const thread = this.storage.getThread(id);
+      if (thread?.isManagerThread) return false;
+      return true;
+    });
+    for (const id of idleIds) {
+      safeLog(
+        console.log,
+        `[agent-manager] RSS safety valve evicting idle session ${id}`,
+      );
+      this.clearSession(id);
+    }
+    if (idleIds.length > 0) {
+      this.maybeRunPostStreamGc();
+    }
+    return idleIds.length;
   }
 
   /** Touch session in LRU order (most recent at end). */
@@ -2045,13 +2069,11 @@ export class AgentManager {
         threadId,
         isRunning: false,
       });
+      this.maybeRunPostStreamGc();
     }
   }
 
   clearSession(threadId: string): void {
-    this.previewFileWatchers.get(threadId)?.close();
-    this.previewFileWatchers.delete(threadId);
-
     const session = this.sessions.get(threadId);
     if (session) {
       if (session.mcpWatcherTimer) {
@@ -2141,7 +2163,10 @@ export class AgentManager {
       pendingPlanReviews: this.pendingPlanReviews.size,
       pendingElicitations: this.pendingElicitations.size,
       threadEffectiveModes: this.threadEffectiveModes.size,
-      previewFileWatchers: this.previewFileWatchers.size,
+      // Now reflects the renderer-driven fs.watchFile watchers in
+      // files.ipc.ts (the only file-watcher path that survives — the old
+      // per-thread fs.watch in this file was removed as redundant).
+      previewFileWatchers: getFileWatcherCount(),
       completionListeners: this.completionListeners.size,
       cachedSlashCommands: this.cachedSlashCommands.length,
       activeNotifications: this.activeNotifications.size,

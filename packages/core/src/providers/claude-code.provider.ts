@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import { MODE_CONFIGS } from "../types/mode";
 import { parseTaskNotification as parseTaskNotificationText } from "../storage/sdk-transcript";
+import { truncateForTrace } from "../storage/trace.store";
 
 /**
  * Use all default Claude Code tools (including deferred ones like
@@ -210,7 +211,7 @@ export class ClaudeCodeProvider implements AgentProvider {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           parentToolUseId: (msg as any).parent_tool_use_id,
           messageType: msg.type,
-          data: msg,
+          data: truncateForTrace(msg),
         });
       }
       yield* this.transformMessage(msg, streamCtx);

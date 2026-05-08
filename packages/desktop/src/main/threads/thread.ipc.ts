@@ -118,11 +118,10 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
     IPC_CHANNELS.CHECK_IS_GIT_REPO,
     async (_event, dirPath: string) => {
       try {
-        execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
+        await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], {
           cwd: dirPath,
           encoding: "utf-8",
           timeout: 3000,
-          stdio: ["pipe", "pipe", "pipe"],
         });
         return true;
       } catch {
@@ -203,12 +202,15 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
 
       mkdirSync(worktreeDir, { recursive: true });
 
-      execFileSync("git", ["worktree", "add", "-b", branchName, worktreeDir], {
-        cwd: sourceRepoPath,
-        encoding: "utf-8",
-        timeout: 30000,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
+      await execFileAsync(
+        "git",
+        ["worktree", "add", "-b", branchName, worktreeDir],
+        {
+          cwd: sourceRepoPath,
+          encoding: "utf-8",
+          timeout: 30000,
+        },
+      );
 
       const worktreeData: ThreadWorktree = {
         path: worktreeDir,
@@ -234,12 +236,15 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
       const { sourceRepoPath, path: worktreePath } = thread.worktree;
 
       try {
-        execFileSync("git", ["worktree", "remove", worktreePath, "--force"], {
-          cwd: sourceRepoPath,
-          encoding: "utf-8",
-          timeout: 10000,
-          stdio: ["pipe", "pipe", "pipe"],
-        });
+        await execFileAsync(
+          "git",
+          ["worktree", "remove", worktreePath, "--force"],
+          {
+            cwd: sourceRepoPath,
+            encoding: "utf-8",
+            timeout: 10000,
+          },
+        );
       } catch {
         // Worktree may already be removed
       }
@@ -285,14 +290,13 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
       const thread = await storage.getThread(threadId);
       if (thread?.worktree) {
         try {
-          execFileSync(
+          await execFileAsync(
             "git",
             ["worktree", "remove", thread.worktree.path, "--force"],
             {
               cwd: thread.worktree.sourceRepoPath,
               encoding: "utf-8",
               timeout: 10000,
-              stdio: ["pipe", "pipe", "pipe"],
             },
           );
         } catch {
@@ -377,14 +381,13 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
         for (const thread of threads) {
           if (thread.worktree) {
             try {
-              execFileSync(
+              await execFileAsync(
                 "git",
                 ["worktree", "remove", thread.worktree.path, "--force"],
                 {
                   cwd: thread.worktree.sourceRepoPath,
                   encoding: "utf-8",
                   timeout: 10000,
-                  stdio: ["pipe", "pipe", "pipe"],
                 },
               );
             } catch {

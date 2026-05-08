@@ -41,9 +41,11 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "fs";
 import { join } from "path";
@@ -66,6 +68,20 @@ export interface CrashCaptureOptions {
   /** Optional state collector. Returns a JSON-serializable object recorded
    *  in every memory log line and alongside every heap dump. */
   collectAppState?: () => Record<string, unknown>;
+  /** RSS safety valve: when current RSS exceeds this many MB AND there are
+   *  no active streams (per `isUnderPressureNow`), `onRssPressure` is invoked.
+   *  Default: 3072 MB. */
+  rssPressureThresholdMB?: number;
+  /** Returns true when the safety valve should be allowed to fire — typically
+   *  "no active streams". Wired from AgentManager. */
+  isUnderPressureNow?: () => boolean;
+  /** Called when RSS exceeds `rssPressureThresholdMB` AND `isUnderPressureNow()`
+   *  returns true. Should evict idle subprocesses and run GC. Debounced
+   *  internally so it fires at most once every 60 s. */
+  onRssPressure?: () => void;
+  /** Maximum number of heap-snapshot/state file pairs to retain in the dumps
+   *  directory. Older pairs are deleted after each new dump. Default: 30. */
+  maxRetainedDumps?: number;
   /** Override start-of-run timestamp (for tests). */
   now?: () => number;
 }
@@ -142,6 +158,10 @@ export function startCrashCapture(
   const memLogPath = join(logsDir, "memory.log.jsonl");
   const crashMarkerPath = join(logsDir, "crash-marker.json");
   const now = opts.now ?? Date.now;
+  const rssPressureThresholdMB = opts.rssPressureThresholdMB ?? 3072;
+  const RSS_PRESSURE_DEBOUNCE_MS = 60_000;
+  let lastRssPressureFiredAt = 0;
+  const maxRetainedDumps = opts.maxRetainedDumps ?? 30;
 
   // ── Detect prior crash ─────────────────────────────────────────────────
   try {
@@ -235,6 +255,66 @@ export function startCrashCapture(
         writeSnapshotAndState(`rss-${t}MB`);
       }
     }
+    // RSS safety valve: when native memory has stayed elevated past the
+    // pressure threshold AND the app is in a "should be calm" state (no
+    // active streams), evict idle subprocesses + nudge GC. Debounced so we
+    // don't spam evictions during a real spike.
+    if (
+      opts.onRssPressure &&
+      rssMB >= rssPressureThresholdMB &&
+      (!opts.isUnderPressureNow || opts.isUnderPressureNow())
+    ) {
+      const since = now() - lastRssPressureFiredAt;
+      if (since >= RSS_PRESSURE_DEBOUNCE_MS) {
+        lastRssPressureFiredAt = now();
+        try {
+          opts.onRssPressure();
+          console.log(
+            `[crash-capture] RSS safety valve fired: rss=${Math.round(rssMB)}MB threshold=${rssPressureThresholdMB}MB`,
+          );
+        } catch (err) {
+          console.error(`[crash-capture] onRssPressure threw:`, err);
+        }
+      }
+    }
+  }
+
+  // ── D11: prune old heap dumps ──────────────────────────────────────────
+  // Each crash sequence writes 6 files (3 thresholds × snapshot+state pair).
+  // Without pruning, the dumps directory grew to 60+ GB during the May 2026
+  // OOM investigations.
+  function pruneOldDumps(): void {
+    try {
+      const entries = readdirSync(dumpsDir)
+        .filter(
+          (name) =>
+            name.endsWith(".heapsnapshot") || name.endsWith("-state.json"),
+        )
+        .map((name) => {
+          const full = join(dumpsDir, name);
+          let mtimeMs = 0;
+          try {
+            mtimeMs = statSync(full).mtimeMs;
+          } catch {}
+          return { name, full, mtimeMs };
+        })
+        .sort((a, b) => b.mtimeMs - a.mtimeMs);
+      // Group as "pair" — one snapshot + state can survive together.
+      // The simplest, robust policy: keep the newest 2*max files (snapshot
+      // + state pair counts as 2), drop the rest.
+      const keep = maxRetainedDumps * 2;
+      if (entries.length <= keep) return;
+      for (const e of entries.slice(keep)) {
+        try {
+          unlinkSync(e.full);
+        } catch {}
+      }
+      console.log(
+        `[crash-capture] pruned ${entries.length - keep} old dump file(s); kept ${keep}`,
+      );
+    } catch {
+      // best-effort
+    }
   }
 
   function writeSnapshotAndState(reason: string): string | null {
@@ -277,6 +357,7 @@ export function startCrashCapture(
     } catch (e) {
       console.error(`[crash-capture] write state failed:`, e);
     }
+    pruneOldDumps();
     return success ? snapPath : null;
   }
 

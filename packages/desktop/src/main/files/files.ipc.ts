@@ -18,7 +18,17 @@ interface FileWatchEntry {
   listener: (curr: { mtimeMs: number }, prev: { mtimeMs: number }) => void;
 }
 const fileWatchers = new Map<string, FileWatchEntry>();
-const FILE_WATCH_INTERVAL_MS = 1000;
+// 5 s polling is fine for "preview after agent writes a file" — agent
+// writes don't happen every second, and the 1 s default added measurable
+// per-watcher CPU pressure during streams.
+const FILE_WATCH_INTERVAL_MS = 5000;
+
+/** Number of active per-file watchers (fs.watchFile-backed). Exposed for
+ *  diagnostic state in agent-manager — without this, the count was a blind
+ *  spot in heap-dump correlation. */
+export function getFileWatcherCount(): number {
+  return fileWatchers.size;
+}
 
 export interface DirEntry {
   name: string;

@@ -1,10 +1,22 @@
 import { execFileSync } from "child_process";
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from "electron";
 import { join } from "path";
+import * as v8 from "v8";
 
 // Fix PATH and environment for packaged macOS apps
 // Always strip CLAUDECODE to prevent nested-session detection by the SDK
 delete process.env.CLAUDECODE;
+
+// Expose `globalThis.gc()` in the main process so AgentManager can nudge V8
+// to reclaim short-lived streaming allocations after each turn ends. Without
+// this, V8 sits at the post-stream high-water mark and the next stream
+// starts with little headroom. Best-effort: not all V8 builds honor a
+// runtime --expose-gc, but on macOS Electron 40 it does.
+try {
+  v8.setFlagsFromString("--expose-gc");
+} catch {
+  // best-effort
+}
 
 // `process.defaultApp` stays true for the renamed dev Electron binary, while
 // packaged builds should ignore any inherited ELECTRON_RENDERER_URL from the shell.
@@ -121,12 +133,19 @@ if (worktree) {
 // Override with STRATOS_FORCE_CRASH_CAPTURE=1 to enable it on a packaged
 // build for one-off production debugging.
 let collectAppState: () => Record<string, unknown> = () => ({});
+// Wired below once AgentManager exists. The forwarders let crash-capture
+// trigger eviction without holding a strong reference to AgentManager
+// itself, and stay no-ops until AgentManager has been initialized.
+let isUnderPressureNow: () => boolean = () => false;
+let onRssPressure: () => void = () => {};
 const crashCaptureEnabled =
   isDev || process.env.STRATOS_FORCE_CRASH_CAPTURE === "1";
 const crashCapture: CrashCaptureHandle = crashCaptureEnabled
   ? startCrashCapture({
       baseDir: app.getPath("userData"),
       collectAppState: () => collectAppState(),
+      isUnderPressureNow: () => isUnderPressureNow(),
+      onRssPressure: () => onRssPressure(),
     })
   : {
       dispose() {},
@@ -165,8 +184,13 @@ if (!gotLock) {
     app.commandLine.appendSwitch("remote-debugging-port", String(cdpPort));
   }
 
-  // Increase renderer V8 heap limit to reduce OOM risk on long conversations
-  app.commandLine.appendSwitch("js-flags", "--max-old-space-size=4096");
+  // Increase renderer V8 heap limit to reduce OOM risk on long conversations.
+  // --expose-gc lets the main process call globalThis.gc() after stream
+  // completion (see AgentManager.maybeRunPostStreamGc).
+  app.commandLine.appendSwitch(
+    "js-flags",
+    "--max-old-space-size=4096 --expose-gc",
+  );
 
   // GPU acceleration
   app.commandLine.appendSwitch("enable-gpu-rasterization");
@@ -325,6 +349,23 @@ if (!gotLock) {
     // memory log line + each threshold heap dump records this snapshot so
     // we know what the app was doing when memory was at each threshold.
     collectAppState = () => agentManager?.getDiagnosticState() ?? {};
+    // Wire RSS safety valve: when native memory stays elevated past the
+    // configured ceiling AND no streams are running, force-evict idle
+    // sessions and run GC. This breaks the "RSS stuck high after a single
+    // spike" cycle observed in May 2026 OOM crashes.
+    isUnderPressureNow = () => {
+      if (!agentManager) return false;
+      return agentManager.getRunningThreadIds().length === 0;
+    };
+    onRssPressure = () => {
+      if (!agentManager) return;
+      const evicted = agentManager.forceEvictAllIdleSessions();
+      if (evicted > 0) {
+        console.log(
+          `[index] RSS safety valve: evicted ${evicted} idle session(s)`,
+        );
+      }
+    };
   }
 
   // M7: dump heap on child-process death (renderer / utility / GPU). When

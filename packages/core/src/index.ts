@@ -60,6 +60,8 @@ export {
   appendTraceEntry,
   readTraceEntries,
   clearTraceFile,
+  flushTraceQueue,
+  truncateForTrace,
 } from "./storage/trace.store";
 
 // Scheduled prompts

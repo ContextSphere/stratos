@@ -108,7 +108,7 @@ describe("per-file watcher IPC", () => {
     });
     expect(watchFileMock).toHaveBeenCalledWith(
       "/cwd/foo.ts",
-      { interval: 1000 },
+      { interval: 5000 },
       expect.any(Function),
     );
   });
