@@ -268,6 +268,218 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
     }),
 
     defineHandler({
+      name: "bulk_delete_sessions",
+      description:
+        "Delete multiple agent sessions in one call. Accepts an explicit list of thread IDs, a declarative filter, or both (union). Use dryRun: true first to preview what will be deleted — strongly recommended before any filter-only call. Returns { deleted, skipped, errors }.",
+      inputSchema: {
+        threadIds: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Explicit thread IDs to delete. Required if filter is omitted.",
+          ),
+        filter: z
+          .object({
+            workspace: z
+              .string()
+              .optional()
+              .describe("Match thread.cwd exactly"),
+            titlePattern: z
+              .string()
+              .optional()
+              .describe(
+                "Case-insensitive JS regex tested against thread.title (e.g. 'digest|scout')",
+              ),
+            scheduleId: z
+              .string()
+              .optional()
+              .describe("Match thread.scheduledPromptId exactly"),
+            olderThan: z
+              .string()
+              .optional()
+              .describe(
+                "ISO 8601 timestamp — match threads whose last activity is before this date",
+              ),
+            status: z
+              .enum(["idle", "running"])
+              .optional()
+              .describe(
+                "'idle' = not currently streaming, 'running' = currently streaming",
+              ),
+            spawnedBy: z
+              .enum(["manager"])
+              .optional()
+              .describe("Limit to threads created by the Manager Agent"),
+          })
+          .optional()
+          .describe(
+            "Declarative filter — delete all threads matching ALL specified criteria. Required if threadIds is omitted.",
+          ),
+        exclude: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Thread IDs to protect from deletion even if they match the filter or threadIds list",
+          ),
+        dryRun: z
+          .boolean()
+          .optional()
+          .describe(
+            "If true, return what would be deleted without actually deleting anything. Strongly recommended before filter-only calls.",
+          ),
+      },
+      handler: async (args) => {
+        const hasIds = args.threadIds && args.threadIds.length > 0;
+        const hasFilter = args.filter && Object.keys(args.filter).length > 0;
+        if (!hasIds && !hasFilter) {
+          return textResult("Must provide threadIds, filter, or both.", true);
+        }
+
+        // Compile titlePattern early — fail before touching any threads
+        let titleRegex: RegExp | undefined;
+        if (args.filter?.titlePattern) {
+          try {
+            titleRegex = new RegExp(args.filter.titlePattern, "i");
+          } catch {
+            return textResult(
+              `Invalid titlePattern regex: ${args.filter.titlePattern}`,
+              true,
+            );
+          }
+        }
+
+        const olderThanMs = args.filter?.olderThan
+          ? Date.parse(args.filter.olderThan)
+          : undefined;
+        if (olderThanMs !== undefined && isNaN(olderThanMs)) {
+          return textResult(
+            `Invalid olderThan value: ${args.filter!.olderThan}`,
+            true,
+          );
+        }
+
+        const excludeSet = new Set(args.exclude ?? []);
+        const explicitSet = new Set(args.threadIds ?? []);
+
+        // Build candidate set (union of explicit IDs + filter matches)
+        const candidateIds = new Set<string>(explicitSet);
+
+        if (hasFilter) {
+          const allThreads = storage.listThreads() as ThreadLike[];
+          for (const t of allThreads) {
+            if (t.isManagerThread) continue;
+            const f = args.filter!;
+            if (f.workspace && t.cwd !== f.workspace) continue;
+            if (titleRegex && !titleRegex.test(t.title)) continue;
+            if (
+              f.scheduleId &&
+              (t.scheduledPromptId as string | undefined) !== f.scheduleId
+            )
+              continue;
+            if (olderThanMs !== undefined && t.updatedAt >= olderThanMs)
+              continue;
+            if (f.status) {
+              const streaming = agentManager.isStreaming(t.id);
+              if (f.status === "running" && !streaming) continue;
+              if (f.status === "idle" && streaming) continue;
+            }
+            if (
+              f.spawnedBy &&
+              (t.spawnedBy as string | undefined) !== f.spawnedBy
+            )
+              continue;
+            candidateIds.add(t.id);
+          }
+        }
+
+        const MAX_BATCH = 200;
+        if (candidateIds.size > MAX_BATCH) {
+          return textResult(
+            `Resolved ${candidateIds.size} threads — exceeds the limit of ${MAX_BATCH}. Narrow the filter or use explicit threadIds.`,
+            true,
+          );
+        }
+
+        const deleted: string[] = [];
+        const skipped: string[] = [];
+        const errors: { threadId: string; reason: string }[] = [];
+
+        for (const id of candidateIds) {
+          if (excludeSet.has(id)) {
+            skipped.push(id);
+            continue;
+          }
+
+          const thread = storage.getThread(id) as ThreadLike | null;
+          if (!thread) {
+            errors.push({ threadId: id, reason: "not found" });
+            continue;
+          }
+
+          if (thread.isManagerThread) {
+            skipped.push(id);
+            continue;
+          }
+
+          // Skip manager-spawned threads with undelivered completion callbacks
+          // unless the caller explicitly named this ID in threadIds
+          const lastRunId = thread.lastRunId as string | undefined;
+          const lastReportedRunId = thread.lastReportedRunId as
+            | string
+            | undefined;
+          const hasPendingCallback =
+            (thread.spawnedBy as string | undefined) === "manager" &&
+            !!lastRunId &&
+            lastRunId !== lastReportedRunId;
+          if (hasPendingCallback && !explicitSet.has(id)) {
+            skipped.push(id);
+            continue;
+          }
+
+          if (args.dryRun) {
+            deleted.push(id);
+            continue;
+          }
+
+          try {
+            if (agentManager.isStreaming(id)) {
+              await agentManager.interruptSession(id);
+            }
+            agentManager.clearSession(id);
+            const ok = storage.deleteThread(id);
+            if (!ok) {
+              errors.push({ threadId: id, reason: "storage delete failed" });
+              continue;
+            }
+            deleted.push(id);
+          } catch (err) {
+            errors.push({
+              threadId: id,
+              reason: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+
+        if (!args.dryRun && deleted.length > 0) {
+          broadcast(window, IPC_CHANNELS.THREADS_CHANGED);
+        }
+
+        return textResult(
+          JSON.stringify(
+            {
+              deleted,
+              skipped,
+              errors,
+              ...(args.dryRun ? { dryRun: true } : {}),
+            },
+            null,
+            2,
+          ),
+        );
+      },
+    }),
+
+    defineHandler({
       name: "list_sessions",
       description:
         "List all agent sessions with status and summary. Paginated — use cursor for next page.",

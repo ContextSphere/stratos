@@ -105,9 +105,10 @@ describe("manager handlers", () => {
     ctx = makeDeps();
   });
 
-  it("produces exactly 12 tools with the expected names", () => {
+  it("produces exactly 13 tools with the expected names", () => {
     const defs = createManagerHandlers(ctx.deps);
     expect(defs.map((d) => d.name).sort()).toEqual([
+      "bulk_delete_sessions",
       "create_session",
       "create_workspace",
       "delete_session",

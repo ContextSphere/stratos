@@ -110,7 +110,7 @@ describe("cross-transport parity: SDK adapter vs socket MCP server", () => {
       sock.end();
 
       expect(socketNames).toEqual(sdkNames);
-      expect(socketNames).toHaveLength(22);
+      expect(socketNames).toHaveLength(23);
     } finally {
       await server.close();
     }
