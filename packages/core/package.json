@@ -1,6 +1,6 @@
 {
   "name": "@stratosapp/core",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Stratos core SDK — provider abstraction, session management, storage",
   "license": "Apache-2.0",
   "repository": {

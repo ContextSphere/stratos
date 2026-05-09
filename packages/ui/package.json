@@ -1,6 +1,6 @@
 {
   "name": "@stratosapp/ui",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Stratos React component library for agentic applications",
   "license": "Apache-2.0",
   "repository": {
