@@ -136,6 +136,8 @@ export function PreviewPane({
           watchFile={filesBridge.watchFile}
           unwatchFile={filesBridge.unwatchFile}
           onFileChanged={filesBridge.onFileChanged}
+          getExternalEditors={filesBridge.getExternalEditors}
+          openInExternalEditor={filesBridge.openInExternalEditor}
         />
       ) : preview.type === "artifact-editor" &&
         preview.artifactContent !== undefined &&

@@ -7,7 +7,11 @@ import {
 } from "../utils/monaco-language";
 import "../utils/monaco-theme";
 import { useTheme, monacoThemeName } from "../context/ThemeContext";
-import type { DirEntry, FileChangeEvent } from "../bridges/types";
+import type {
+  DirEntry,
+  FileChangeEvent,
+  ExternalEditor,
+} from "../bridges/types";
 import { type TreeNode, mergeTreeNodes } from "./tree-utils";
 import { MarkdownPreview } from "./preview/MarkdownPreview";
 import { FileIcon } from "./FileIcon";
@@ -43,6 +47,8 @@ interface Props {
   watchFile?: (filePath: string, rootPath: string) => Promise<void>;
   unwatchFile?: (filePath: string) => Promise<void>;
   onFileChanged?: (callback: (event: FileChangeEvent) => void) => () => void;
+  getExternalEditors?: () => Promise<ExternalEditor[]>;
+  openInExternalEditor?: (editorId: string, filePath: string) => Promise<void>;
 }
 
 function formatSize(bytes: number): string {
@@ -103,6 +109,8 @@ export function FileExplorer({
   watchFile,
   unwatchFile,
   onFileChanged,
+  getExternalEditors,
+  openInExternalEditor,
 }: Props): React.ReactElement {
   useMonacoFontReady();
   const theme = useTheme();
@@ -124,6 +132,9 @@ export function FileExplorer({
     "idle" | "saving" | "saved" | "unsaved"
   >("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [externalEditors, setExternalEditors] = useState<ExternalEditor[]>([]);
+  const [showEditorMenu, setShowEditorMenu] = useState(false);
+  const editorMenuRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<{
     revealLineInCenter: (lineNumber: number) => void;
     setPosition: (position: { lineNumber: number; column: number }) => void;
@@ -375,15 +386,24 @@ export function FileExplorer({
       setSaveStatus("unsaved");
 
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      const pathAtEdit = openFile?.path;
       saveTimerRef.current = setTimeout(async () => {
-        if (!writeFile || !openFile) return;
-        setSaveStatus("saving");
+        if (!writeFile || !pathAtEdit) return;
+        // Guard: if the user switched files before the debounce fired, save
+        // silently without touching the new file's status indicators.
+        const isSameFile = openFileRef.current?.path === pathAtEdit;
+        if (isSameFile) setSaveStatus("saving");
         try {
-          await writeFile(openFile.path, value, cwd);
-          setSaveStatus("saved");
-          setTimeout(() => setSaveStatus("idle"), 2000);
+          await writeFile(pathAtEdit, value, cwd);
+          if (isSameFile) {
+            setSaveStatus("saved");
+            setTimeout(() => {
+              if (openFileRef.current?.path === pathAtEdit)
+                setSaveStatus("idle");
+            }, 2000);
+          }
         } catch {
-          setSaveStatus("unsaved");
+          if (isSameFile) setSaveStatus("unsaved");
         }
       }, 1000);
     },
@@ -395,6 +415,27 @@ export function FileExplorer({
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!getExternalEditors) return;
+    getExternalEditors()
+      .then(setExternalEditors)
+      .catch(() => {});
+  }, [getExternalEditors]);
+
+  useEffect(() => {
+    if (!showEditorMenu) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (
+        editorMenuRef.current &&
+        !editorMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowEditorMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [showEditorMenu]);
 
   useEffect(() => {
     setAutoOpenedTarget(null);
@@ -489,6 +530,45 @@ export function FileExplorer({
           {saveStatus === "unsaved" && (
             <span className="text-xs text-yellow-500">Unsaved</span>
           )}
+          {externalEditors.length > 0 && (
+            <div className="relative" ref={editorMenuRef}>
+              <button
+                onClick={() => setShowEditorMenu((v) => !v)}
+                className="p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                title="Open in external editor"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                  />
+                </svg>
+              </button>
+              {showEditorMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-[var(--bg-surface)] border border-[var(--border)] rounded shadow-lg z-50 py-1 min-w-[150px]">
+                  {externalEditors.map((editor) => (
+                    <button
+                      key={editor.id}
+                      onClick={() => {
+                        void openInExternalEditor?.(editor.id, openFile.path);
+                        setShowEditorMenu(false);
+                      }}
+                      className="flex items-center w-full px-3 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--border)] transition-colors text-left"
+                    >
+                      {editor.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex-1 min-h-0">
           {openFile.isImage ? (
@@ -532,7 +612,7 @@ export function FileExplorer({
               value={editContent}
               language={getLanguageFromPath(openFile.path)}
               theme={monacoThemeName(theme)}
-              onChange={isMarkdown ? handleEditorChange : undefined}
+              onChange={handleEditorChange}
               onMount={(editor) => {
                 editorRef.current = editor;
                 if (cursorTargetLine && cursorTargetLine > 0) {
@@ -544,7 +624,7 @@ export function FileExplorer({
                 }
               }}
               options={{
-                readOnly: !isMarkdown,
+                readOnly: openFile.isBinary || openFile.tooLarge,
                 minimap: { enabled: false },
                 scrollBeyondLastLine: false,
                 fontSize: 12,

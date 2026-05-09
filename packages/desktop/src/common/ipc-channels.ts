@@ -114,6 +114,8 @@ export const IPC_CHANNELS = {
   FILES_FILE_WATCH_STOP: "files:file-watch-stop",
   FILES_FILE_CHANGED: "files:file-changed",
   FILES_LIST_ALL: "files:list-all",
+  FILES_GET_EXTERNAL_EDITORS: "files:get-external-editors",
+  FILES_OPEN_IN_EXTERNAL_EDITOR: "files:open-in-external-editor",
 
   // Skills
   SKILLS_LIST: "skills:list",

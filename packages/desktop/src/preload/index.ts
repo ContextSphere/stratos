@@ -452,6 +452,18 @@ const api = {
   filesFileWatchStop: (filePath: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.FILES_FILE_WATCH_STOP, { filePath }),
 
+  filesGetExternalEditors: (): Promise<{ id: string; name: string }[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_GET_EXTERNAL_EDITORS),
+
+  filesOpenInExternalEditor: (
+    editorId: string,
+    filePath: string,
+  ): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_OPEN_IN_EXTERNAL_EDITOR, {
+      editorId,
+      filePath,
+    }),
+
   filesOnFileChanged: (
     callback: (event: {
       filePath: string;

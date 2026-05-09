@@ -110,6 +110,9 @@ export function createDesktopBridge(): StratosContextValue {
         window.api.filesFileWatchStart(filePath, rootPath),
       unwatchFile: (filePath) => window.api.filesFileWatchStop(filePath),
       onFileChanged: (callback) => window.api.filesOnFileChanged(callback),
+      getExternalEditors: () => window.api.filesGetExternalEditors(),
+      openInExternalEditor: (editorId, filePath) =>
+        window.api.filesOpenInExternalEditor(editorId, filePath),
     },
   };
 }

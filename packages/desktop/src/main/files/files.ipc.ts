@@ -1,6 +1,7 @@
 import { ipcMain } from "electron";
-import { readdir, readFile, stat, writeFile } from "fs/promises";
+import { readdir, readFile, stat, writeFile, access } from "fs/promises";
 import { watch as fsWatch, watchFile, unwatchFile } from "fs";
+import { spawn } from "child_process";
 import type { FSWatcher } from "fs";
 import { extname, join, resolve, dirname, relative } from "path";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
@@ -29,6 +30,38 @@ const FILE_WATCH_INTERVAL_MS = 5000;
 export function getFileWatcherCount(): number {
   return fileWatchers.size;
 }
+
+interface ExternalEditorDef {
+  id: string;
+  name: string;
+  appPath: string;
+}
+
+const KNOWN_EDITORS: ExternalEditorDef[] = [
+  {
+    id: "vscode",
+    name: "VS Code",
+    appPath: "/Applications/Visual Studio Code.app",
+  },
+  { id: "cursor", name: "Cursor", appPath: "/Applications/Cursor.app" },
+  {
+    id: "idea",
+    name: "IntelliJ IDEA",
+    appPath: "/Applications/IntelliJ IDEA.app",
+  },
+  {
+    id: "idea-ce",
+    name: "IntelliJ IDEA CE",
+    appPath: "/Applications/IntelliJ IDEA CE.app",
+  },
+  { id: "webstorm", name: "WebStorm", appPath: "/Applications/WebStorm.app" },
+  { id: "zed", name: "Zed", appPath: "/Applications/Zed.app" },
+  {
+    id: "sublime",
+    name: "Sublime Text",
+    appPath: "/Applications/Sublime Text.app",
+  },
+];
 
 export interface DirEntry {
   name: string;
@@ -329,6 +362,45 @@ export function registerFilesIpc(): void {
   ]);
 
   ipcMain.handle(
+    IPC_CHANNELS.FILES_GET_EXTERNAL_EDITORS,
+    async (): Promise<{ id: string; name: string }[]> => {
+      const available: { id: string; name: string }[] = [];
+      for (const editor of KNOWN_EDITORS) {
+        try {
+          await access(editor.appPath);
+          available.push({ id: editor.id, name: editor.name });
+        } catch {
+          // not installed
+        }
+      }
+      return available;
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_OPEN_IN_EXTERNAL_EDITOR,
+    (
+      _event,
+      { editorId, filePath }: { editorId: string; filePath: string },
+    ): Promise<void> => {
+      const editor = KNOWN_EDITORS.find((e) => e.id === editorId);
+      if (!editor) throw new Error(`Unknown editor: ${editorId}`);
+      return new Promise<void>((resolve, reject) => {
+        const proc = spawn("open", ["-a", editor.appPath, filePath], {
+          detached: true,
+          stdio: "ignore",
+        });
+        proc.unref();
+        proc.on("error", reject);
+        proc.on("close", (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`open exited with code ${code}`));
+        });
+      });
+    },
+  );
+
+  ipcMain.handle(
     IPC_CHANNELS.FILES_LIST_ALL,
     async (_event, cwd: string): Promise<string[]> => {
       // Basic security: ensure cwd resolves to an absolute path
@@ -374,6 +446,8 @@ export function unregisterFilesIpc(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILES_FILE_WATCH_START);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_FILE_WATCH_STOP);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_LIST_ALL);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_GET_EXTERNAL_EDITORS);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_OPEN_IN_EXTERNAL_EDITOR);
   if (activeWatcher) {
     activeWatcher.close();
     activeWatcher = null;

@@ -173,6 +173,11 @@ export interface FileChangeEvent {
   isDeleted?: boolean;
 }
 
+export interface ExternalEditor {
+  id: string;
+  name: string;
+}
+
 export interface FilesBridge {
   listDirectory(dirPath: string, rootPath: string): Promise<DirEntry[]>;
   readFile(
@@ -187,4 +192,6 @@ export interface FilesBridge {
   watchFile?(filePath: string, rootPath: string): Promise<void>;
   unwatchFile?(filePath: string): Promise<void>;
   onFileChanged?(callback: (event: FileChangeEvent) => void): () => void;
+  getExternalEditors?(): Promise<ExternalEditor[]>;
+  openInExternalEditor?(editorId: string, filePath: string): Promise<void>;
 }
