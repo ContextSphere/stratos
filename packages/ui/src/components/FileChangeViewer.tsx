@@ -19,6 +19,7 @@ interface Props {
   toolCall: ToolCall;
   defaultExpanded?: boolean;
   fillHeight?: boolean;
+  onPreview?: () => void;
 }
 
 const statusColors: Record<ToolCall["status"], string> = {
@@ -90,6 +91,7 @@ export function FileChangeViewer({
   toolCall,
   defaultExpanded = true,
   fillHeight = false,
+  onPreview,
 }: Props): React.ReactElement {
   useMonacoFontReady();
   const theme = useTheme();
@@ -340,13 +342,13 @@ export function FileChangeViewer({
       className={`rounded-lg bg-[var(--bg-overlay)] border border-[var(--border-mid)] overflow-hidden text-xs ${fillHeight ? "flex flex-col h-full" : ""}`}
     >
       {/* Header - always visible */}
-      <button
-        onClick={toggleExpand}
-        className="w-full p-3 flex items-center justify-between hover:bg-[var(--bg-surface)] transition-colors text-left"
-        aria-expanded={isExpanded}
-        aria-label={`${isExpanded ? "Collapse" : "Expand"} ${toolCall.toolName} for ${fileName}`}
-      >
-        <div className="flex items-center gap-2 min-w-0 flex-1">
+      <div className="w-full flex items-stretch">
+        <button
+          onClick={toggleExpand}
+          className="flex items-center gap-2 min-w-0 flex-1 p-3 hover:bg-[var(--bg-surface)] transition-colors text-left"
+          aria-expanded={isExpanded}
+          aria-label={`${isExpanded ? "Collapse" : "Expand"} ${toolCall.toolName} for ${fileName}`}
+        >
           <span className="text-[var(--text-muted)] flex-shrink-0">
             {isExpanded ? "▾" : "▸"}
           </span>
@@ -366,13 +368,35 @@ export function FileChangeViewer({
               <span className="text-red-400">-{changeStats.removed}</span>
             </span>
           )}
+        </button>
+        <div className="flex items-center gap-2 pr-3 pl-1 flex-shrink-0">
+          {onPreview && (
+            <button
+              onClick={onPreview}
+              className="p-1 rounded hover:bg-[var(--border-mid)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              title="Open file in preview pane"
+              aria-label="Open file in preview pane"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          )}
+          <span className={`text-xs ${statusColors[toolCall.status]}`}>
+            {statusLabels[toolCall.status]}
+          </span>
         </div>
-        <span
-          className={`text-xs ml-2 flex-shrink-0 ${statusColors[toolCall.status]}`}
-        >
-          {statusLabels[toolCall.status]}
-        </span>
-      </button>
+      </div>
 
       {/* Non-Monaco content (too large warning or loading placeholder) - safe to mount/unmount */}
       {isExpanded && (isTooLarge || !shouldRenderMonaco) && (

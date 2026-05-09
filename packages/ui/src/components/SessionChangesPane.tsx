@@ -1,12 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { SessionChanges } from "../hooks/useSessionChanges";
 import type { GitFileState, GitStatus } from "../types";
 import { FileChangeViewer } from "./FileChangeViewer";
 import { basename } from "../utils/path";
+import { useFilesBridge } from "../bridges/StratosProvider";
 
 interface Props {
   changes: SessionChanges;
   gitStatus?: GitStatus;
+  onOpenArtifact?: (content: string, filePath: string) => void;
 }
 
 const STATE_CONFIG: Record<
@@ -67,7 +69,9 @@ function getFileState(
 export function SessionChangesPane({
   changes,
   gitStatus,
+  onOpenArtifact,
 }: Props): React.ReactElement {
+  const filesBridge = useFilesBridge();
   const [selectedPath, setSelectedPath] = useState<string | null>(
     // Prefer the already-running file when the panel opens mid-run
     (changes.files.find((f) => f.hasRunning) ?? changes.files[0])?.filePath ??
@@ -115,6 +119,27 @@ export function SessionChangesPane({
     changes.files.find((f) => f.filePath === selectedPath) ??
     changes.files[0] ??
     null;
+
+  const selectedFilePath = selectedFile?.filePath ?? null;
+  const handlePreview = useCallback(async () => {
+    if (!selectedFilePath || !filesBridge || !onOpenArtifact) return;
+    const rootPath = gitStatus?.root;
+    if (!rootPath) return;
+    try {
+      const { content, isBinary } = await filesBridge.readFile(
+        selectedFilePath,
+        rootPath,
+      );
+      if (isBinary) return;
+      onOpenArtifact(content, selectedFilePath);
+    } catch (err) {
+      console.error("Failed to read file for preview:", err);
+    }
+  }, [selectedFilePath, filesBridge, onOpenArtifact, gitStatus?.root]);
+
+  const canPreview = Boolean(
+    onOpenArtifact && filesBridge && gitStatus?.root && selectedFilePath,
+  );
 
   if (changes.files.length === 0) {
     return (
@@ -225,6 +250,7 @@ export function SessionChangesPane({
               toolCall={selectedFile.latestToolCall}
               defaultExpanded={true}
               fillHeight={true}
+              onPreview={canPreview ? handlePreview : undefined}
             />
           ) : null}
         </div>

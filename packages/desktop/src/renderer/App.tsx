@@ -1334,6 +1334,7 @@ function AppInner(): React.ReactElement {
                   filesBridge={filesBridge}
                   sessionChanges={sessionChanges}
                   gitStatus={gitStatus}
+                  onOpenArtifact={openArtifactEditor}
                 />
               </Panel>
             </>

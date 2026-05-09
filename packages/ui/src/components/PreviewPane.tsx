@@ -15,6 +15,7 @@ interface Props {
   filesBridge?: FilesBridge;
   sessionChanges?: SessionChanges;
   gitStatus?: GitStatus;
+  onOpenArtifact?: (content: string, filePath: string) => void;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -33,6 +34,7 @@ export function PreviewPane({
   filesBridge,
   sessionChanges,
   gitStatus,
+  onOpenArtifact,
 }: Props): React.ReactElement {
   const handleOpenExternal = (): void => {
     if (preview.url) {
@@ -168,7 +170,11 @@ export function PreviewPane({
           />
         </div>
       ) : preview.type === "file-changes" && sessionChanges ? (
-        <SessionChangesPane changes={sessionChanges} gitStatus={gitStatus} />
+        <SessionChangesPane
+          changes={sessionChanges}
+          gitStatus={gitStatus}
+          onOpenArtifact={onOpenArtifact}
+        />
       ) : preview.url ? (
         <WebviewPreview url={preview.url} />
       ) : null}
