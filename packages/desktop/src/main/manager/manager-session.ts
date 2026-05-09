@@ -420,14 +420,17 @@ export class ManagerSession {
       // (isNotificationInFlight is still true at this point — drained to
       // false by drainNotificationQueue's own .finally()), forward the
       // Manager's summary to WhatsApp so the user gets an async update.
+      // Empty replyText still forwards a fallback so a tool-only turn
+      // doesn't silently drop a scheduled run notification.
       if (
         this.isNotificationInFlight &&
         this.notificationForwardFn &&
-        replyText &&
         this.mode === "remote"
       ) {
         const forwardFn = this.notificationForwardFn;
-        forwardFn(replyText).catch((err) => {
+        const text =
+          replyText || "Stratos: scheduled run completed (no summary).";
+        forwardFn(text).catch((err) => {
           console.error(
             "[manager-session] failed to forward notification to WhatsApp:",
             err,
@@ -574,6 +577,9 @@ export class ManagerSession {
    * then decide whether to retry, alert the user, investigate the thread, or
    * disable the schedule. Queued via the standard notification queue so it
    * waits if the Manager is mid-turn.
+   *
+   * Your reply is forwarded to the user's WhatsApp via the gateway forward
+   * path — keep it concise and actionable.
    */
   reportScheduleFailure(record: ScheduleRunRecord): void {
     const summaryLine = record.summary
@@ -588,7 +594,38 @@ export class ManagerSession {
       `Error: ${record.errorMessage ?? "(no error message)"}`,
       summaryLine,
       "",
-      "Decide whether to retry (run schedule_run_now), notify the user, investigate the thread (mcp__stratos__get_session with includeTranscript=true), or disable the schedule (mcp__stratos__schedule_disable). Reply with a brief 1-2 sentence summary of what happened and the action you took.",
+      "Decide whether to retry (run schedule_run_now), investigate the thread (mcp__stratos__get_session with includeTranscript=true), or disable the schedule (mcp__stratos__schedule_disable). Then reply concisely — your reply goes to the user's WhatsApp: what failed and what you did about it. 1-2 sentences, no markdown.",
+    ].join("\n");
+
+    this.enqueueNotification({
+      prompt: directive,
+      scheduleId: record.scheduleId,
+    });
+    this.drainNotificationQueue();
+  }
+
+  /**
+   * Trigger a Manager LLM turn for a successful scheduled run. The Manager
+   * fetches the agent's final response via mcp__stratos__get_session and
+   * relays a useful summary to the user. Reply is forwarded to WhatsApp via
+   * the gateway forward path. Used when the schedule's notify mode (or the
+   * global default) is "always".
+   */
+  reportScheduleSuccess(record: ScheduleRunRecord): void {
+    const summaryLine = record.summary
+      ? `Agent-filed summary: ${record.summary}`
+      : "Agent-filed summary: (none — agent did not call schedule_report)";
+    const directive = [
+      `[SCHEDULE COMPLETED] "${record.scheduleName}" finished in ${Math.round(record.durationMs / 1000)}s`,
+      `Schedule ID: ${record.scheduleId}`,
+      `Thread: ${record.threadId}`,
+      `Workspace: ${record.workspace}`,
+      `Provider: ${record.provider}`,
+      summaryLine,
+      "",
+      "Relay this run's outcome to the user. If the agent-filed summary above is informative, you can pass it through as-is. Otherwise call mcp__stratos__get_session with includeTranscript=true on the thread above and condense the agent's final response into something the user can read on their phone.",
+      "",
+      "Reply rules: your reply goes directly to WhatsApp. Plain text only — no markdown headers, no bold, no code fences. Use line breaks for structure. Keep it under ~600 chars unless the actual content demands more. Lead with the outcome, then any details.",
     ].join("\n");
 
     this.enqueueNotification({

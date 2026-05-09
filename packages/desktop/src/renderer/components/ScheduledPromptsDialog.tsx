@@ -4,6 +4,7 @@ import type {
   ScheduleConfig,
   RecurringInterval,
   ProviderType,
+  ScheduleNotifyMode,
   Folder,
 } from "@stratosapp/core";
 
@@ -77,6 +78,19 @@ const PROVIDER_OPTIONS: DropdownItem[] = [
   { value: "opencode", label: "Opencode" },
 ];
 
+const NOTIFY_OPTIONS: DropdownItem[] = [
+  { value: "default", label: "Use global default" },
+  {
+    value: "always",
+    label: "Always (Manager pings me on every run)",
+  },
+  {
+    value: "errors-only",
+    label: "Errors only (only ping on failures)",
+  },
+  { value: "never", label: "Never (silent run)" },
+];
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -97,6 +111,8 @@ interface FormState {
   customCron: string;
   timeOfDay: string;
   dayOfWeek: number;
+  /** "default" maps to undefined on save (use global default). */
+  notify: "default" | ScheduleNotifyMode;
 }
 
 function defaultForm(folders: Folder[]): FormState {
@@ -112,6 +128,7 @@ function defaultForm(folders: Folder[]): FormState {
     customCron: "",
     timeOfDay: "09:00",
     dayOfWeek: 1,
+    notify: "default",
   };
 }
 
@@ -144,6 +161,7 @@ function promptToForm(p: ScheduledPrompt): FormState {
     customCron: s.customCron ?? "",
     timeOfDay: s.timeOfDay ?? "09:00",
     dayOfWeek: s.dayOfWeek ?? 1,
+    notify: p.notify ?? "default",
   };
 }
 
@@ -246,9 +264,16 @@ export function ScheduledPromptsDialog({
         model: form.model || undefined,
         folderId: form.folderId,
         schedule: formToScheduleConfig(form),
+        ...(form.notify !== "default" ? { notify: form.notify } : {}),
       };
       if (mode === "edit" && editingId) {
-        await update(editingId, data);
+        // For edits, explicitly set notify to undefined when "default" so the
+        // user can clear a previous override. The non-edit branch just omits
+        // the field when "default".
+        await update(editingId, {
+          ...data,
+          notify: form.notify === "default" ? undefined : form.notify,
+        });
       } else {
         await create(data);
       }
@@ -702,6 +727,22 @@ function ScheduleForm({
           />
         </div>
       )}
+
+      {/* Notify */}
+      <div>
+        <label className="block text-xs text-[var(--text-muted)] mb-1.5">
+          Notify on completion
+        </label>
+        <DropdownPicker
+          items={NOTIFY_OPTIONS}
+          selectedValue={form.notify}
+          onSelect={(val) => onChange({ notify: val as FormState["notify"] })}
+        />
+        <p className="text-[11px] text-[var(--text-faint)] mt-1.5">
+          When set, the Manager wakes up after the run and pings you on
+          WhatsApp. Reply on WhatsApp to ask follow-ups.
+        </p>
+      </div>
 
       {/* Error */}
       {error && <p className="text-xs text-red-400">{error}</p>}

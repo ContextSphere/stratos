@@ -122,15 +122,21 @@ export interface DirEntry {
 
 export type WhatsAppStatus = "connected" | "disconnected" | "qr";
 
+export type ScheduleNotifyMode = "always" | "errors-only" | "never";
+
 export interface WhatsAppBridge {
   getState(): Promise<{
     status: WhatsAppStatus;
     qr: string | null;
     trustedPhone: string;
+    notifySchedules: ScheduleNotifyMode;
   }>;
   connect(): Promise<{ ok: boolean; error?: string }>;
   disconnect(): Promise<{ ok: boolean }>;
-  saveSettings(s: { trustedPhone: string }): Promise<{ ok: boolean }>;
+  saveSettings(s: {
+    trustedPhone?: string;
+    notifySchedules?: ScheduleNotifyMode;
+  }): Promise<{ ok: boolean }>;
   onStatus(cb: (status: WhatsAppStatus) => void): () => void;
   onQr(cb: (qr: string) => void): () => void;
   onLog(cb: (line: string) => void): () => void;

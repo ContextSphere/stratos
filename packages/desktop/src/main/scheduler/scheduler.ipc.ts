@@ -5,6 +5,7 @@ import type {
   ScheduledPrompt,
   ScheduleConfig,
   ProviderType,
+  ScheduleNotifyMode,
 } from "@stratosapp/core";
 import {
   loadScheduledPrompts,
@@ -29,6 +30,7 @@ export function registerSchedulerIpc(scheduler: SchedulerManager): void {
         model?: string;
         folderId: string;
         schedule: ScheduleConfig;
+        notify?: ScheduleNotifyMode;
       },
     ) => {
       const prompt = addScheduledPrompt({ ...data, enabled: true });

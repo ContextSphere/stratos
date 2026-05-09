@@ -20,6 +20,8 @@ import {
 import type { ManagerSession } from "../manager/manager-session";
 import { consumeReport, clearReport } from "./schedule-report-store";
 import { decoratePromptWithSchedule } from "./decorate-prompt";
+import { getGlobalNotifyDefault } from "../integrations/whatsapp.ipc";
+import { shouldNotifyManager } from "./notify-policy";
 
 export class SchedulerManager {
   private tasks = new Map<string, ScheduledTask>();
@@ -319,8 +321,14 @@ export class SchedulerManager {
 
     if (this.managerSession) {
       this.managerSession.recordScheduleRun(record);
-      if (status === "error") {
-        this.managerSession.reportScheduleFailure(record);
+      if (
+        shouldNotifyManager(prompt.notify, getGlobalNotifyDefault(), status)
+      ) {
+        if (status === "error") {
+          this.managerSession.reportScheduleFailure(record);
+        } else {
+          this.managerSession.reportScheduleSuccess(record);
+        }
       }
     }
 

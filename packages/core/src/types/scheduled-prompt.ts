@@ -2,6 +2,18 @@ import type { ProviderType } from "./thread";
 
 export type ScheduleType = "once" | "recurring";
 
+/**
+ * Controls when a scheduled run wakes up the Manager (and, by extension,
+ * notifies the user via WhatsApp). The Manager is the single point of contact —
+ * its reply is what reaches WhatsApp, and the user can WhatsApp back to ask
+ * follow-ups in the same Manager thread.
+ *
+ * - "always"      Manager turn fires on every run (success + error)
+ * - "errors-only" Manager turn fires only on failures (today's behavior, default)
+ * - "never"       No Manager turn at all — silent disk record only
+ */
+export type ScheduleNotifyMode = "always" | "errors-only" | "never";
+
 export type RecurringInterval =
   | "every-hour"
   | "every-6-hours"
@@ -50,6 +62,12 @@ export interface ScheduledPrompt {
    * by the time the schedule fires.
    */
   routeToManager?: boolean;
+  /**
+   * When set, overrides the global notifySchedules default. Controls whether
+   * the Manager is woken up on this schedule's completion (and therefore
+   * whether the user gets a WhatsApp message).
+   */
+  notify?: ScheduleNotifyMode;
 }
 
 /**

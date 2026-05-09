@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { useWhatsAppBridge } from "../bridges/StratosProvider";
-import type { WhatsAppStatus } from "../bridges/types";
+import type { WhatsAppStatus, ScheduleNotifyMode } from "../bridges/types";
 
 const WA_GREEN = "#25D366";
 const WA_GREEN_DARK = "#128C7E";
@@ -442,6 +442,8 @@ export function WhatsAppSettings(): React.ReactElement {
   const [qr, setQr] = useState<string | null>(null);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [trustedPhone, setTrustedPhone] = useState<string>("");
+  const [notifyMode, setNotifyMode] =
+    useState<ScheduleNotifyMode>("errors-only");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -451,6 +453,7 @@ export function WhatsAppSettings(): React.ReactElement {
       setStatus(s.status);
       setQr(s.qr);
       setTrustedPhone(s.trustedPhone);
+      setNotifyMode(s.notifySchedules ?? "errors-only");
     });
     const unStatus = bridge.onStatus(setStatus);
     const unQr = bridge.onQr((q) => setQr(q));
@@ -512,6 +515,11 @@ export function WhatsAppSettings(): React.ReactElement {
     await bridge!.saveSettings({ trustedPhone: phone }).catch(console.error);
   }
 
+  async function handleNotifyModeChange(mode: ScheduleNotifyMode) {
+    setNotifyMode(mode);
+    await bridge!.saveSettings({ notifySchedules: mode }).catch(console.error);
+  }
+
   return (
     <div className="space-y-4">
       {status === "qr" ? (
@@ -558,6 +566,55 @@ export function WhatsAppSettings(): React.ReactElement {
           phone={trustedPhone}
           onSave={handleTrustedPhoneSave}
         />
+      </div>
+
+      {/* Schedule notification default */}
+      <div
+        className="rounded-xl"
+        style={{
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border)",
+          padding: "14px 16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}
+      >
+        <label
+          className="text-xs font-semibold uppercase tracking-wider"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Schedule notifications
+        </label>
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+          When a scheduled prompt finishes, the Manager wakes up and pings you
+          on WhatsApp. Reply on WhatsApp to ask follow-ups. Per-schedule
+          settings override this default.
+        </p>
+        <div className="flex flex-col gap-1.5">
+          {(
+            [
+              ["always", "Always — every run"],
+              ["errors-only", "Errors only — only failures"],
+              ["never", "Never — silent"],
+            ] as Array<[ScheduleNotifyMode, string]>
+          ).map(([value, label]) => (
+            <label
+              key={value}
+              className="flex items-center gap-2 cursor-pointer text-sm"
+              style={{ color: "var(--text)" }}
+            >
+              <input
+                type="radio"
+                name="notify-schedules"
+                value={value}
+                checked={notifyMode === value}
+                onChange={() => handleNotifyModeChange(value)}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
       </div>
     </div>
   );

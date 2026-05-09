@@ -3,6 +3,7 @@ import type {
   ScheduledPrompt,
   ScheduleConfig,
   ProviderType,
+  ScheduleNotifyMode,
 } from "@stratosapp/core";
 
 export interface CreateScheduledPromptInput {
@@ -12,6 +13,7 @@ export interface CreateScheduledPromptInput {
   model?: string;
   folderId: string;
   schedule: ScheduleConfig;
+  notify?: ScheduleNotifyMode;
 }
 
 interface UseScheduledPromptsReturn {

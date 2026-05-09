@@ -20,6 +20,7 @@ export type {
   ScheduleType,
   RecurringInterval,
   ScheduleRunRecord,
+  ScheduleNotifyMode,
 } from "./types/scheduled-prompt";
 export { scheduleToCron, scheduleToHuman } from "./types/scheduled-prompt";
 export { normalizeMode } from "./types/thread";

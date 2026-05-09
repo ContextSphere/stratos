@@ -625,8 +625,10 @@ const api = {
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_GET_STATE),
     connect: () => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_CONNECT),
     disconnect: () => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_DISCONNECT),
-    saveSettings: (s: { trustedPhone: string }) =>
-      ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_SAVE_SETTINGS, s),
+    saveSettings: (s: {
+      trustedPhone?: string;
+      notifySchedules?: "always" | "errors-only" | "never";
+    }) => ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_SAVE_SETTINGS, s),
     onStatus: (cb: (status: "connected" | "disconnected" | "qr") => void) => {
       const handler = (
         _: unknown,
