@@ -1,5 +1,5 @@
 import type { WASocket, BaileysEventMap } from "@whiskeysockets/baileys";
-import type { ResolveJid } from "./client.js";
+import { getCurrentSock, type ResolveJid } from "./client.js";
 import { sendReply, startTyping, stopTyping } from "./sender.js";
 
 type MessageUpsert = BaileysEventMap["messages.upsert"];
@@ -20,8 +20,19 @@ function isTrusted(jid: string, trustedPhone: string): boolean {
   return e164 === trusted || jid === trusted;
 }
 
+// Wait briefly for the WhatsApp socket to come back after a reconnect.
+// Returns the live sock or null if it never reappeared in time.
+async function waitForLiveSock(timeoutMs = 8000): Promise<WASocket | null> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const sock = getCurrentSock();
+    if (sock?.user) return sock;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return getCurrentSock();
+}
+
 export function createMessageHandler(
-  sock: WASocket,
   getTrustedPhone: () => string,
   resolveJid: ResolveJid,
   onMessage: (from: string, text: string) => Promise<string>,
@@ -47,28 +58,59 @@ export function createMessageHandler(
       onLog(`[handler] message from ${jid}: ${text.slice(0, 80)}`);
 
       if (text === "/help") {
-        await sendReply(
-          sock,
-          jid,
-          "Anything you send here is forwarded to your Stratos Manager.",
-        );
+        const sock = getCurrentSock();
+        if (sock) {
+          await sendReply(
+            sock,
+            jid,
+            "Anything you send here is forwarded to your Stratos Manager.",
+          );
+        }
         continue;
       }
 
-      await startTyping(sock, jid);
+      const startSock = getCurrentSock();
+      if (startSock) await startTyping(startSock, jid);
+
       try {
         const reply = await onMessage(jid, text);
+        const sock = getCurrentSock() ?? (await waitForLiveSock());
+        if (!sock) {
+          onLog(
+            `[handler] socket lost; could not deliver reply to ${jid}: ${reply.slice(0, 60)}`,
+          );
+          continue;
+        }
         await stopTyping(sock, jid);
-        await sendReply(sock, jid, reply);
+        try {
+          await sendReply(sock, jid, reply);
+        } catch (sendErr) {
+          // Connection may have just dropped; wait for reconnect and try once more.
+          const retrySock = await waitForLiveSock();
+          if (retrySock) {
+            await sendReply(retrySock, jid, reply);
+          } else {
+            const m =
+              sendErr instanceof Error ? sendErr.message : String(sendErr);
+            onLog(`[handler] reply send failed (no live socket): ${m}`);
+          }
+        }
       } catch (err) {
-        await stopTyping(sock, jid);
-        const msg2 = err instanceof Error ? err.message : String(err);
-        onLog(`[handler] error: ${msg2}`);
+        const m = err instanceof Error ? err.message : String(err);
+        onLog(`[handler] error: ${m}`);
         const errReply =
-          msg2.includes("socket") || msg2.includes("connect")
+          m.includes("socket") || m.includes("connect")
             ? "Stratos appears to be offline. Start it and try again."
-            : `Error: ${msg2}`;
-        await sendReply(sock, jid, errReply);
+            : `Error: ${m}`;
+        const sock = getCurrentSock() ?? (await waitForLiveSock());
+        if (sock) {
+          await stopTyping(sock, jid);
+          try {
+            await sendReply(sock, jid, errReply);
+          } catch {
+            /* swallow — already in error path */
+          }
+        }
       }
     }
   };

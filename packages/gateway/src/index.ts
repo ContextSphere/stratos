@@ -38,7 +38,6 @@ export async function startGateway(
     authDir,
     (sock, resolveJid) => {
       const handler = createMessageHandler(
-        sock,
         () => liveConfig?.trustedPhone ?? config.trustedPhone,
         resolveJid,
         callbacks.onMessage,

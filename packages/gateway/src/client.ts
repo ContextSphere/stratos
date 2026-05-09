@@ -120,6 +120,10 @@ export function stopWhatsAppClient(): void {
   currentSock = null;
 }
 
+export function getCurrentSock(): WASocket | null {
+  return currentSock;
+}
+
 /**
  * Proactively send a WhatsApp message to a JID without an incoming trigger.
  * Used to forward async Manager notifications back to the last known sender.
