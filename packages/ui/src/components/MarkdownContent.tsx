@@ -175,6 +175,12 @@ export function buildMarkdownComponents(onLinkClick?: (url: string) => void) {
         </th>
       );
     },
+    tbody({ children }: { children?: React.ReactNode }) {
+      return <tbody>{children}</tbody>;
+    },
+    tr({ children }: { children?: React.ReactNode }) {
+      return <tr>{children}</tr>;
+    },
     td({ children }: { children?: React.ReactNode }) {
       return (
         <td className="border border-[var(--border-mid)] px-3 py-2">

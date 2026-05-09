@@ -961,6 +961,26 @@ export function useChat(
           streamingThreadsRef.current.delete(threadId);
           activeStreamIdRef.current.delete(threadId);
 
+          // Reload from the SDK when this is the active thread. The SDK's
+          // getSessionMessages filters superseded intermediate turns (e.g. when
+          // a skill produces an early response that is later replaced by the
+          // main agent's authoritative response). Without this reload, the React
+          // state retains both turns and the user sees garbled interleaved content.
+          if (threadId === activeThreadIdRef.current) {
+            window.api
+              .threadsLoadMessages(threadId)
+              .then((stored) => {
+                if (activeThreadIdRef.current !== threadId) return;
+                const loaded =
+                  stored.length > 0 ? stored.map(fromStoredMessage) : [];
+                if (loaded.length > 0) {
+                  setMessages(loaded);
+                  setSessionStats(computeSessionStats(loaded));
+                }
+              })
+              .catch(() => {});
+          }
+
           // Clear running state immediately — result means the turn is complete.
           // The main process also sends THREAD_STREAM_STATE, but the SDK generator
           // may not close promptly, so we clear here as defense-in-depth.
