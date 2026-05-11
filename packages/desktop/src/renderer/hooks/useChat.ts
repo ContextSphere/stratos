@@ -111,6 +111,10 @@ function nextMessageId(): string {
 const TOOL_OUTPUT_DISPLAY_LIMIT = 50_000; // 50KB — full output is in SDK session store
 function truncateToolOutput(output: string | undefined): string | undefined {
   if (!output || output.length <= TOOL_OUTPUT_DISPLAY_LIMIT) return output;
+  // Keep base64 image payloads intact — truncating mid-string corrupts the
+  // JSON and breaks the Read-tool image preview in FileChangeViewer.
+  if (output.includes('"type":"image"') && output.includes('"base64"'))
+    return output;
   return (
     output.slice(0, TOOL_OUTPUT_DISPLAY_LIMIT) +
     `\n\n[… truncated ${output.length - TOOL_OUTPUT_DISPLAY_LIMIT} characters]`

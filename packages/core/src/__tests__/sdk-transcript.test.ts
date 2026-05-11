@@ -110,6 +110,158 @@ describe("sdkMessagesToStored — user message content shapes", () => {
   });
 });
 
+describe("sdkMessagesToStored — Read tool image preservation", () => {
+  beforeEach(() => {
+    mockGetSessionMessages.mockReset();
+  });
+
+  it("preserves image content in Read tool_result output as JSON for UI preview", async () => {
+    const imageData = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0l";
+    mockGetSessionMessages.mockResolvedValue([
+      {
+        type: "assistant",
+        uuid: "asst1",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_read_png",
+              name: "Read",
+              input: { file_path: "/tmp/screenshot.png" },
+            },
+          ],
+        },
+      },
+      {
+        type: "user",
+        uuid: "u1",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_read_png",
+              content: [
+                {
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: "image/png",
+                    data: imageData,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+    const result = await sdkMessagesToStored("session-1", 0);
+    const toolCall = result[0].toolCalls?.[0];
+    expect(toolCall?.toolName).toBe("Read");
+    const output = toolCall?.output ?? "";
+    const parsed = JSON.parse(output);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0]).toMatchObject({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: imageData },
+    });
+  });
+
+  it("does not truncate large base64 image payloads mid-string", async () => {
+    // Simulate a real-world PNG > 50KB base64
+    const largeImageData = "A".repeat(80_000);
+    mockGetSessionMessages.mockResolvedValue([
+      {
+        type: "assistant",
+        uuid: "asst1",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_read_big_png",
+              name: "Read",
+              input: { file_path: "/tmp/big.png" },
+            },
+          ],
+        },
+      },
+      {
+        type: "user",
+        uuid: "u1",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_read_big_png",
+              content: [
+                {
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: "image/png",
+                    data: largeImageData,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+    const result = await sdkMessagesToStored("session-1", 0);
+    const output = result[0].toolCalls?.[0]?.output ?? "";
+    // Must be valid JSON (would throw if truncated mid-string)
+    const parsed = JSON.parse(output);
+    expect(parsed[0].source.data).toBe(largeImageData);
+  });
+
+  it("still concatenates text-only tool_result content as plain text", async () => {
+    mockGetSessionMessages.mockResolvedValue([
+      {
+        type: "assistant",
+        uuid: "asst1",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_read_txt",
+              name: "Read",
+              input: { file_path: "/tmp/readme.md" },
+            },
+          ],
+        },
+      },
+      {
+        type: "user",
+        uuid: "u1",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_read_txt",
+              content: [
+                { type: "text", text: "line one" },
+                { type: "text", text: "line two" },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+    const result = await sdkMessagesToStored("session-1", 0);
+    expect(result[0].toolCalls?.[0]?.output).toBe("line one\nline two");
+  });
+});
+
 describe("parseTaskNotification", () => {
   it("parses a well-formed task notification XML blob", () => {
     const xml =

@@ -13,6 +13,13 @@ import type {
   TaskNotification,
 } from "../types/thread";
 
+type ToolResultContentBlock =
+  | { type: "text"; text: string }
+  | {
+      type: "image";
+      source: { type: "base64"; media_type: string; data: string };
+    };
+
 type ContentBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; thinking: string }
@@ -20,19 +27,23 @@ type ContentBlock =
   | {
       type: "tool_result";
       tool_use_id: string;
-      content: string | { type: "text"; text: string }[];
+      content: string | ToolResultContentBlock[];
     }
   | {
       type: "image";
       source: { type: "base64"; media_type: string; data: string };
     };
 
-function getToolResultText(
-  content: string | { type: "text"; text: string }[],
+function getToolResultOutput(
+  content: string | ToolResultContentBlock[],
 ): string {
   if (typeof content === "string") return content;
+  // If any block is an image, preserve the structured array as JSON so the
+  // UI's extractImageDataUrl can pull the base64 data. Filtering to text only
+  // would silently drop the image and break Read-tool previews on reload.
+  if (content.some((b) => b.type === "image")) return JSON.stringify(content);
   return content
-    .filter((b) => b.type === "text")
+    .filter((b): b is { type: "text"; text: string } => b.type === "text")
     .map((b) => b.text)
     .join("\n");
 }
@@ -40,6 +51,11 @@ function getToolResultText(
 const TOOL_OUTPUT_STORAGE_LIMIT = 50_000; // 50KB — match renderer truncation limit
 function truncateToolOutput(output: string | undefined): string | undefined {
   if (!output || output.length <= TOOL_OUTPUT_STORAGE_LIMIT) return output;
+  // Keep base64 image payloads intact — truncating mid-string corrupts the
+  // JSON and breaks the Read-tool image preview. Images are bounded in
+  // practice by the SDK's own tool-output cap.
+  if (output.includes('"type":"image"') && output.includes('"base64"'))
+    return output;
   return (
     output.slice(0, TOOL_OUTPUT_STORAGE_LIMIT) +
     `\n\n[… truncated ${output.length - TOOL_OUTPUT_STORAGE_LIMIT} characters]`
@@ -362,7 +378,7 @@ export async function sdkMessagesToStored(
     if (!blocks) continue;
     for (const block of blocks) {
       if (block.type === "tool_result") {
-        toolResults.set(block.tool_use_id, getToolResultText(block.content));
+        toolResults.set(block.tool_use_id, getToolResultOutput(block.content));
       }
     }
   }
