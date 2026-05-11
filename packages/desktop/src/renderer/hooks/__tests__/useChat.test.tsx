@@ -493,3 +493,159 @@ describe("useChat — handleInteractiveResponse", () => {
     expect(mockApi.respondAskUserQuestion).not.toHaveBeenCalled();
   });
 });
+
+describe("useChat — result-event reload race", () => {
+  // The SDK CLI writes its JSONL with async fs.appendFile, so when the
+  // `result` event arrives over IPC the final assistant turn may not yet
+  // have flushed. The hook polls until disk count stabilizes — this test
+  // simulates the race and asserts we don't show the partial transcript.
+
+  it("waits until disk count stabilizes before applying loaded messages", async () => {
+    vi.useFakeTimers();
+
+    // Capture the stream-message handler the hook installs on mount
+    let streamHandler:
+      | ((data: unknown, threadId: string | null) => void)
+      | null = null;
+    mockApi.onStreamMessage.mockImplementation((cb) => {
+      streamHandler = cb;
+    });
+
+    // Simulate the race: first read returns a partial transcript (incomplete
+    // — final assistant message hasn't flushed), the second read returns the
+    // full transcript. The third and fourth reads stay stable.
+    const partial = [
+      { id: "u1", role: "user" as const, content: "hi", timestamp: 1 },
+    ];
+    const full = [
+      ...partial,
+      { id: "a1", role: "assistant" as const, content: "hello", timestamp: 2 },
+    ];
+    mockApi.threadsLoadMessages
+      .mockResolvedValueOnce([]) // initial mount load
+      .mockResolvedValueOnce(partial) // result-handler poll iter 1 (delay 0)
+      .mockResolvedValueOnce(full) // poll iter 2 (delay 100)
+      .mockResolvedValue(full); // subsequent stable reads
+
+    const { result } = renderUseChat("thread-1");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(streamHandler).not.toBeNull();
+
+    // Simulate streaming events building up in-memory state then a `result`
+    // event firing — the renderer immediately reloads from disk.
+    await act(async () => {
+      streamHandler!(
+        { type: "user_message", content: "hi", _streamId: "s1" },
+        "thread-1",
+      );
+      streamHandler!(
+        { type: "text", content: "hello", _streamId: "s1" },
+        "thread-1",
+      );
+      // Flush the 50 ms batched render
+      vi.advanceTimersByTime(60);
+      await Promise.resolve();
+    });
+
+    // Fire the result event — this kicks off the polling reload.
+    await act(async () => {
+      streamHandler!(
+        {
+          type: "result",
+          cost: 0,
+          usage: { inputTokens: 1, outputTokens: 1 },
+          _streamId: "s1",
+        },
+        "thread-1",
+      );
+    });
+
+    // First poll iteration (delay=0) reads `partial` synchronously.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      // Advance past the 100 ms backoff for iter 2 (which reads `full`)
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+      await Promise.resolve();
+      // Advance past iter 3's backoff to confirm stability (full === full)
+      vi.advanceTimersByTime(260);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The final React state must reflect the FULL transcript, not the partial.
+    expect(result.current.messages).toHaveLength(2);
+    expect(result.current.messages[0].id).toBe("u1");
+    expect(result.current.messages[1].id).toBe("a1");
+
+    vi.useRealTimers();
+  });
+
+  it("does not clobber in-memory state if disk reads are persistently smaller", async () => {
+    vi.useFakeTimers();
+
+    let streamHandler:
+      | ((data: unknown, threadId: string | null) => void)
+      | null = null;
+    mockApi.onStreamMessage.mockImplementation((cb) => {
+      streamHandler = cb;
+    });
+
+    // Simulate a regen-style case where the SDK's filtered transcript has
+    // FEWER messages than memory — but the count is stable across reads.
+    const filtered = [
+      { id: "u1", role: "user" as const, content: "hi", timestamp: 1 },
+      { id: "a2", role: "assistant" as const, content: "real", timestamp: 3 },
+    ];
+    mockApi.threadsLoadMessages
+      .mockResolvedValueOnce([]) // initial mount load
+      .mockResolvedValue(filtered); // every subsequent read is the filtered set
+
+    const { result } = renderUseChat("thread-1");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(streamHandler).not.toBeNull();
+
+    // Bootstrap the streaming state so the result handler actually runs.
+    await act(async () => {
+      streamHandler!(
+        { type: "user_message", content: "hi", _streamId: "s1" },
+        "thread-1",
+      );
+      streamHandler!(
+        { type: "text", content: "intermediate", _streamId: "s1" },
+        "thread-1",
+      );
+      // Flush the 50 ms batched render
+      vi.advanceTimersByTime(60);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      streamHandler!(
+        {
+          type: "result",
+          cost: 0,
+          usage: { inputTokens: 1, outputTokens: 1 },
+          _streamId: "s1",
+        },
+        "thread-1",
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Polling stabilized at length 2 — apply that (even though memory had
+    // more messages, the filtered set is now considered authoritative).
+    expect(result.current.messages).toHaveLength(2);
+
+    vi.useRealTimers();
+  });
+});

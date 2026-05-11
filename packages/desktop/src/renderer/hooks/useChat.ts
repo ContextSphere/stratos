@@ -311,6 +311,46 @@ export function useChat(
     window.api.threadsSaveMessages(threadId, msgs.map(toStoredMessage));
   }, []);
 
+  // Reload messages from the SDK JSONL after a `result` event. The Claude
+  // SDK CLI writes its JSONL with async fs.appendFile, so the final turn
+  // may not have flushed when the `result` event arrives over IPC. A naive
+  // immediate read can return a partial transcript missing the tail.
+  //
+  // Poll with backoff and only commit to React state once two consecutive
+  // reads agree on the count — at that point the SDK has finished flushing.
+  // Holding the in-memory streamed state during polling avoids the visible
+  // flicker that would happen if we applied the partial read and then
+  // updated again 100 ms later.
+  //
+  // Abort if the active thread changes underneath us.
+  const pollAndApplyLoadedMessages = useCallback(
+    async (threadId: string) => {
+      const delaysMs = [0, 100, 250, 500, 1000, 2000];
+      let prevLength = -1;
+      let lastStored: StoredMessage[] = [];
+      for (const delay of delaysMs) {
+        if (delay > 0) {
+          await new Promise((r) => setTimeout(r, delay));
+        }
+        if (activeThreadIdRef.current !== threadId) return;
+        try {
+          lastStored = await window.api.threadsLoadMessages(threadId);
+        } catch {
+          return;
+        }
+        if (activeThreadIdRef.current !== threadId) return;
+        if (lastStored.length === prevLength) break;
+        prevLength = lastStored.length;
+      }
+      if (activeThreadIdRef.current !== threadId) return;
+      if (lastStored.length === 0) return;
+      const loaded = lastStored.map(fromStoredMessage);
+      setMessages(loaded);
+      setSessionStats(computeSessionStats(loaded));
+    },
+    [computeSessionStats],
+  );
+
   // Clear notification when user switches to a thread
   useEffect(() => {
     if (activeThreadId) {
@@ -361,7 +401,10 @@ export function useChat(
       } else {
         loadingThreadIdRef.current = activeThreadId;
 
-        // Load both messages and thread metadata (including sessionTools)
+        // Load both messages and thread metadata (including sessionTools).
+        // After the first read, do one delayed re-check to catch any messages
+        // that the SDK CLI was still flushing when the user navigated in —
+        // see pollAndApplyLoadedMessages for the same race.
         Promise.all([
           window.api.threadsLoadMessages(activeThreadId),
           window.api.threadsGet(activeThreadId),
@@ -389,6 +432,25 @@ export function useChat(
               }
             })
             .catch(() => {});
+
+          // Defensive re-check: if the SDK CLI was still flushing JSONL when
+          // we read, the disk count will grow on the next read. Update React
+          // state if so.
+          const threadIdForRecheck = activeThreadId;
+          const initialLen = stored.length;
+          setTimeout(() => {
+            if (activeThreadIdRef.current !== threadIdForRecheck) return;
+            window.api
+              .threadsLoadMessages(threadIdForRecheck)
+              .then((restored) => {
+                if (activeThreadIdRef.current !== threadIdForRecheck) return;
+                if (restored.length <= initialLen) return;
+                const reloaded = restored.map(fromStoredMessage);
+                setMessages(reloaded);
+                setSessionStats(computeSessionStats(reloaded));
+              })
+              .catch(() => {});
+          }, 500);
         });
       }
     } else {
@@ -989,19 +1051,14 @@ export function useChat(
           // a skill produces an early response that is later replaced by the
           // main agent's authoritative response). Without this reload, the React
           // state retains both turns and the user sees garbled interleaved content.
+          //
+          // The SDK CLI uses async fs.appendFile for its JSONL, so the final
+          // assistant turn may not have flushed when the `result` event arrives
+          // over IPC. Reading immediately can return fewer messages than what
+          // we just streamed and clobber the user's view. Poll until the
+          // on-disk count stabilizes across two consecutive reads, then apply.
           if (threadId === activeThreadIdRef.current) {
-            window.api
-              .threadsLoadMessages(threadId)
-              .then((stored) => {
-                if (activeThreadIdRef.current !== threadId) return;
-                const loaded =
-                  stored.length > 0 ? stored.map(fromStoredMessage) : [];
-                if (loaded.length > 0) {
-                  setMessages(loaded);
-                  setSessionStats(computeSessionStats(loaded));
-                }
-              })
-              .catch(() => {});
+            void pollAndApplyLoadedMessages(threadId);
 
             // Refresh context-window usage breakdown. The SDK only reports
             // the new state after the turn fully commits, so query it here.
