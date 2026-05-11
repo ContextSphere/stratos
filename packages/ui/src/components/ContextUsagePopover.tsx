@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PanelCard } from "./shared/PanelCard";
 import type { ContextUsage } from "../bridges/types";
@@ -102,6 +102,33 @@ export function ContextUsagePopover({
       .sort((a, b) => b.tokens - a.tokens);
     return free ? [...rest, free] : rest;
   }, [usage]);
+
+  // MCP tools come from the SDK as a flat list. Group by server so the user
+  // sees which integration each tool belongs to.
+  const mcpByServer = useMemo(() => {
+    if (!usage?.mcpTools?.length) return [];
+    const grouped = new Map<string, typeof usage.mcpTools>();
+    for (const t of usage.mcpTools) {
+      const list = grouped.get(t.serverName) ?? [];
+      list.push(t);
+      grouped.set(t.serverName, list);
+    }
+    return [...grouped.entries()]
+      .map(([server, tools]) => ({
+        server,
+        tools: [...tools].sort((a, b) => b.tokens - a.tokens),
+        totalTokens: tools.reduce((s, t) => s + t.tokens, 0),
+      }))
+      .sort((a, b) => b.totalTokens - a.totalTokens);
+  }, [usage]);
+
+  const mcpTotalTokens = useMemo(
+    () => (usage?.mcpTools ?? []).reduce((s, t) => s + t.tokens, 0),
+    [usage],
+  );
+
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
 
   if (!isOpen || !usage) return null;
 
@@ -312,22 +339,127 @@ export function ContextUsagePopover({
             </div>
           )}
 
-          {/* Deferred items: tools / skills / commands waiting in reserve */}
-          {(usage.skills || usage.slashCommands) && (
-            <div className="pt-3 border-t border-[var(--border)] space-y-1 text-[11px] text-[var(--text-muted)]">
+          {/* Per-extension breakdown: skills + MCP tools (expandable to per-item
+              token cost), plus a flat slash-command summary. We deliberately
+              omit System tools and other built-ins — the user can't influence
+              what the SDK loads there. */}
+          {(usage.skills || mcpByServer.length > 0 || usage.slashCommands) && (
+            <div
+              className="pt-3 border-t border-[var(--border)] space-y-1 text-[11px] text-[var(--text-muted)]"
+              data-testid="context-usage-extensions"
+            >
               {usage.skills && (
-                <div className="flex justify-between">
-                  <span>
-                    Skills ({usage.skills.includedSkills}/
-                    {usage.skills.totalSkills})
-                  </span>
-                  <span className="tabular-nums">
-                    {fmt(usage.skills.tokens)}
-                  </span>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setSkillsOpen((v) => !v)}
+                    className="w-full flex items-center justify-between gap-2 px-1 py-0.5 rounded hover:bg-[var(--bg-surface)] transition-colors"
+                    aria-expanded={skillsOpen}
+                    data-testid="context-usage-skills-toggle"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Chevron open={skillsOpen} />
+                      <span>
+                        Skills ({usage.skills.includedSkills}/
+                        {usage.skills.totalSkills})
+                      </span>
+                    </span>
+                    <span className="tabular-nums">
+                      {fmt(usage.skills.tokens)}
+                    </span>
+                  </button>
+                  {skillsOpen && (
+                    <ul
+                      className="mt-1 pl-5 pr-1 space-y-0.5 max-h-48 overflow-y-auto"
+                      data-testid="context-usage-skills-list"
+                    >
+                      {[...(usage.skills.skillFrontmatter ?? [])]
+                        .sort((a, b) => b.tokens - a.tokens)
+                        .map((s) => (
+                          <li
+                            key={s.name}
+                            className="flex items-center justify-between gap-2 text-[10.5px]"
+                          >
+                            <span className="truncate text-[var(--text-primary)]">
+                              {s.name}
+                            </span>
+                            <span className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-[var(--text-faint)] uppercase tracking-wider">
+                                {s.source}
+                              </span>
+                              <span className="tabular-nums w-10 text-right text-[var(--text-muted)]">
+                                {fmt(s.tokens)}
+                              </span>
+                            </span>
+                          </li>
+                        ))}
+                    </ul>
+                  )}
                 </div>
               )}
+
+              {mcpByServer.length > 0 && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setMcpOpen((v) => !v)}
+                    className="w-full flex items-center justify-between gap-2 px-1 py-0.5 rounded hover:bg-[var(--bg-surface)] transition-colors"
+                    aria-expanded={mcpOpen}
+                    data-testid="context-usage-mcp-toggle"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Chevron open={mcpOpen} />
+                      <span>MCP tools ({usage.mcpTools.length})</span>
+                    </span>
+                    <span className="tabular-nums">{fmt(mcpTotalTokens)}</span>
+                  </button>
+                  {mcpOpen && (
+                    <div
+                      className="mt-1 pl-5 pr-1 space-y-1.5 max-h-48 overflow-y-auto"
+                      data-testid="context-usage-mcp-list"
+                    >
+                      {mcpByServer.map(({ server, tools, totalTokens }) => (
+                        <div key={server}>
+                          <div className="flex items-center justify-between gap-2 text-[10.5px] text-[var(--text-primary)] font-medium">
+                            <span className="truncate">{server}</span>
+                            <span className="tabular-nums text-[var(--text-muted)]">
+                              {fmt(totalTokens)}
+                            </span>
+                          </div>
+                          <ul className="pl-3 space-y-0.5">
+                            {tools.map((t) => (
+                              <li
+                                key={`${server}.${t.name}`}
+                                className="flex items-center justify-between gap-2 text-[10.5px]"
+                                title={
+                                  t.isLoaded === false
+                                    ? "Not currently loaded in context"
+                                    : undefined
+                                }
+                              >
+                                <span
+                                  className={`truncate ${t.isLoaded === false ? "text-[var(--text-faint)] italic" : "text-[var(--text-control)]"}`}
+                                >
+                                  {t.name}
+                                </span>
+                                <span className="tabular-nums w-10 text-right text-[var(--text-muted)]">
+                                  {fmt(t.tokens)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {usage.slashCommands && (
-                <div className="flex justify-between">
+                <div
+                  className="flex items-center justify-between px-1 py-0.5"
+                  title="The SDK does not break out per-command tokens — only this summary is available."
+                >
                   <span>
                     Slash commands ({usage.slashCommands.includedCommands}/
                     {usage.slashCommands.totalCommands})
@@ -343,5 +475,24 @@ export function ContextUsagePopover({
       </PanelCard>
     </div>,
     document.body,
+  );
+}
+
+function Chevron({ open }: { open: boolean }): React.ReactElement {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`flex-shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+      aria-hidden="true"
+    >
+      <path d="M4 3l4 3-4 3" />
+    </svg>
   );
 }
