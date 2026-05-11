@@ -7,6 +7,8 @@ export {
   type InteractiveMode,
 } from "./components/InputBar";
 export { ChatInfoBar, type SessionStats } from "./components/ChatInfoBar";
+export { ContextUsageIndicator } from "./components/ContextUsageIndicator";
+export { ContextUsagePopover } from "./components/ContextUsagePopover";
 export { ToolCallCard } from "./components/ToolCallCard";
 export { TaskCard } from "./components/TaskCard";
 export { FileChangeViewer } from "./components/FileChangeViewer";

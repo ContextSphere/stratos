@@ -1,5 +1,12 @@
-import type { Thread, StoredMessage, AgentMode } from "@stratosapp/core";
+import type {
+  Thread,
+  StoredMessage,
+  AgentMode,
+  ContextUsage,
+} from "@stratosapp/core";
 import type { ModelInfo } from "../types";
+
+export type { ContextUsage } from "@stratosapp/core";
 
 export interface ImageAttachment {
   id: string;
@@ -48,6 +55,7 @@ export interface ChatBridge {
   ): Promise<void>;
   openMcpConfig?(configPath: string): Promise<void>;
   reconnectMcpServer?(threadId: string, serverName: string): Promise<void>;
+  getContextUsage?(threadId: string): Promise<ContextUsage | null>;
 }
 
 export interface StreamEvent {

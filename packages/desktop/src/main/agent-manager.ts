@@ -802,6 +802,53 @@ export class AgentManager {
       },
     );
 
+    // Context window usage breakdown. Three cases, in order:
+    //   1. A live session exists in this process — use its provider.
+    //   2. The thread has a persisted SDK sessionId from a prior run —
+    //      probe via a transient resumed query (claude-code only).
+    //   3. Neither — return null and the indicator stays hidden.
+    ipcMain.handle(
+      IPC_CHANNELS.CONTEXT_USAGE_GET,
+      async (_event, threadId: string) => {
+        const session = this.sessions.get(threadId);
+        if (session?.provider.getContextUsage) {
+          try {
+            const usage = await session.provider.getContextUsage();
+            if (usage) return usage;
+          } catch (err) {
+            console.warn(`[context] live getContextUsage failed:`, err);
+          }
+        }
+
+        const thread = await this.storage.getThread(threadId);
+        if (!thread?.sessionId) return null;
+        const providerName = (thread.provider ?? "claude-code") as ProviderType;
+        if (providerName !== "claude-code") return null;
+
+        try {
+          const probe = createProvider("claude-code");
+          const settings = loadSettings();
+          const cliPath = await resolveClaudePathOrUndefined(
+            settings.cliPath as string | undefined,
+          );
+          await probe.initialize({
+            ...(cliPath ? { cliPath } : {}),
+            ...(thread.model ? { model: thread.model } : {}),
+            cwd: thread.cwd ?? process.env.HOME!,
+            settingSources: ["project", "user", "local"],
+          });
+          const usage = await probe.getContextUsage?.({
+            sessionId: thread.sessionId,
+          });
+          await probe.dispose?.();
+          return usage ?? null;
+        } catch (err) {
+          console.warn(`[context] probe getContextUsage failed:`, err);
+          return null;
+        }
+      },
+    );
+
     // MCP toggle server
     ipcMain.handle(
       IPC_CHANNELS.MCP_TOGGLE_SERVER,
@@ -2284,6 +2331,7 @@ export class AgentManager {
     ipcMain.removeHandler(IPC_CHANNELS.MCP_TOGGLE_SERVER);
     ipcMain.removeHandler(IPC_CHANNELS.MCP_OPEN_CONFIG);
     ipcMain.removeHandler(IPC_CHANNELS.MCP_RECONNECT_SERVER);
+    ipcMain.removeHandler(IPC_CHANNELS.CONTEXT_USAGE_GET);
     ipcMain.removeAllListeners(IPC_CHANNELS.MCP_ELICITATION_RESPONSE);
     ipcMain.removeAllListeners(IPC_CHANNELS.TOOL_RESPONSE);
     ipcMain.removeAllListeners(IPC_CHANNELS.ASK_USER_RESPONSE);

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS } from "../common/ipc-channels";
-import type { AgentMode, Folder } from "@stratosapp/core";
+import type { AgentMode, ContextUsage, Folder } from "@stratosapp/core";
 
 export type ElectronAPI = typeof api;
 
@@ -504,6 +504,8 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.MCP_OPEN_CONFIG, configPath),
   mcpReconnectServer: (threadId: string, serverName: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.MCP_RECONNECT_SERVER, threadId, serverName),
+  getContextUsage: (threadId: string): Promise<ContextUsage | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CONTEXT_USAGE_GET, threadId),
   onMcpElicitation: (
     callback: (data: unknown, threadId: string | null) => void,
   ): void => {

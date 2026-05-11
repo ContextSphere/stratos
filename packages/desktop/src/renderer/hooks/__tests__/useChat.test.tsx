@@ -38,6 +38,8 @@ function makeMockApi() {
     threadsGet: vi.fn().mockResolvedValue(null),
     threadsSaveMessages: vi.fn().mockResolvedValue(undefined),
     threadsUpdate: vi.fn().mockResolvedValue(undefined),
+    getContextUsage: vi.fn().mockResolvedValue(null),
+    mcpServerStatus: vi.fn().mockResolvedValue([]),
 
     // Message sending / control
     sendMessage: vi.fn().mockResolvedValue(undefined),

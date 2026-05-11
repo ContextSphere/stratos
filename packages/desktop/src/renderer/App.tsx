@@ -22,6 +22,7 @@ import {
   PreviewPane,
   ChatInfoBar,
   type SessionStats,
+  ContextUsageIndicator,
   ToolsBadge,
   useTodoData,
   ModelSelector,
@@ -135,6 +136,8 @@ function AppInner(): React.ReactElement {
     sessionTools,
     mcpServers,
     fetchMcpStatus,
+    contextUsage,
+    refreshContextUsage,
   } = useChat(activeThreadId, { onThreadUpdated: refreshThreads });
 
   const github = useGitHub();
@@ -1255,25 +1258,33 @@ function AppInner(): React.ReactElement {
                           onOpenChange={setModelPickerOpen}
                         />
                       </div>
-                      {!isManagerActive && (
-                        <ModeToggle
-                          provider={
-                            normalizeProvider(activeThread?.provider) ??
-                            pendingProvider
-                          }
-                          mode={
-                            activeThread?.mode
-                              ? normalizeMode(
-                                  activeThread.mode,
-                                  normalizeProvider(activeThread?.provider) ??
-                                    pendingProvider,
-                                )
-                              : pendingMode
-                          }
-                          onModeChange={handleModeChange}
-                          disabled={isStreaming}
-                        />
-                      )}
+                      <div className="flex items-center gap-2">
+                        {contextUsage && (
+                          <ContextUsageIndicator
+                            usage={contextUsage}
+                            onRefresh={refreshContextUsage}
+                          />
+                        )}
+                        {!isManagerActive && (
+                          <ModeToggle
+                            provider={
+                              normalizeProvider(activeThread?.provider) ??
+                              pendingProvider
+                            }
+                            mode={
+                              activeThread?.mode
+                                ? normalizeMode(
+                                    activeThread.mode,
+                                    normalizeProvider(activeThread?.provider) ??
+                                      pendingProvider,
+                                  )
+                                : pendingMode
+                            }
+                            onModeChange={handleModeChange}
+                            disabled={isStreaming}
+                          />
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

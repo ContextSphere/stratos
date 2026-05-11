@@ -48,6 +48,19 @@ export interface AgentProvider {
   /** Reconnect a failed MCP server. Returns authUrl if OAuth is needed. */
   reconnectMcpServer?(serverName: string): Promise<{ authUrl?: string } | void>;
 
+  /**
+   * Get a breakdown of current context window usage. Returns null if not
+   * supported by the underlying agent or if no session is active.
+   *
+   * Pass `options.sessionId` to probe a session that this provider instance
+   * has never run a turn for in the current process — the provider spins up
+   * a short-lived resumed query, reads usage, and tears it down. Without an
+   * id, the provider uses its own live or parked query.
+   */
+  getContextUsage?(options?: {
+    sessionId?: string;
+  }): Promise<ContextUsage | null>;
+
   /** Clean up resources */
   dispose(): Promise<void>;
 }
@@ -220,6 +233,72 @@ export interface OpencodeCustomProvider {
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
+}
+
+/**
+ * Detailed context window usage breakdown — mirrors what the
+ * Claude Code `/context` command displays. Returned by
+ * `AgentProvider.getContextUsage()` when supported.
+ */
+export interface ContextUsageCategory {
+  name: string;
+  tokens: number;
+  color: string;
+  isDeferred?: boolean;
+}
+
+export interface ContextUsage {
+  /** Token count breakdown by category (system prompt, tools, messages, …) */
+  categories: ContextUsageCategory[];
+  /** Sum of all category tokens currently occupying the window */
+  totalTokens: number;
+  /** Usable max tokens (e.g. after subtracting output budget) */
+  maxTokens: number;
+  /** Raw model context window size */
+  rawMaxTokens: number;
+  /** Current fill percentage (0–100) */
+  percentage: number;
+  /** Active model identifier */
+  model: string;
+  /** Auto-compaction threshold (0–1), or undefined if disabled */
+  autoCompactThreshold?: number;
+  isAutoCompactEnabled: boolean;
+  memoryFiles: { path: string; type: string; tokens: number }[];
+  mcpTools: {
+    name: string;
+    serverName: string;
+    tokens: number;
+    isLoaded?: boolean;
+  }[];
+  systemPromptSections?: { name: string; tokens: number }[];
+  systemTools?: { name: string; tokens: number }[];
+  agents: { agentType: string; source: string; tokens: number }[];
+  slashCommands?: {
+    totalCommands: number;
+    includedCommands: number;
+    tokens: number;
+  };
+  skills?: {
+    totalSkills: number;
+    includedSkills: number;
+    tokens: number;
+    skillFrontmatter: { name: string; source: string; tokens: number }[];
+  };
+  messageBreakdown?: {
+    toolCallTokens: number;
+    toolResultTokens: number;
+    attachmentTokens: number;
+    assistantMessageTokens: number;
+    userMessageTokens: number;
+    redirectedContextTokens: number;
+    unattributedTokens: number;
+  };
+  apiUsage: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreationInputTokens: number;
+    cacheReadInputTokens: number;
+  } | null;
 }
 
 export interface ModelInfo {

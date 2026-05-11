@@ -39,6 +39,7 @@ export function createDesktopBridge(): StratosContextValue {
       openMcpConfig: (configPath) => window.api.mcpOpenConfig(configPath),
       reconnectMcpServer: (threadId, serverName) =>
         window.api.mcpReconnectServer(threadId, serverName),
+      getContextUsage: (threadId) => window.api.getContextUsage(threadId),
     },
 
     threads: {

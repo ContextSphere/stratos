@@ -8,6 +8,7 @@ import type {
   ModelInfo,
   McpServerInfo,
   TodoItem,
+  ContextUsage,
 } from "./types";
 import { MODE_CONFIGS } from "../types/mode";
 import { parseTaskNotification as parseTaskNotificationText } from "../storage/sdk-transcript";
@@ -22,6 +23,44 @@ import { truncateForTrace } from "../storage/trace.store";
 const DEFAULT_TOOLS: ToolsOption = { type: "preset", preset: "claude_code" };
 
 type ToolsOption = string[] | { type: "preset"; preset: "claude_code" };
+
+/**
+ * Translate the SDK's `SDKControlGetContextUsageResponse` into the public
+ * `ContextUsage` shape consumers see. Kept at module scope so both the live
+ * and one-shot probe paths share the same normalization.
+ */
+function mapRawContextUsage(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  raw: any,
+): ContextUsage {
+  return {
+    categories: raw.categories ?? [],
+    totalTokens: raw.totalTokens ?? 0,
+    maxTokens: raw.maxTokens ?? 0,
+    rawMaxTokens: raw.rawMaxTokens ?? 0,
+    percentage: raw.percentage ?? 0,
+    model: raw.model ?? "",
+    autoCompactThreshold: raw.autoCompactThreshold,
+    isAutoCompactEnabled: raw.isAutoCompactEnabled ?? false,
+    memoryFiles: raw.memoryFiles ?? [],
+    mcpTools: raw.mcpTools ?? [],
+    systemPromptSections: raw.systemPromptSections,
+    systemTools: raw.systemTools,
+    agents: raw.agents ?? [],
+    slashCommands: raw.slashCommands,
+    skills: raw.skills,
+    messageBreakdown: raw.messageBreakdown,
+    apiUsage: raw.apiUsage
+      ? {
+          inputTokens: raw.apiUsage.input_tokens ?? 0,
+          outputTokens: raw.apiUsage.output_tokens ?? 0,
+          cacheCreationInputTokens:
+            raw.apiUsage.cache_creation_input_tokens ?? 0,
+          cacheReadInputTokens: raw.apiUsage.cache_read_input_tokens ?? 0,
+        }
+      : null,
+  };
+}
 
 export class ClaudeCodeProvider implements AgentProvider {
   readonly name = "claude-code";
@@ -179,19 +218,18 @@ export class ClaudeCodeProvider implements AgentProvider {
     // Close the background control query before starting a new turn
     this.closeControlQuery();
 
-    if (hasMcpServers || hasImages) {
-      async function* streamingPrompt() {
-        yield {
-          type: "user" as const,
-          message: { role: "user" as const, content: messageContent },
-          parent_tool_use_id: null,
-          session_id: "",
-        };
-      }
-      this.currentQuery = query({ prompt: streamingPrompt(), options });
-    } else {
-      this.currentQuery = query({ prompt: params.prompt, options });
+    // Always use streaming-input mode so SDK control requests
+    // (getContextUsage, interrupt, mcp toggles) remain available
+    // throughout the turn — not just when MCP/images are involved.
+    async function* streamingPrompt() {
+      yield {
+        type: "user" as const,
+        message: { role: "user" as const, content: messageContent },
+        parent_tool_use_id: null,
+        session_id: "",
+      };
     }
+    this.currentQuery = query({ prompt: streamingPrompt(), options });
 
     // Per-stream tracking state — kept local so concurrent calls on the same
     // provider instance don't corrupt each other's streaming flags.
@@ -509,6 +547,108 @@ export class ClaudeCodeProvider implements AgentProvider {
         await q.reconnectMcpServer(serverName);
       } catch (err) {
         console.warn(`[MCP] reconnectMcpServer failed:`, err);
+      }
+    }
+  }
+
+  async getContextUsage(options?: {
+    sessionId?: string;
+  }): Promise<ContextUsage | null> {
+    // Path A: a live query (currentQuery during a turn, controlQuery between
+    // turns) already exists on this provider instance — reuse it.
+    if (this.currentQuery || this.controlQuery) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return this.readContextUsageFrom(this.mcpQuery as any);
+    }
+
+    // Path B: caller supplied an explicit sessionId (e.g. a thread the user
+    // just opened that has prior history but no in-process session). Spin up
+    // a one-shot resumed query, read usage, tear it down. No state on the
+    // provider is mutated — callers don't depend on us keeping the query.
+    if (options?.sessionId) {
+      return this.probeContextUsageForSession(options.sessionId);
+    }
+
+    // Path C: provider already knows its own sessionId (rare — only after a
+    // prior turn this process). Bring up the parked control query.
+    if (this.sessionId) {
+      this.ensureControlQuery();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return this.readContextUsageFrom(this.controlQuery as any);
+    }
+
+    return null;
+  }
+
+  private async readContextUsageFrom(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    q: any,
+  ): Promise<ContextUsage | null> {
+    if (!q || typeof q.getContextUsage !== "function") return null;
+    try {
+      const raw = await q.getContextUsage();
+      return raw ? mapRawContextUsage(raw) : null;
+    } catch (err) {
+      console.warn("[context] getContextUsage failed:", err);
+      return null;
+    }
+  }
+
+  private async probeContextUsageForSession(
+    sessionId: string,
+  ): Promise<ContextUsage | null> {
+    const cliPath = this.config.cliPath;
+    // Parked prompt: the generator never yields, so the SDK keeps the
+    // transport open without sending any user message into the resumed
+    // session. We only need the control channel.
+    let resolveParked: (() => void) | undefined;
+    // eslint-disable-next-line require-yield
+    async function* parkedPrompt() {
+      await new Promise<void>((resolve) => {
+        resolveParked = resolve;
+      });
+    }
+
+    const transient = query({
+      prompt: parkedPrompt(),
+      options: {
+        ...(cliPath ? { pathToClaudeCodeExecutable: cliPath } : {}),
+        ...(this.config.model ? { model: this.config.model } : {}),
+        cwd: this.config.cwd ?? process.env.HOME,
+        resume: sessionId,
+        permissionMode: "plan" as const,
+        ...(this.config.settingSources
+          ? { settingSources: this.config.settingSources }
+          : {}),
+        ...(this.config.plugins?.length
+          ? { plugins: this.config.plugins }
+          : {}),
+      },
+    });
+
+    // Drain in the background — we don't care about messages, only about
+    // keeping the transport alive long enough for the control request.
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        for await (const _msg of transient) {
+          // discard
+        }
+      } catch {
+        // expected on close
+      }
+    })();
+
+    try {
+      return await this.readContextUsageFrom(transient);
+    } finally {
+      resolveParked?.();
+      if (typeof transient.close === "function") {
+        try {
+          transient.close();
+        } catch {
+          // ignore close errors
+        }
       }
     }
   }

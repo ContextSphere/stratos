@@ -146,6 +146,9 @@ export const IPC_CHANNELS = {
   MCP_RECONNECT_SERVER: "mcp:reconnect-server",
   MCP_STATUS_CHANGED: "mcp:status-changed",
 
+  // Context window usage (mirrors /context output)
+  CONTEXT_USAGE_GET: "context:usage:get",
+
   // UI shortcuts
   OPEN_MODEL_PICKER: "ui:open-model-picker",
 

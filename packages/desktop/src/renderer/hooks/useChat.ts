@@ -16,6 +16,7 @@ import type {
   SessionCompleteNotification,
   StoredMessage,
   AgentMode,
+  ContextUsage,
 } from "@stratosapp/core";
 
 /**
@@ -95,6 +96,8 @@ interface UseChatReturn {
   sessionTools: string[] | null;
   mcpServers: McpServerInfo[] | null;
   fetchMcpStatus: (threadId: string) => Promise<void>;
+  contextUsage: ContextUsage | null;
+  refreshContextUsage: () => Promise<void>;
   runningThreadIds: string[];
   threadNotifications: Map<string, string>;
   pendingPermissionThreadIds: Set<string>;
@@ -231,6 +234,7 @@ export function useChat(
   >([]);
   const [sessionTools, setSessionTools] = useState<string[] | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServerInfo[] | null>(null);
+  const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
 
   // Derived isStreaming — true only when the active thread is running
   const isStreaming = activeThreadId
@@ -341,6 +345,9 @@ export function useChat(
     }
 
     if (activeThreadId) {
+      // Context usage is thread-scoped; clear it on switch so the indicator
+      // doesn't briefly show the previous thread's data while we refetch.
+      setContextUsage(null);
       const streamState = streamingThreadsRef.current.get(activeThreadId);
       if (streamState) {
         // Thread is currently streaming — show its live messages
@@ -367,6 +374,17 @@ export function useChat(
           } else {
             setSessionTools(null);
           }
+
+          // Fetch initial context usage so the indicator appears immediately
+          // on thread load (otherwise it would only show after the next turn).
+          window.api
+            .getContextUsage(activeThreadId)
+            .then((usage) => {
+              if (activeThreadIdRef.current === activeThreadId) {
+                setContextUsage(usage);
+              }
+            })
+            .catch(() => {});
         });
       }
     } else {
@@ -380,6 +398,7 @@ export function useChat(
       });
       setSessionTools(null);
       setMcpServers(null);
+      setContextUsage(null);
     }
   }, [activeThreadId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -979,6 +998,17 @@ export function useChat(
                 }
               })
               .catch(() => {});
+
+            // Refresh context-window usage breakdown. The SDK only reports
+            // the new state after the turn fully commits, so query it here.
+            window.api
+              .getContextUsage(threadId)
+              .then((usage) => {
+                if (activeThreadIdRef.current === threadId) {
+                  setContextUsage(usage);
+                }
+              })
+              .catch(() => {});
           }
 
           // Clear running state immediately — result means the turn is complete.
@@ -1555,6 +1585,23 @@ export function useChat(
     } catch {}
   }, []);
 
+  const refreshContextUsage = useCallback(async () => {
+    const tid = activeThreadIdRef.current;
+    if (!tid) {
+      setContextUsage(null);
+      return;
+    }
+    try {
+      const usage = await window.api.getContextUsage(tid);
+      if (activeThreadIdRef.current === tid) {
+        setContextUsage(usage);
+      }
+    } catch {
+      // Control request unavailable (e.g. session not yet initialized) —
+      // leave the previous reading in place so the UI doesn't flicker.
+    }
+  }, []);
+
   const updateTaskExpanded = useCallback(
     (messageId: string, expanded: boolean) => {
       const activeId = activeThreadIdRef.current;
@@ -1605,6 +1652,8 @@ export function useChat(
     sessionTools,
     mcpServers,
     fetchMcpStatus,
+    contextUsage,
+    refreshContextUsage,
     runningThreadIds,
     threadNotifications,
     pendingPermissionThreadIds,
