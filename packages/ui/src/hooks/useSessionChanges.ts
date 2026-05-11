@@ -17,14 +17,17 @@ function calcLineStats(
   oldText: string,
   newText: string,
 ): { added: number; removed: number } {
-  const oldLines = oldText.split("\n");
-  const newLines = newText.split("\n");
-  const oldSet = new Set(oldLines);
-  const newSet = new Set(newLines);
+  const counts = new Map<string, number>();
+  for (const line of oldText.split("\n"))
+    counts.set(line, (counts.get(line) ?? 0) - 1);
+  for (const line of newText.split("\n"))
+    counts.set(line, (counts.get(line) ?? 0) + 1);
   let added = 0;
   let removed = 0;
-  for (const line of newLines) if (!oldSet.has(line)) added++;
-  for (const line of oldLines) if (!newSet.has(line)) removed++;
+  for (const delta of counts.values()) {
+    if (delta > 0) added += delta;
+    else if (delta < 0) removed -= delta;
+  }
   return { added, removed };
 }
 
@@ -85,15 +88,10 @@ export function useSessionChanges(messages: ChatMessage[]): SessionChanges {
       const latestToolCall = toolCalls[toolCalls.length - 1];
       const hasRunning = latestToolCall.status === "running";
 
-      let added = 0;
-      let removed = 0;
-      for (const tc of toolCalls) {
-        if (tc.status === "completed") {
-          const s = toolCallStats(tc);
-          added += s.added;
-          removed += s.removed;
-        }
-      }
+      const { added, removed } =
+        latestToolCall.status === "completed"
+          ? toolCallStats(latestToolCall)
+          : { added: 0, removed: 0 };
 
       totalAdded += added;
       totalRemoved += removed;

@@ -66,24 +66,17 @@ function calculateChangeStats(
   oldContent: string,
   newContent: string,
 ): { added: number; removed: number } {
-  const oldLines = oldContent.split("\n");
-  const newLines = newContent.split("\n");
-
-  // Simple line-based diff (not perfect but good enough for stats)
-  const oldSet = new Set(oldLines);
-  const newSet = new Set(newLines);
-
+  const counts = new Map<string, number>();
+  for (const line of oldContent.split("\n"))
+    counts.set(line, (counts.get(line) ?? 0) - 1);
+  for (const line of newContent.split("\n"))
+    counts.set(line, (counts.get(line) ?? 0) + 1);
   let added = 0;
   let removed = 0;
-
-  for (const line of newLines) {
-    if (!oldSet.has(line)) added++;
+  for (const delta of counts.values()) {
+    if (delta > 0) added += delta;
+    else if (delta < 0) removed -= delta;
   }
-
-  for (const line of oldLines) {
-    if (!newSet.has(line)) removed++;
-  }
-
   return { added, removed };
 }
 
