@@ -75,7 +75,7 @@ jobs:
 
       - name: Build and package macOS app
         run: |
-          pnpm --filter @stratosapp/desktop build
+          pnpm -r --filter "./packages/*" build
           pnpm --filter @stratosapp/desktop exec electron-builder --mac --publish never
 
       - name: Generate checksums

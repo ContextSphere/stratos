@@ -19,7 +19,7 @@
     "dev:fullscreen": "FULLSCREEN=1 electron-vite dev",
     "dev:debug": "ENABLE_CDP=1 electron-vite dev",
     "build": "electron-vite build",
-    "build:deps": "pnpm -w --filter @stratosapp/core --filter @stratosapp/ui build",
+    "build:deps": "pnpm -w --filter @stratosapp/core --filter @stratosapp/ui --filter @stratosapp/gateway build",
     "preview": "electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
