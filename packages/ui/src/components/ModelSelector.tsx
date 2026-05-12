@@ -16,6 +16,14 @@ interface ModelSelectorProps {
   onThinkingEffortChange: (effort: string) => void;
   models?: ModelInfo[];
   onFetchModels?: () => Promise<ModelInfo[]>;
+  /**
+   * Identifier (typically the provider name) that scopes the fetched model
+   * list. When this value changes, the cached list is cleared and refetched
+   * — otherwise the dropdown would show the previous scope's models until
+   * the next fetch resolved. Without it, switching providers leaks stale
+   * entries into the picker.
+   */
+  fetchScope?: string;
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
@@ -34,6 +42,7 @@ export default function ModelSelector({
   onThinkingEffortChange,
   models: modelsProp,
   onFetchModels,
+  fetchScope,
   isOpen: controlledModelOpen,
   onOpenChange,
 }: ModelSelectorProps): React.ReactElement {
@@ -48,11 +57,28 @@ export default function ModelSelector({
       setIsLoading(false);
       return;
     }
+    // Drop any previously-fetched list before issuing a new request — otherwise
+    // changing scope (e.g. provider switch) would render the old scope's models
+    // until the new fetch resolved.
+    setFetchedModels([]);
+    setIsLoading(true);
+    let cancelled = false;
     onFetchModels()
-      .then(setFetchedModels)
+      .then((list) => {
+        if (!cancelled) setFetchedModels(list);
+      })
       .catch((err) => console.error("Failed to fetch models:", err))
-      .finally(() => setIsLoading(false));
-  }, [modelsProp, onFetchModels]);
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // `onFetchModels` is intentionally NOT in the dep array — callers typically
+    // pass an inline arrow, which would refire on every parent render. The
+    // `fetchScope` prop is the stable invalidation signal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelsProp, fetchScope]);
 
   // Mutual exclusion: opening model picker closes effort picker
   useEffect(() => {

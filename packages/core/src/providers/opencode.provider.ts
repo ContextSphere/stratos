@@ -188,11 +188,14 @@ function resolveOpencodeBinary(binaryPath?: string): string {
     if (existsSync(bundled)) return bundled;
   }
 
-  // Common install paths (Bun global, homebrew, npm global)
+  // Common install paths (Bun global, homebrew, npm global, OpenCode.app)
   const candidates = [
     join(homedir(), ".bun", "bin", "opencode"),
     "/opt/homebrew/bin/opencode",
     "/usr/local/bin/opencode",
+    // macOS OpenCode.app bundle (Mac App Store / direct download). The
+    // bundled binary is named `opencode-cli`, not `opencode`.
+    "/Applications/OpenCode.app/Contents/MacOS/opencode-cli",
   ];
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
@@ -713,7 +716,16 @@ export class OpencodeProvider implements AgentProvider {
       });
     }
 
-    const promptResp = await fetch(
+    // Fire the prompt WITHOUT awaiting it. opencode's /message POST blocks
+    // for the full duration of inference (minutes for local LLMs like Ollama
+    // gemma on first-load). Meanwhile, opencode emits `message.part.delta`,
+    // `message.part.updated`, and `session.idle` events on the SSE channel
+    // in real time. If we awaited the POST first, the SSE socket would back
+    // up and we'd miss the streaming UX (and on some kernels lose events).
+    //
+    // The user interrupt path (`this.abortController`) cancels the POST and
+    // the SSE consumption together.
+    const promptPromise = fetch(
       `${this.baseUrl}/session/${sessionId}/message`,
       {
         method: "POST",
@@ -723,15 +735,27 @@ export class OpencodeProvider implements AgentProvider {
           parts: messageParts,
           ...(params.model ? { modelID: params.model } : {}),
         }),
-        signal: AbortSignal.timeout(10_000),
+        signal: this.abortController.signal,
       },
-    );
+    ).then((resp) => {
+      if (!resp.ok) {
+        throw new Error(
+          `opencode: failed to send prompt (${resp.status} ${resp.statusText})`,
+        );
+      }
+      return resp;
+    });
 
-    if (!promptResp.ok) {
-      throw new Error(
-        `opencode: failed to send prompt (${promptResp.status} ${promptResp.statusText})`,
-      );
-    }
+    // Surface POST-level errors (e.g. 4xx, network reset). We don't await
+    // completion here — that happens via SSE's session.idle event — but we
+    // do need to catch rejections so they reach the caller instead of
+    // becoming an unhandled rejection in the background.
+    promptPromise.catch((err) => {
+      // Aborts are expected when the user interrupts; surface anything else.
+      if (!this.abortController?.signal.aborted) {
+        console.error("[opencode] prompt POST failed:", err);
+      }
+    });
 
     // ── Process SSE events ─────────────────────────────────────────────────
 

@@ -638,6 +638,18 @@ function AppInner(): React.ReactElement {
         setPendingMode((prev) => (prev ? normalizeMode(prev, provider) : prev));
         return;
       }
+      // Each provider has its own model namespace (e.g. claude-code's
+      // `opus[1m]` is meaningless to opencode). Carry over the user's
+      // last-used model for the destination provider so the picker reflects
+      // the new scope immediately. Falls back to undefined → ModelSelector
+      // picks the first available entry from the refetched list.
+      const settings = await settingsBridge.getSettings?.();
+      const providersMap = (settings?.providers ?? {}) as Record<
+        string,
+        { lastUsedModel?: string }
+      >;
+      const nextModel = providersMap[provider]?.lastUsedModel;
+
       // The Manager thread needs a full session reset on provider switch:
       // each provider has its own conversation-persistence scheme, so
       // carrying state across a switch leaves the transcript broken. The
@@ -645,12 +657,13 @@ function AppInner(): React.ReactElement {
       // clears the stored sessionId + disk messages, and broadcasts a
       // refresh. Regular threads keep the simpler behaviour below.
       if (activeThreadId === managerThreadId) {
-        await window.api.managerSwitchProvider(provider);
+        await window.api.managerSwitchProvider(provider, nextModel);
         await refreshThreads();
         return;
       }
       await threadsBridge.update(activeThreadId, {
         provider,
+        model: nextModel,
         mode: normalizeMode(activeThread?.mode, provider),
       });
       await refreshThreads();
@@ -660,6 +673,7 @@ function AppInner(): React.ReactElement {
       activeThreadId,
       managerThreadId,
       refreshThreads,
+      settingsBridge,
       threadsBridge,
     ],
   );
@@ -1248,6 +1262,10 @@ function AppInner(): React.ReactElement {
                           onModelChange={handleModelChange}
                           thinkingEffort={activeThread?.thinkingEffort}
                           onThinkingEffortChange={handleThinkingEffortChange}
+                          fetchScope={
+                            normalizeProvider(activeThread?.provider) ??
+                            pendingProvider
+                          }
                           onFetchModels={() =>
                             settingsBridge.getAvailableModels?.(
                               normalizeProvider(activeThread?.provider) ??
