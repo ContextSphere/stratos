@@ -63,6 +63,10 @@ import {
 } from "./integrations/claude.ipc";
 import { registerCodexIpc, unregisterCodexIpc } from "./integrations/codex.ipc";
 import {
+  getEnabledProviders,
+  isProviderEnabled,
+} from "./config/stratos-config";
+import {
   registerWhatsAppIpc,
   unregisterWhatsAppIpc,
   getWhatsAppStatus,
@@ -291,11 +295,12 @@ if (!gotLock) {
     );
     setRunningThreadsGetter(() => agentManager?.getRunningThreadIds() ?? []);
 
-    // App info (worktree, CDP port)
+    // App info (worktree, CDP port, enabled providers)
     ipcMain.handle(IPC_CHANNELS.APP_INFO, () => ({
       isWorktree: !!worktree,
       worktreeName: worktree?.name ?? null,
       cdpPort,
+      enabledProviders: getEnabledProviders(),
     }));
 
     ipcMain.handle(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, (_event, url: string) => {
@@ -307,7 +312,13 @@ if (!gotLock) {
     registerThreadIpc(storage);
     registerGitHubIpc(mainWindow);
     registerClaudeIpc(mainWindow);
-    registerCodexIpc(mainWindow);
+    if (isProviderEnabled("codex")) {
+      registerCodexIpc(mainWindow);
+    } else {
+      console.log(
+        "[stratos] Codex provider disabled via ~/.stratos/config.json",
+      );
+    }
     ipcMain.handle(IPC_CHANNELS.WHATSAPP_IS_ENABLED, () => isWhatsAppEnabled());
     if (isWhatsAppEnabled()) {
       registerWhatsAppIpc(mainWindow);

@@ -6,6 +6,7 @@ interface ProviderToggleProps {
   provider?: ProviderType;
   onProviderChange: (provider: ProviderType) => void;
   disabled?: boolean;
+  enabledProviders?: ProviderType[];
 }
 
 const PROVIDERS: {
@@ -46,11 +47,15 @@ export default function ProviderToggle({
   provider = "claude-code",
   onProviderChange,
   disabled = false,
+  enabledProviders,
 }: ProviderToggleProps): React.ReactElement {
+  const visible = enabledProviders
+    ? PROVIDERS.filter((p) => enabledProviders.includes(p.value))
+    : PROVIDERS;
   return (
     <div className="flex items-center">
       <div className="flex bg-[var(--bg-surface)] rounded-md p-0.5 gap-0.5">
-        {PROVIDERS.map((p) => {
+        {visible.map((p) => {
           const isActive = provider === p.value;
           return (
             <button

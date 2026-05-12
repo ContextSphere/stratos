@@ -140,9 +140,23 @@ function AppInner(): React.ReactElement {
     refreshContextUsage,
   } = useChat(activeThreadId, { onThreadUpdated: refreshThreads });
 
+  const [enabledProviders, setEnabledProviders] = useState<
+    ProviderType[] | null
+  >(null);
+  useEffect(() => {
+    window.api.getAppInfo().then((info) => {
+      if (Array.isArray(info.enabledProviders)) {
+        setEnabledProviders(info.enabledProviders as ProviderType[]);
+      } else {
+        setEnabledProviders(["claude-code", "codex", "opencode"]);
+      }
+    });
+  }, []);
+  const codexEnabled = enabledProviders?.includes("codex") ?? false;
+
   const github = useGitHub();
   const claude = useClaude();
-  const codex = useCodex();
+  const codex = useCodex(codexEnabled);
   const opencode = useOpencodeStatus();
   const {
     preview,
@@ -1058,28 +1072,30 @@ function AppInner(): React.ReactElement {
                           Claude
                         </span>
                       </button>
-                      <button
-                        onClick={() => setShowCodexDialog(true)}
-                        className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                        title={
-                          codex.isConnected
-                            ? "Codex connected"
-                            : "Connect Codex"
-                        }
-                      >
-                        <div
-                          className={`w-1.5 h-1.5 rounded-full ${codex.isConnected ? "bg-green-500" : "bg-gray-600"}`}
-                        />
-                        <span
-                          className={
+                      {codexEnabled && (
+                        <button
+                          onClick={() => setShowCodexDialog(true)}
+                          className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                          title={
                             codex.isConnected
-                              ? "text-[var(--text-control)]"
-                              : "text-[var(--text-muted)]"
+                              ? "Codex connected"
+                              : "Connect Codex"
                           }
                         >
-                          Codex
-                        </span>
-                      </button>
+                          <div
+                            className={`w-1.5 h-1.5 rounded-full ${codex.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                          />
+                          <span
+                            className={
+                              codex.isConnected
+                                ? "text-[var(--text-control)]"
+                                : "text-[var(--text-muted)]"
+                            }
+                          >
+                            Codex
+                          </span>
+                        </button>
+                      )}
                       <button
                         onClick={() => setShowOpencodeDialog(true)}
                         className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
@@ -1243,6 +1259,7 @@ function AppInner(): React.ReactElement {
                             pendingProvider
                           }
                           onProviderChange={handleProviderChange}
+                          enabledProviders={enabledProviders ?? undefined}
                           disabled={
                             isStreaming ||
                             // Lock the provider once a regular thread has
@@ -1394,7 +1411,7 @@ function AppInner(): React.ReactElement {
 
         {/* Codex connect dialog */}
         <ConnectCodexDialog
-          isOpen={showCodexDialog}
+          isOpen={codexEnabled && showCodexDialog}
           isConnected={codex.isConnected}
           cliInstalled={codex.cliInstalled}
           email={codex.email}

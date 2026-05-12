@@ -21,7 +21,7 @@ interface UseCodexReturn {
   refreshConnection: () => Promise<void>;
 }
 
-export function useCodex(): UseCodexReturn {
+export function useCodex(enabled = true): UseCodexReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [cliInstalled, setCliInstalled] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
@@ -31,6 +31,7 @@ export function useCodex(): UseCodexReturn {
   const [error, setError] = useState<string | null>(null);
 
   const refreshConnection = useCallback(async () => {
+    if (!enabled) return;
     try {
       const status =
         (await window.api.codexGetConnection()) as ConnectionStatus;
@@ -46,7 +47,7 @@ export function useCodex(): UseCodexReturn {
       setPlanType(null);
       setAuthMode(null);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     refreshConnection();
@@ -56,6 +57,7 @@ export function useCodex(): UseCodexReturn {
     ok: boolean;
     error?: string;
   }> => {
+    if (!enabled) return { ok: false, error: "Codex provider is disabled" };
     setLoading(true);
     setError(null);
     try {
@@ -77,9 +79,10 @@ export function useCodex(): UseCodexReturn {
     } finally {
       setLoading(false);
     }
-  }, [refreshConnection]);
+  }, [enabled, refreshConnection]);
 
   const disconnect = useCallback(async () => {
+    if (!enabled) return;
     setLoading(true);
     setError(null);
     try {
@@ -93,7 +96,7 @@ export function useCodex(): UseCodexReturn {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   return {
     isConnected,
