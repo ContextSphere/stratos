@@ -465,6 +465,9 @@ const api = {
       filePath,
     }),
 
+  filesShowInFolder: (filePath: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_SHOW_IN_FOLDER, { filePath }),
+
   filesOnFileChanged: (
     callback: (event: {
       filePath: string;

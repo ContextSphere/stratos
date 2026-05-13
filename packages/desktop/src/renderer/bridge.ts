@@ -114,6 +114,7 @@ export function createDesktopBridge(): StratosContextValue {
       getExternalEditors: () => window.api.filesGetExternalEditors(),
       openInExternalEditor: (editorId, filePath) =>
         window.api.filesOpenInExternalEditor(editorId, filePath),
+      showInFolder: (filePath) => window.api.filesShowInFolder(filePath),
     },
   };
 }

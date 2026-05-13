@@ -78,6 +78,28 @@ export function PreviewPane({
             {preview.title}
           </span>
         )}
+        {preview.type === "file-explorer" &&
+          preview.cwd &&
+          filesBridge?.showInFolder && (
+            <button
+              onClick={() => void filesBridge.showInFolder?.(preview.cwd!)}
+              className="p-1 rounded hover:bg-[var(--border)] text-gray-500 hover:text-gray-300 transition-colors"
+              title="Show in Finder"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+              </svg>
+            </button>
+          )}
         {preview.url && (
           <button
             onClick={handleOpenExternal}
@@ -138,6 +160,7 @@ export function PreviewPane({
           onFileChanged={filesBridge.onFileChanged}
           getExternalEditors={filesBridge.getExternalEditors}
           openInExternalEditor={filesBridge.openInExternalEditor}
+          showInFolder={filesBridge.showInFolder}
         />
       ) : preview.type === "artifact-editor" &&
         preview.artifactContent !== undefined &&

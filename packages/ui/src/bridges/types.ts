@@ -202,4 +202,5 @@ export interface FilesBridge {
   onFileChanged?(callback: (event: FileChangeEvent) => void): () => void;
   getExternalEditors?(): Promise<ExternalEditor[]>;
   openInExternalEditor?(editorId: string, filePath: string): Promise<void>;
+  showInFolder?(filePath: string): Promise<void>;
 }

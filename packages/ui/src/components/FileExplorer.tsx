@@ -49,6 +49,7 @@ interface Props {
   onFileChanged?: (callback: (event: FileChangeEvent) => void) => () => void;
   getExternalEditors?: () => Promise<ExternalEditor[]>;
   openInExternalEditor?: (editorId: string, filePath: string) => Promise<void>;
+  showInFolder?: (filePath: string) => Promise<void>;
 }
 
 function formatSize(bytes: number): string {
@@ -111,6 +112,7 @@ export function FileExplorer({
   onFileChanged,
   getExternalEditors,
   openInExternalEditor,
+  showInFolder,
 }: Props): React.ReactElement {
   useMonacoFontReady();
   const theme = useTheme();
@@ -135,6 +137,11 @@ export function FileExplorer({
   const [externalEditors, setExternalEditors] = useState<ExternalEditor[]>([]);
   const [showEditorMenu, setShowEditorMenu] = useState(false);
   const editorMenuRef = useRef<HTMLDivElement | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    path: string;
+  } | null>(null);
   const editorRef = useRef<{
     revealLineInCenter: (lineNumber: number) => void;
     setPosition: (position: { lineNumber: number; column: number }) => void;
@@ -438,6 +445,28 @@ export function FileExplorer({
   }, [showEditorMenu]);
 
   useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("scroll", close, true);
+    window.addEventListener("blur", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("scroll", close, true);
+      window.removeEventListener("blur", close);
+    };
+  }, [contextMenu]);
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent, path: string) => {
+      if (!showInFolder) return;
+      e.preventDefault();
+      setContextMenu({ x: e.clientX, y: e.clientY, path });
+    },
+    [showInFolder],
+  );
+
+  useEffect(() => {
     setAutoOpenedTarget(null);
     setCursorTargetLine(null);
   }, [cwd]);
@@ -529,6 +558,27 @@ export function FileExplorer({
           )}
           {saveStatus === "unsaved" && (
             <span className="text-xs text-yellow-500">Unsaved</span>
+          )}
+          {showInFolder && (
+            <button
+              onClick={() => void showInFolder(openFile.path)}
+              className="p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              title="Show in Finder"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"
+                />
+              </svg>
+            </button>
           )}
           {externalEditors.length > 0 && (
             <div className="relative" ref={editorMenuRef}>
@@ -668,9 +718,27 @@ export function FileExplorer({
             depth={0}
             onToggleFolder={toggleFolder}
             onFileClick={handleFileClick}
+            onContextMenu={handleContextMenu}
           />
         )}
       </div>
+      {contextMenu && showInFolder && (
+        <div
+          className="fixed bg-[var(--bg-surface)] border border-[var(--border)] rounded shadow-lg z-50 py-1 min-w-[170px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              void showInFolder(contextMenu.path);
+              setContextMenu(null);
+            }}
+            className="flex items-center w-full px-3 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--border)] transition-colors text-left"
+          >
+            Show in Finder
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -680,11 +748,13 @@ function TreeView({
   depth,
   onToggleFolder,
   onFileClick,
+  onContextMenu,
 }: {
   nodes: TreeNode[];
   depth: number;
   onToggleFolder: (path: string) => void;
   onFileClick: (path: string, size: number) => void;
+  onContextMenu: (e: React.MouseEvent, path: string) => void;
 }): React.ReactElement {
   return (
     <div>
@@ -700,6 +770,7 @@ function TreeView({
                 onFileClick(node.path, node.entry.size);
               }
             }}
+            onContextMenu={(e) => onContextMenu(e, node.path)}
           >
             {node.entry.type === "directory" ? (
               <>
@@ -725,6 +796,7 @@ function TreeView({
               depth={depth + 1}
               onToggleFolder={onToggleFolder}
               onFileClick={onFileClick}
+              onContextMenu={onContextMenu}
             />
           )}
         </div>

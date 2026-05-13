@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { ipcMain, shell } from "electron";
 import { readdir, readFile, stat, writeFile, access } from "fs/promises";
 import { watch as fsWatch, watchFile, unwatchFile } from "fs";
 import { spawn } from "child_process";
@@ -401,6 +401,23 @@ export function registerFilesIpc(): void {
   );
 
   ipcMain.handle(
+    IPC_CHANNELS.FILES_SHOW_IN_FOLDER,
+    async (_event, { filePath }: { filePath: string }): Promise<void> => {
+      const resolved = resolve(filePath);
+      try {
+        const s = await stat(resolved);
+        if (s.isDirectory()) {
+          await shell.openPath(resolved);
+          return;
+        }
+      } catch {
+        // fall through to showItemInFolder, which handles missing paths gracefully
+      }
+      shell.showItemInFolder(resolved);
+    },
+  );
+
+  ipcMain.handle(
     IPC_CHANNELS.FILES_LIST_ALL,
     async (_event, cwd: string): Promise<string[]> => {
       // Basic security: ensure cwd resolves to an absolute path
@@ -448,6 +465,7 @@ export function unregisterFilesIpc(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILES_LIST_ALL);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_GET_EXTERNAL_EDITORS);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_OPEN_IN_EXTERNAL_EDITOR);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_SHOW_IN_FOLDER);
   if (activeWatcher) {
     activeWatcher.close();
     activeWatcher = null;
