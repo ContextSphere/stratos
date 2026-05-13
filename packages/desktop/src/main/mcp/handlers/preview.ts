@@ -3,7 +3,10 @@
  */
 import { z } from "zod";
 import { promises as fsPromises } from "fs";
-import { basename, extname } from "path";
+import { basename, extname, join } from "path";
+import { tmpdir } from "os";
+import { spawn } from "child_process";
+import { createHash } from "crypto";
 import { IPC_CHANNELS } from "../../../common/ipc-channels";
 import { type HandlerDef, defineHandler, textResult } from "./types";
 
@@ -19,6 +22,103 @@ const IMAGE_EXTENSIONS = new Set([
   ".ico",
   ".tiff",
 ]);
+const PDF_EXTENSIONS = new Set([".pdf"]);
+const OFFICE_EXTENSIONS = new Set([
+  ".pptx",
+  ".ppt",
+  ".docx",
+  ".doc",
+  ".xlsx",
+  ".xls",
+  ".odp",
+  ".odt",
+  ".ods",
+]);
+
+const SOFFICE_CANDIDATES = [
+  "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+  "/opt/homebrew/bin/soffice",
+  "/usr/local/bin/soffice",
+  "/usr/bin/soffice",
+  "soffice",
+];
+
+async function findSoffice(): Promise<string | null> {
+  for (const candidate of SOFFICE_CANDIDATES) {
+    if (candidate.startsWith("/")) {
+      try {
+        await fsPromises.access(candidate);
+        return candidate;
+      } catch {
+        continue;
+      }
+    } else {
+      return candidate; // last-resort: rely on PATH
+    }
+  }
+  return null;
+}
+
+async function convertToPdf(
+  sourcePath: string,
+  outDir: string,
+): Promise<string> {
+  const soffice = await findSoffice();
+  if (!soffice) {
+    throw new Error(
+      "LibreOffice (soffice) not found. Install it to preview Office documents.",
+    );
+  }
+  await fsPromises.mkdir(outDir, { recursive: true });
+  await new Promise<void>((resolve, reject) => {
+    const proc = spawn(
+      soffice,
+      [
+        "--headless",
+        "--norestore",
+        "--nologo",
+        "--nodefault",
+        "--nolockcheck",
+        "--convert-to",
+        "pdf",
+        "--outdir",
+        outDir,
+        sourcePath,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stderr = "";
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    proc.on("error", reject);
+    proc.on("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`soffice exited with code ${code}: ${stderr}`));
+    });
+  });
+  const base = basename(sourcePath, extname(sourcePath));
+  const pdfPath = join(outDir, `${base}.pdf`);
+  await fsPromises.access(pdfPath);
+  return pdfPath;
+}
+
+async function getOrConvertPdf(sourcePath: string): Promise<string> {
+  const stat = await fsPromises.stat(sourcePath);
+  const key = createHash("sha1")
+    .update(`${sourcePath}:${stat.size}:${stat.mtimeMs}`)
+    .digest("hex")
+    .slice(0, 16);
+  const cacheDir = join(tmpdir(), "stratos-pdf-preview", key);
+  const base = basename(sourcePath, extname(sourcePath));
+  const cachedPdf = join(cacheDir, `${base}.pdf`);
+  try {
+    await fsPromises.access(cachedPdf);
+    return cachedPdf;
+  } catch {
+    return convertToPdf(sourcePath, cacheDir);
+  }
+}
 
 export interface PreviewDeps {
   sendToRenderer: (channel: string, data: unknown) => void;
@@ -30,7 +130,7 @@ export function createPreviewHandlers(deps: PreviewDeps): HandlerDef[] {
     defineHandler({
       name: "preview_open_file",
       description:
-        "Open a file in the Stratos side preview pane. Markdown files (.md, .markdown) are rendered as formatted text; all other files open in a code editor. Always use absolute file paths.",
+        "Open a file in the Stratos side preview pane. Markdown files (.md, .markdown) render as formatted text; images (.png, .jpg, .svg, .gif, .webp, .bmp, .ico, .tiff) show in an image viewer; PDFs and Office documents (.pptx, .ppt, .docx, .doc, .xlsx, .xls, .odp, .odt, .ods) render as paginated PDFs (Office formats require LibreOffice/soffice on PATH); all other files open in a code editor. Always use absolute file paths.",
       inputSchema: {
         file_path: z.string().describe("Absolute path to the file to preview"),
         title: z
@@ -71,6 +171,35 @@ export function createPreviewHandlers(deps: PreviewDeps): HandlerDef[] {
             title: fileName,
             filePath: args.file_path,
             isImage: true,
+          });
+          return textResult(`Preview opened: ${args.file_path}`);
+        }
+        if (PDF_EXTENSIONS.has(ext)) {
+          try {
+            await fsPromises.access(args.file_path);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return textResult(`Cannot read file: ${msg}`, true);
+          }
+          sendToRenderer(IPC_CHANNELS.PREVIEW_OPEN_PDF, {
+            pdfPath: args.file_path,
+            sourcePath: args.file_path,
+            title: fileName,
+          });
+          return textResult(`Preview opened: ${args.file_path}`);
+        }
+        if (OFFICE_EXTENSIONS.has(ext)) {
+          let pdfPath: string;
+          try {
+            pdfPath = await getOrConvertPdf(args.file_path);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return textResult(`Cannot convert to PDF: ${msg}`, true);
+          }
+          sendToRenderer(IPC_CHANNELS.PREVIEW_OPEN_PDF, {
+            pdfPath,
+            sourcePath: args.file_path,
+            title: fileName,
           });
           return textResult(`Preview opened: ${args.file_path}`);
         }

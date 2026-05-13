@@ -5,6 +5,7 @@ export type PreviewType =
   | "file-explorer"
   | "terminal"
   | "image"
+  | "pdf"
   | "file-changes";
 
 export interface PreviewState {
@@ -17,6 +18,8 @@ export interface PreviewState {
   artifactFilePath?: string;
   imageFilePath?: string;
   imageDataUrl?: string;
+  pdfFilePath?: string;
+  pdfSourceFilePath?: string;
   cwd?: string;
   targetFilePath?: string;
   targetLine?: number;

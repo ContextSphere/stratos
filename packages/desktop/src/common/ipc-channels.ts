@@ -101,6 +101,7 @@ export const IPC_CHANNELS = {
   // Preview pane
   PREVIEW_OPEN_URL: "preview:open-url",
   PREVIEW_OPEN_MARKDOWN: "preview:open-markdown",
+  PREVIEW_OPEN_PDF: "preview:open-pdf",
   PREVIEW_CLOSE: "preview:close",
 
   // File explorer

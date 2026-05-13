@@ -5,6 +5,7 @@ import { ArtifactEditorPreview } from "./preview/ArtifactEditorPreview";
 import { FileExplorer } from "./FileExplorer";
 import { TerminalPane } from "./TerminalPane";
 import { WebviewPreview } from "./preview/WebviewPreview";
+import { PdfPreview } from "./preview/PdfPreview";
 import { SessionChangesPane } from "./SessionChangesPane";
 import type { SessionChanges } from "../hooks/useSessionChanges";
 import type { GitStatus } from "../types";
@@ -25,6 +26,7 @@ const TYPE_LABELS: Record<string, string> = {
   "file-explorer": "Files",
   terminal: "Terminal",
   image: "Image",
+  pdf: "PDF",
   "file-changes": "Changes",
 };
 
@@ -194,6 +196,11 @@ export function PreviewPane({
             }}
           />
         </div>
+      ) : preview.type === "pdf" && preview.pdfFilePath ? (
+        <PdfPreview
+          pdfFilePath={preview.pdfFilePath}
+          sourceFilePath={preview.pdfSourceFilePath}
+        />
       ) : preview.type === "file-changes" && sessionChanges ? (
         <SessionChangesPane
           changes={sessionChanges}

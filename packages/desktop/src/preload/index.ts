@@ -399,6 +399,24 @@ const api = {
     );
   },
 
+  onPreviewOpenPdf: (
+    callback: (data: {
+      pdfPath: string;
+      sourcePath: string;
+      title: string;
+      threadId?: string;
+    }) => void,
+  ): void => {
+    ipcRenderer.on(
+      IPC_CHANNELS.PREVIEW_OPEN_PDF,
+      (
+        _event,
+        data: { pdfPath: string; sourcePath: string; title: string },
+        threadId?: string,
+      ) => callback({ ...data, threadId }),
+    );
+  },
+
   onPreviewClose: (callback: () => void): void => {
     ipcRenderer.on(IPC_CHANNELS.PREVIEW_CLOSE, () => callback());
   },
