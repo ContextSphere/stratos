@@ -401,7 +401,7 @@ const api = {
 
   onPreviewOpenPdf: (
     callback: (data: {
-      pdfPath: string;
+      pages: string[];
       sourcePath: string;
       title: string;
       threadId?: string;
@@ -411,7 +411,7 @@ const api = {
       IPC_CHANNELS.PREVIEW_OPEN_PDF,
       (
         _event,
-        data: { pdfPath: string; sourcePath: string; title: string },
+        data: { pages: string[]; sourcePath: string; title: string },
         threadId?: string,
       ) => callback({ ...data, threadId }),
     );

@@ -18,7 +18,7 @@ export interface PreviewState {
   artifactFilePath?: string;
   imageFilePath?: string;
   imageDataUrl?: string;
-  pdfFilePath?: string;
+  pdfPages?: string[];
   pdfSourceFilePath?: string;
   cwd?: string;
   targetFilePath?: string;

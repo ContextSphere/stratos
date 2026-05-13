@@ -196,9 +196,9 @@ export function PreviewPane({
             }}
           />
         </div>
-      ) : preview.type === "pdf" && preview.pdfFilePath ? (
+      ) : preview.type === "pdf" && preview.pdfPages ? (
         <PdfPreview
-          pdfFilePath={preview.pdfFilePath}
+          pages={preview.pdfPages}
           sourceFilePath={preview.pdfSourceFilePath}
         />
       ) : preview.type === "file-changes" && sessionChanges ? (

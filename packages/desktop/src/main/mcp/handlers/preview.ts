@@ -3,7 +3,7 @@
  */
 import { z } from "zod";
 import { promises as fsPromises } from "fs";
-import { basename, extname, join } from "path";
+import { basename, dirname, extname, join } from "path";
 import { tmpdir } from "os";
 import { spawn } from "child_process";
 import { createHash } from "crypto";
@@ -103,13 +103,20 @@ async function convertToPdf(
   return pdfPath;
 }
 
-async function getOrConvertPdf(sourcePath: string): Promise<string> {
-  const stat = await fsPromises.stat(sourcePath);
+function cacheDirFor(
+  sourcePath: string,
+  stat: { size: number; mtimeMs: number },
+): string {
   const key = createHash("sha1")
     .update(`${sourcePath}:${stat.size}:${stat.mtimeMs}`)
     .digest("hex")
     .slice(0, 16);
-  const cacheDir = join(tmpdir(), "stratos-pdf-preview", key);
+  return join(tmpdir(), "stratos-pdf-preview", key);
+}
+
+async function getOrConvertPdf(sourcePath: string): Promise<string> {
+  const stat = await fsPromises.stat(sourcePath);
+  const cacheDir = cacheDirFor(sourcePath, stat);
   const base = basename(sourcePath, extname(sourcePath));
   const cachedPdf = join(cacheDir, `${base}.pdf`);
   try {
@@ -118,6 +125,48 @@ async function getOrConvertPdf(sourcePath: string): Promise<string> {
   } catch {
     return convertToPdf(sourcePath, cacheDir);
   }
+}
+
+const PAGE_DPI = 110;
+
+async function renderPdfToPages(
+  pdfPath: string,
+  cacheDir: string,
+): Promise<string[]> {
+  await fsPromises.mkdir(cacheDir, { recursive: true });
+  const firstPage = join(cacheDir, "page-1.jpg");
+  try {
+    await fsPromises.access(firstPage);
+  } catch {
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(
+        "pdftoppm",
+        ["-jpeg", "-r", String(PAGE_DPI), pdfPath, join(cacheDir, "page")],
+        { stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let stderr = "";
+      proc.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+      proc.on("error", reject);
+      proc.on("exit", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`pdftoppm exited with code ${code}: ${stderr}`));
+      });
+    });
+  }
+  const entries = await fsPromises.readdir(cacheDir);
+  const pageFiles = entries
+    .filter((f) => /^page-\d+\.jpg$/.test(f))
+    .sort(
+      (a, b) => Number(a.match(/(\d+)/)![1]) - Number(b.match(/(\d+)/)![1]),
+    );
+  const pages: string[] = [];
+  for (const f of pageFiles) {
+    const buf = await fsPromises.readFile(join(cacheDir, f));
+    pages.push(`data:image/jpeg;base64,${buf.toString("base64")}`);
+  }
+  return pages;
 }
 
 export interface PreviewDeps {
@@ -175,29 +224,33 @@ export function createPreviewHandlers(deps: PreviewDeps): HandlerDef[] {
           return textResult(`Preview opened: ${args.file_path}`);
         }
         if (PDF_EXTENSIONS.has(ext)) {
+          let pages: string[];
           try {
-            await fsPromises.access(args.file_path);
+            const stat = await fsPromises.stat(args.file_path);
+            const cacheDir = cacheDirFor(args.file_path, stat);
+            pages = await renderPdfToPages(args.file_path, cacheDir);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            return textResult(`Cannot read file: ${msg}`, true);
+            return textResult(`Cannot render PDF: ${msg}`, true);
           }
           sendToRenderer(IPC_CHANNELS.PREVIEW_OPEN_PDF, {
-            pdfPath: args.file_path,
+            pages,
             sourcePath: args.file_path,
             title: fileName,
           });
           return textResult(`Preview opened: ${args.file_path}`);
         }
         if (OFFICE_EXTENSIONS.has(ext)) {
-          let pdfPath: string;
+          let pages: string[];
           try {
-            pdfPath = await getOrConvertPdf(args.file_path);
+            const pdfPath = await getOrConvertPdf(args.file_path);
+            pages = await renderPdfToPages(pdfPath, dirname(pdfPath));
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             return textResult(`Cannot convert to PDF: ${msg}`, true);
           }
           sendToRenderer(IPC_CHANNELS.PREVIEW_OPEN_PDF, {
-            pdfPath,
+            pages,
             sourcePath: args.file_path,
             title: fileName,
           });

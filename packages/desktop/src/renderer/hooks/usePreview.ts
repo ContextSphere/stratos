@@ -59,12 +59,12 @@ export function usePreview(activeThreadId?: string | null) {
   );
 
   const openPdf = useCallback(
-    (pdfFilePath: string, sourceFilePath: string, title: string) => {
+    (pages: string[], sourceFilePath: string, title: string) => {
       setPreview({
         isOpen: true,
         type: "pdf",
         title,
-        pdfFilePath,
+        pdfPages: pages,
         pdfSourceFilePath: sourceFilePath,
       });
     },
@@ -127,18 +127,16 @@ export function usePreview(activeThreadId?: string | null) {
         }
       },
     );
-    window.api.onPreviewOpenPdf?.(
-      ({ pdfPath, sourcePath, title, threadId }) => {
-        if (
-          threadId &&
-          activeThreadIdRef.current &&
-          threadId !== activeThreadIdRef.current
-        )
-          return;
-        if (previewTypeRef.current === "file-changes") return;
-        openPdf(pdfPath, sourcePath, title);
-      },
-    );
+    window.api.onPreviewOpenPdf?.(({ pages, sourcePath, title, threadId }) => {
+      if (
+        threadId &&
+        activeThreadIdRef.current &&
+        threadId !== activeThreadIdRef.current
+      )
+        return;
+      if (previewTypeRef.current === "file-changes") return;
+      openPdf(pages, sourcePath, title);
+    });
     window.api.onPreviewClose(close);
   }, [openUrl, openMarkdown, openArtifactEditor, openImage, openPdf, close]);
 
