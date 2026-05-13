@@ -14,6 +14,7 @@ import type {
 } from "../bridges/types";
 import { type TreeNode, mergeTreeNodes } from "./tree-utils";
 import { MarkdownPreview } from "./preview/MarkdownPreview";
+import { PdfPreview } from "./preview/PdfPreview";
 import { FileIcon } from "./FileIcon";
 
 export type { TreeNode };
@@ -27,6 +28,11 @@ function isImagePath(path: string): boolean {
   return IMAGE_EXT_RE.test(path);
 }
 
+const PDF_OFFICE_EXT_RE = /\.(pdf|pptx?|docx?|xlsx?|odp|odt|ods)$/i;
+function isPdfOrOfficePath(path: string): boolean {
+  return PDF_OFFICE_EXT_RE.test(path);
+}
+
 interface Props {
   cwd: string;
   targetFilePath?: string;
@@ -36,6 +42,10 @@ interface Props {
     filePath: string,
     rootPath: string,
   ) => Promise<{ content: string; isBinary: boolean }>;
+  renderPdfPages?: (
+    filePath: string,
+    rootPath: string,
+  ) => Promise<{ pages: string[] }>;
   writeFile?: (
     filePath: string,
     content: string,
@@ -103,6 +113,7 @@ export function FileExplorer({
   targetLine,
   listDirectory,
   readFile,
+  renderPdfPages,
   writeFile,
   watchDirectory,
   unwatchDirectory,
@@ -123,6 +134,8 @@ export function FileExplorer({
     isBinary: boolean;
     isImage?: boolean;
     tooLarge: boolean;
+    pdfPages?: string[];
+    pdfError?: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -346,6 +359,33 @@ export function FileExplorer({
 
   const handleFileClick = useCallback(
     async (filePath: string, size?: number, line?: number) => {
+      if (isPdfOrOfficePath(filePath) && renderPdfPages) {
+        setOpenFile({
+          path: filePath,
+          content: "",
+          isBinary: true,
+          tooLarge: false,
+          pdfPages: undefined,
+        });
+        setEditContent("");
+        setMdMode("preview");
+        setSaveStatus("idle");
+        setCursorTargetLine(line ?? null);
+        try {
+          const { pages } = await renderPdfPages(filePath, cwd);
+          setOpenFile((prev) =>
+            prev && prev.path === filePath
+              ? { ...prev, pdfPages: pages }
+              : prev,
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setOpenFile((prev) =>
+            prev && prev.path === filePath ? { ...prev, pdfError: msg } : prev,
+          );
+        }
+        return;
+      }
       const sizeLimit = isImagePath(filePath) ? MAX_IMAGE_SIZE : MAX_FILE_SIZE;
       if (size !== undefined && size > sizeLimit) {
         setOpenFile({
@@ -378,7 +418,7 @@ export function FileExplorer({
         setCursorTargetLine(line ?? null);
       }
     },
-    [readFile, cwd],
+    [readFile, renderPdfPages, cwd],
   );
 
   const handleBack = useCallback(() => {
@@ -621,7 +661,17 @@ export function FileExplorer({
           )}
         </div>
         <div className="flex-1 min-h-0">
-          {openFile.isImage ? (
+          {openFile.pdfPages ? (
+            <PdfPreview pages={openFile.pdfPages} />
+          ) : openFile.pdfError ? (
+            <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm px-4 text-center">
+              Could not render document: {openFile.pdfError}
+            </div>
+          ) : isPdfOrOfficePath(openFile.path) ? (
+            <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
+              Rendering pages…
+            </div>
+          ) : openFile.isImage ? (
             openFile.content ? (
               <div
                 className="flex items-center justify-center h-full overflow-auto p-4"

@@ -5,6 +5,7 @@ import { spawn } from "child_process";
 import type { FSWatcher } from "fs";
 import { extname, join, resolve, dirname, relative } from "path";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
+import { getPdfPagesForFile, isPdfOrOfficePath } from "../pdf-render";
 
 // Directory watcher state — one watcher per process
 let activeWatcher: FSWatcher | null = null;
@@ -167,6 +168,24 @@ export function registerFilesIpc(): void {
         return { content: "", isBinary: true };
       }
       return { content: buffer.toString("utf-8"), isBinary: false };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_RENDER_PDF_PAGES,
+    async (
+      _event,
+      filePath: string,
+      rootPath: string,
+    ): Promise<{ pages: string[] }> => {
+      if (!isPathWithin(filePath, rootPath)) {
+        throw new Error("Path outside allowed directory");
+      }
+      if (!isPdfOrOfficePath(filePath)) {
+        throw new Error(`Unsupported file type: ${extname(filePath)}`);
+      }
+      const pages = await getPdfPagesForFile(filePath);
+      return { pages };
     },
   );
 
@@ -457,6 +476,7 @@ export function registerFilesIpc(): void {
 export function unregisterFilesIpc(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILES_LIST_DIR);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_READ_FILE);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_RENDER_PDF_PAGES);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WRITE_FILE);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WATCH_START);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_WATCH_STOP);

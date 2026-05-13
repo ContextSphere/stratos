@@ -192,6 +192,10 @@ export interface FilesBridge {
     filePath: string,
     rootPath: string,
   ): Promise<{ content: string; isBinary: boolean; isImage?: boolean }>;
+  renderPdfPages?(
+    filePath: string,
+    rootPath: string,
+  ): Promise<{ pages: string[] }>;
   writeFile(filePath: string, content: string, rootPath: string): Promise<void>;
   listAllFiles?(cwd: string): Promise<string[]>;
   watchDirectory?(cwd: string): Promise<void>;

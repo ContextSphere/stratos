@@ -434,6 +434,12 @@ const api = {
   ): Promise<{ content: string; isBinary: boolean; isImage?: boolean }> =>
     ipcRenderer.invoke(IPC_CHANNELS.FILES_READ_FILE, filePath, rootPath),
 
+  filesRenderPdfPages: (
+    filePath: string,
+    rootPath: string,
+  ): Promise<{ pages: string[] }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_RENDER_PDF_PAGES, filePath, rootPath),
+
   filesWriteFile: (
     filePath: string,
     content: string,

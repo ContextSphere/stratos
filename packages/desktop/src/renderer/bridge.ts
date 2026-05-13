@@ -101,6 +101,8 @@ export function createDesktopBridge(): StratosContextValue {
         window.api.filesListDir(dirPath, rootPath),
       readFile: (filePath, rootPath) =>
         window.api.filesReadFile(filePath, rootPath),
+      renderPdfPages: (filePath, rootPath) =>
+        window.api.filesRenderPdfPages(filePath, rootPath),
       writeFile: (filePath, content, rootPath) =>
         window.api.filesWriteFile(filePath, content, rootPath),
       listAllFiles: (cwd) => window.api.filesListAll(cwd),

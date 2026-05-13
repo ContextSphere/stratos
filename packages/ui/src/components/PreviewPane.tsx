@@ -153,6 +153,7 @@ export function PreviewPane({
           targetLine={preview.targetLine}
           listDirectory={filesBridge.listDirectory}
           readFile={filesBridge.readFile}
+          renderPdfPages={filesBridge.renderPdfPages}
           writeFile={filesBridge.writeFile}
           watchDirectory={filesBridge.watchDirectory}
           unwatchDirectory={filesBridge.unwatchDirectory}

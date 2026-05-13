@@ -107,6 +107,7 @@ export const IPC_CHANNELS = {
   // File explorer
   FILES_LIST_DIR: "files:list-dir",
   FILES_READ_FILE: "files:read-file",
+  FILES_RENDER_PDF_PAGES: "files:render-pdf-pages",
   FILES_WRITE_FILE: "files:write-file",
   FILES_WATCH_START: "files:watch-start",
   FILES_WATCH_STOP: "files:watch-stop",
