@@ -648,4 +648,80 @@ describe("useChat — result-event reload race", () => {
 
     vi.useRealTimers();
   });
+
+  it("stops polling after the first read when disk catches up to streamed count", async () => {
+    // Memory-OOM regression guard: when the SDK flushes before the result
+    // event arrives (the common fast case), the poll must NOT re-read the
+    // JSONL up to 6 times — each call allocates a full Buffer in main.
+    vi.useFakeTimers();
+
+    let streamHandler:
+      | ((data: unknown, threadId: string | null) => void)
+      | null = null;
+    mockApi.onStreamMessage.mockImplementation((cb) => {
+      streamHandler = cb;
+    });
+
+    const full = [
+      { id: "u1", role: "user" as const, content: "hi", timestamp: 1 },
+      { id: "a1", role: "assistant" as const, content: "hello", timestamp: 2 },
+    ];
+    mockApi.threadsLoadMessages
+      .mockResolvedValueOnce([]) // initial mount load
+      .mockResolvedValue(full); // every poll read returns the full set
+
+    const { result } = renderUseChat("thread-1");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(streamHandler).not.toBeNull();
+
+    await act(async () => {
+      streamHandler!(
+        { type: "user_message", content: "hi", _streamId: "s1" },
+        "thread-1",
+      );
+      streamHandler!(
+        { type: "text", content: "hello", _streamId: "s1" },
+        "thread-1",
+      );
+      vi.advanceTimersByTime(60);
+      await Promise.resolve();
+      // Absorb the 500ms defensive thread-switch re-check so it doesn't get
+      // counted as a poll read below.
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const callsBeforeResult = mockApi.threadsLoadMessages.mock.calls.length;
+
+    await act(async () => {
+      streamHandler!(
+        {
+          type: "result",
+          cost: 0,
+          usage: { inputTokens: 1, outputTokens: 1 },
+          _streamId: "s1",
+        },
+        "thread-1",
+      );
+      // First poll iteration runs at delay=0.
+      await Promise.resolve();
+      await Promise.resolve();
+      // Advance well past every backoff step to confirm no further reads.
+      vi.advanceTimersByTime(5000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Exactly ONE additional read should have happened — disk caught up
+    // immediately, so the loop must short-circuit. Six reads = OOM regression.
+    const pollReadCount =
+      mockApi.threadsLoadMessages.mock.calls.length - callsBeforeResult;
+    expect(pollReadCount).toBe(1);
+    expect(result.current.messages).toHaveLength(2);
+
+    vi.useRealTimers();
+  });
 });

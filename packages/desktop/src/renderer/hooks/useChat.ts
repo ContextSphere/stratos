@@ -316,15 +316,20 @@ export function useChat(
   // may not have flushed when the `result` event arrives over IPC. A naive
   // immediate read can return a partial transcript missing the tail.
   //
-  // Poll with backoff and only commit to React state once two consecutive
-  // reads agree on the count — at that point the SDK has finished flushing.
+  // Poll with backoff and commit to React state once we have enough data:
+  //  - Fast path: disk count ≥ in-memory streamed count → SDK has flushed,
+  //    stop after the first sufficient read. This is the common case and
+  //    avoids re-reading (potentially multi-MB) JSONL up to 6 times, which
+  //    was the source of main-process OOM crashes.
+  //  - Stability path: disk count is stable across two reads → covers the
+  //    regen/skill-replacement case where SDK filtering returns FEWER
+  //    messages than were streamed.
+  //
   // Holding the in-memory streamed state during polling avoids the visible
   // flicker that would happen if we applied the partial read and then
-  // updated again 100 ms later.
-  //
-  // Abort if the active thread changes underneath us.
+  // updated again 100 ms later. Aborts if the active thread changes.
   const pollAndApplyLoadedMessages = useCallback(
-    async (threadId: string) => {
+    async (threadId: string, expectedMinCount: number) => {
       const delaysMs = [0, 100, 250, 500, 1000, 2000];
       let prevLength = -1;
       let lastStored: StoredMessage[] = [];
@@ -339,6 +344,8 @@ export function useChat(
           return;
         }
         if (activeThreadIdRef.current !== threadId) return;
+        if (expectedMinCount > 0 && lastStored.length >= expectedMinCount)
+          break;
         if (lastStored.length === prevLength) break;
         prevLength = lastStored.length;
       }
@@ -1058,7 +1065,7 @@ export function useChat(
           // we just streamed and clobber the user's view. Poll until the
           // on-disk count stabilizes across two consecutive reads, then apply.
           if (threadId === activeThreadIdRef.current) {
-            void pollAndApplyLoadedMessages(threadId);
+            void pollAndApplyLoadedMessages(threadId, state.messages.length);
 
             // Refresh context-window usage breakdown. The SDK only reports
             // the new state after the turn fully commits, so query it here.

@@ -24,6 +24,39 @@ const DEFAULT_TOOLS: ToolsOption = { type: "preset", preset: "claude_code" };
 
 type ToolsOption = string[] | { type: "preset"; preset: "claude_code" };
 
+// Per-image base64 cap for streaming tool_result payloads. Above this, the
+// base64 data is replaced with an empty string before stringify so the IPC
+// message (and downstream JSONL reload of it) stays bounded. Typical CDP
+// screenshots are 80–500KB base64; this preserves them and only strips
+// outliers (multi-MB PNGs that cause main-process OOM via IPC backpressure
+// and old_space retention — see docs/learnings/gc-memory-debugging.md).
+const STREAM_IMAGE_DATA_CAP = 512_000;
+
+export function stripOversizedImageData(content: unknown): unknown {
+  if (!Array.isArray(content)) return content;
+  return content.map((block) => {
+    if (
+      block &&
+      typeof block === "object" &&
+      (block as { type?: unknown }).type === "image"
+    ) {
+      const src = (block as { source?: unknown }).source;
+      if (
+        src &&
+        typeof src === "object" &&
+        typeof (src as { data?: unknown }).data === "string" &&
+        (src as { data: string }).data.length > STREAM_IMAGE_DATA_CAP
+      ) {
+        return {
+          ...(block as object),
+          source: { ...(src as object), data: "" },
+        };
+      }
+    }
+    return block;
+  });
+}
+
 /**
  * Translate the SDK's `SDKControlGetContextUsageResponse` into the public
  * `ContextUsage` shape consumers see. Kept at module scope so both the live
@@ -811,7 +844,9 @@ export class ClaudeCodeProvider implements AgentProvider {
               const output =
                 typeof block.content === "string"
                   ? block.content
-                  : JSON.stringify(block.content ?? "");
+                  : JSON.stringify(
+                      stripOversizedImageData(block.content) ?? "",
+                    );
               yield {
                 type: "tool_result",
                 toolCallId: block.tool_use_id,

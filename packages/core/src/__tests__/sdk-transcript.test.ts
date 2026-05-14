@@ -221,6 +221,63 @@ describe("sdkMessagesToStored — Read tool image preservation", () => {
     expect(parsed[0].source.data).toBe(largeImageData);
   });
 
+  it("strips base64 data from oversized image payloads but keeps block structure", async () => {
+    // ~1.5MB base64 — over the per-output cap. Without stripping, repeated
+    // reloads (the result-event poll reads JSONL up to 6×) would OOM main.
+    const huge = "A".repeat(1_500_000);
+    mockGetSessionMessages.mockResolvedValue([
+      {
+        type: "assistant",
+        uuid: "asst1",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_read_huge_png",
+              name: "Read",
+              input: { file_path: "/tmp/huge.png" },
+            },
+          ],
+        },
+      },
+      {
+        type: "user",
+        uuid: "u1",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_read_huge_png",
+              content: [
+                {
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: "image/png",
+                    data: huge,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+    const result = await sdkMessagesToStored("session-1", 0);
+    const output = result[0].toolCalls?.[0]?.output ?? "";
+    // Bounded — must be much smaller than the original payload.
+    expect(output.length).toBeLessThan(10_000);
+    // Still valid JSON with image structure preserved.
+    const parsed = JSON.parse(output);
+    expect(parsed[0].type).toBe("image");
+    expect(parsed[0].source.type).toBe("base64");
+    expect(parsed[0].source.media_type).toBe("image/png");
+    expect(parsed[0].source.data).toBe("");
+  });
+
   it("still concatenates text-only tool_result content as plain text", async () => {
     mockGetSessionMessages.mockResolvedValue([
       {

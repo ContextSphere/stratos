@@ -49,13 +49,50 @@ function getToolResultOutput(
 }
 
 const TOOL_OUTPUT_STORAGE_LIMIT = 50_000; // 50KB — match renderer truncation limit
+// Cap for image-bearing tool outputs. Typical CDP screenshots and Read-tool
+// PNGs are 80–500KB base64; this preserves them intact. Above this the
+// transcript can balloon on every reload (multiple multi-MB blobs × 6-step
+// poll = OOM in main), so we strip the base64 payloads but keep the block
+// structure so the UI still sees an image was there.
+const TOOL_OUTPUT_IMAGE_STORAGE_LIMIT = 1_000_000;
 function truncateToolOutput(output: string | undefined): string | undefined {
   if (!output || output.length <= TOOL_OUTPUT_STORAGE_LIMIT) return output;
-  // Keep base64 image payloads intact — truncating mid-string corrupts the
-  // JSON and breaks the Read-tool image preview. Images are bounded in
-  // practice by the SDK's own tool-output cap.
-  if (output.includes('"type":"image"') && output.includes('"base64"'))
-    return output;
+  const hasImage =
+    output.includes('"type":"image"') && output.includes('"base64"');
+  if (hasImage) {
+    if (output.length <= TOOL_OUTPUT_IMAGE_STORAGE_LIMIT) return output;
+    // Image payload exceeds the per-output cap. Strip the base64 data from
+    // each image block while keeping the structure, so reload doesn't OOM.
+    // Falls through to plain truncation if the output isn't parseable JSON.
+    try {
+      const parsed: unknown = JSON.parse(output);
+      if (Array.isArray(parsed)) {
+        const stripped = parsed.map((b) => {
+          if (
+            b &&
+            typeof b === "object" &&
+            (b as { type?: unknown }).type === "image"
+          ) {
+            const src = (b as { source?: unknown }).source;
+            if (
+              src &&
+              typeof src === "object" &&
+              typeof (src as { data?: unknown }).data === "string"
+            ) {
+              return {
+                ...(b as object),
+                source: { ...(src as object), data: "" },
+              };
+            }
+          }
+          return b;
+        });
+        return JSON.stringify(stripped);
+      }
+    } catch {
+      // Fall through to plain truncation below.
+    }
+  }
   return (
     output.slice(0, TOOL_OUTPUT_STORAGE_LIMIT) +
     `\n\n[… truncated ${output.length - TOOL_OUTPUT_STORAGE_LIMIT} characters]`
