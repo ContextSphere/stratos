@@ -62,7 +62,7 @@ export function PdfPreview({ pages }: Props): React.ReactElement {
     <div
       ref={containerRef}
       tabIndex={0}
-      className="flex-1 min-h-0 flex bg-[var(--bg-main)] outline-none"
+      className="h-full w-full min-h-0 flex bg-[var(--bg-main)] outline-none"
     >
       {/* Thumbnail rail */}
       <div className="w-24 flex-shrink-0 overflow-y-auto border-r border-[var(--border)] bg-[var(--bg-secondary,#0d1117)] py-2">
