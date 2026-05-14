@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ClaudeCodeProvider,
   stripOversizedImageData,
+  capStreamingToolOutput,
 } from "../providers/claude-code.provider";
 
 describe("ClaudeCodeProvider", () => {
@@ -78,5 +79,25 @@ describe("stripOversizedImageData", () => {
     expect(stripped[0]).toEqual({ type: "text", text: "hello" });
     expect(stripped[2]).toEqual({ type: "text", text: "world" });
     expect((stripped[1] as { source: { data: string } }).source.data).toBe("");
+  });
+});
+
+describe("capStreamingToolOutput", () => {
+  it("returns short output unchanged", () => {
+    expect(capStreamingToolOutput("hello")).toBe("hello");
+    expect(capStreamingToolOutput("")).toBe("");
+  });
+
+  it("returns output at the cap unchanged", () => {
+    const exact = "x".repeat(256_000);
+    expect(capStreamingToolOutput(exact)).toBe(exact);
+  });
+
+  it("truncates oversized output with a marker", () => {
+    const huge = "x".repeat(1_000_000);
+    const result = capStreamingToolOutput(huge);
+    expect(result.length).toBeLessThan(huge.length);
+    expect(result.startsWith("x".repeat(256_000))).toBe(true);
+    expect(result).toContain("truncated 744000");
   });
 });

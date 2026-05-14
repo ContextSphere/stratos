@@ -32,6 +32,16 @@ type ToolsOption = string[] | { type: "preset"; preset: "claude_code" };
 // and old_space retention — see docs/learnings/gc-memory-debugging.md).
 const STREAM_IMAGE_DATA_CAP = 512_000;
 
+// Total cap on the tool_result `output` string handed to downstream IPC.
+// Heap-snapshot analysis of the May 14 OOM showed 7.5M string nodes /
+// 6.6M sliced strings retained in main old_space — the signature of multi-
+// MB tool outputs (Read of big files, Bash command logs) flowing through
+// the streaming hot path, spread-cloned (`{...msg, _streamId}`) and held
+// pending IPC consumption. The renderer already truncates to 50KB for
+// display and the JSONL reload path caps at 50KB too, so a 256KB live cap
+// only affects content the UI would never have rendered in full anyway.
+const STREAM_TOOL_OUTPUT_CAP = 256_000;
+
 export function stripOversizedImageData(content: unknown): unknown {
   if (!Array.isArray(content)) return content;
   return content.map((block) => {
@@ -55,6 +65,14 @@ export function stripOversizedImageData(content: unknown): unknown {
     }
     return block;
   });
+}
+
+export function capStreamingToolOutput(output: string): string {
+  if (output.length <= STREAM_TOOL_OUTPUT_CAP) return output;
+  return (
+    output.slice(0, STREAM_TOOL_OUTPUT_CAP) +
+    `\n\n[… truncated ${output.length - STREAM_TOOL_OUTPUT_CAP} characters from streaming]`
+  );
 }
 
 /**
@@ -841,7 +859,7 @@ export class ClaudeCodeProvider implements AgentProvider {
         } else if (Array.isArray(content)) {
           for (const block of content) {
             if (block.type === "tool_result") {
-              const output =
+              const raw =
                 typeof block.content === "string"
                   ? block.content
                   : JSON.stringify(
@@ -850,7 +868,7 @@ export class ClaudeCodeProvider implements AgentProvider {
               yield {
                 type: "tool_result",
                 toolCallId: block.tool_use_id,
-                output,
+                output: capStreamingToolOutput(raw),
               };
             } else if (
               block.type === "text" &&
