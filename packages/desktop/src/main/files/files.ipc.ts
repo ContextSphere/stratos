@@ -12,6 +12,44 @@ let activeWatcher: FSWatcher | null = null;
 let activeCwd: string | null = null;
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+// Paths the recursive fs.watch should ignore. The watcher fires on EVERY
+// nested change; in repos with large node_modules (LinkedIn MP, Aura, etc.)
+// background build tools and pnpm install churn produce millions of events
+// per session, each allocating 4-5 strings (filename, dirname slice, join,
+// Map key, setTimeout closure). Heap-snapshot analysis of the May 14 OOM
+// found 16,739 retained Development/ paths and 7,906 node_modules mentions
+// in 5.4M string nodes — the signature of this leak.
+//
+// Match against the relative `filename` parameter the watcher gives us, so
+// we skip BEFORE allocating join'd absolute paths.
+const WATCH_IGNORE_SEGMENTS = [
+  "node_modules/",
+  "node_modules",
+  ".git/",
+  ".pnpm/",
+  "dist/",
+  "build/",
+  "out/",
+  ".next/",
+  ".turbo/",
+  ".cache/",
+  ".DS_Store",
+];
+
+function shouldIgnoreWatchEvent(filename: string | null): boolean {
+  if (!filename) return false;
+  // Normalize path separators for cross-platform safety. fs.watch on macOS
+  // gives POSIX-style paths so this is a no-op there.
+  const norm = filename.includes("\\")
+    ? filename.replace(/\\/g, "/")
+    : filename;
+  for (const seg of WATCH_IGNORE_SEGMENTS) {
+    if (norm === seg || norm.startsWith(seg) || norm.includes("/" + seg))
+      return true;
+  }
+  return false;
+}
+
 // Per-file watcher state — keyed by absolute file path. Each entry tracks
 // the listener so we can unwatchFile cleanly. fs.watchFile uses mtime
 // polling under the hood and is bulletproof on macOS where fs.watch's
@@ -220,6 +258,13 @@ export function registerFilesIpc(): void {
       activeCwd = cwd;
 
       const watcher = fsWatch(cwd, { recursive: true }, (_, filename) => {
+        // Drop noisy paths (node_modules, .git, dist, etc.) BEFORE any
+        // allocation. In repos with large dependency trees this filter is
+        // the difference between O(real-edits) and O(every-pnpm-write) =
+        // millions of retained strings → main-process OOM. See the
+        // WATCH_IGNORE_SEGMENTS comment for the heap-dump evidence.
+        if (shouldIgnoreWatchEvent(filename)) return;
+
         const changedDir =
           filename == null ? cwd : join(cwd, dirname(filename));
 

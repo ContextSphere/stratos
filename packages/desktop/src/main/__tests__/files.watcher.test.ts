@@ -180,4 +180,46 @@ describe("files watcher IPC", () => {
     const wc = makeWebContents();
     await expect(invoke("files:watch-stop", wc)).resolves.toBeUndefined();
   });
+
+  // Regression guard for the May 14 OOM where recursive fs.watch on workspaces
+  // with large node_modules generated millions of events, each allocating
+  // join'd path strings until main old_space filled (5.4M string nodes,
+  // 16K retained Development/ paths in heap-snapshot analysis).
+  describe("ignores noise paths to prevent OOM from build-tool churn", () => {
+    const noiseSamples = [
+      "node_modules/lodash/index.js",
+      "node_modules/.pnpm/zod@4.3.6/node_modules/zod/index.js",
+      "packages/desktop/node_modules/.cache/foo",
+      "packages/desktop/.git/objects/abc",
+      "dist/main/index.js",
+      ".pnpm/zod@4.3.6/node_modules/zod/index.js",
+      ".turbo/cache/foo",
+      ".cache/eslint",
+      "node_modules",
+      "src/.DS_Store",
+    ];
+
+    for (const noise of noiseSamples) {
+      it(`drops ${noise}`, async () => {
+        const wc = makeWebContents();
+        await invoke("files:watch-start", wc, "/my/project");
+        capturedWatchHandler!("change", noise);
+        vi.advanceTimersByTime(100);
+        expect(wc.send).not.toHaveBeenCalled();
+      });
+    }
+
+    it("still forwards legitimate edits when a noise event preceded them", async () => {
+      const wc = makeWebContents();
+      await invoke("files:watch-start", wc, "/my/project");
+      capturedWatchHandler!("change", "node_modules/lodash/index.js"); // dropped
+      capturedWatchHandler!("change", "src/index.ts"); // forwarded
+      vi.advanceTimersByTime(100);
+      expect(wc.send).toHaveBeenCalledTimes(1);
+      expect(wc.send).toHaveBeenCalledWith(
+        "files:dir-changed",
+        "/my/project/src",
+      );
+    });
+  });
 });
