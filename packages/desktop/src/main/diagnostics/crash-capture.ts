@@ -72,6 +72,14 @@ export interface CrashCaptureOptions {
    *  no active streams (per `isUnderPressureNow`), `onRssPressure` is invoked.
    *  Default: 3072 MB. */
   rssPressureThresholdMB?: number;
+  /** Emergency heap threshold (MB). When heapUsed crosses this regardless of
+   *  stream state, `onRssPressure` fires with a shorter debounce. The intent
+   *  is to force GC before V8 hits the --max-old-space-size ceiling. Default:
+   *  2750 MB (gives ~30 s headroom before a 4 GB heap limit). */
+  heapEmergencyMB?: number;
+  /** Emergency RSS threshold (MB) — same idea as `heapEmergencyMB` but for
+   *  native memory pressure (large Buffers, IPC backlog). Default: 6144 MB. */
+  rssEmergencyMB?: number;
   /** Returns true when the safety valve should be allowed to fire — typically
    *  "no active streams". Wired from AgentManager. */
   isUnderPressureNow?: () => boolean;
@@ -152,7 +160,10 @@ export function startCrashCapture(
   const rssThresholdsMB = (opts.rssThresholdsMB ?? DEFAULT_THRESHOLDS_MB)
     .slice()
     .sort((a, b) => a - b);
-  const pollIntervalMs = opts.pollIntervalMs ?? 15_000;
+  // 3 s default — the May 2026 OOMs went from 30 MB heap to V8 ceiling in
+  // ~4 minutes, and the 15 s poll routinely missed the inflection point.
+  // 3 s gives the safety valve enough samples to engage GC before crash.
+  const pollIntervalMs = opts.pollIntervalMs ?? 3_000;
   const memLogIntervalMs = opts.memLogIntervalMs ?? 30_000;
   const memLogMaxBytes = opts.memLogMaxBytes ?? 5 * 1024 * 1024;
   const memLogPath = join(logsDir, "memory.log.jsonl");
@@ -160,6 +171,15 @@ export function startCrashCapture(
   const now = opts.now ?? Date.now;
   const rssPressureThresholdMB = opts.rssPressureThresholdMB ?? 3072;
   const RSS_PRESSURE_DEBOUNCE_MS = 60_000;
+  // Emergency thresholds — fire the valve regardless of stream state when
+  // we're close to memory limits. The default heap limit is set via
+  // --max-old-space-size=4096; firing at 2 GB heap gives the valve ~2 min
+  // of headroom at the observed 11 MB/s growth rate before V8 OOM. The
+  // RSS emergency catches the runaway "RSS climbs faster than heap"
+  // pattern observed in May 2026 crashes (heap 700 MB, RSS 4.6 GB).
+  const heapEmergencyMB = opts.heapEmergencyMB ?? 2048;
+  const rssEmergencyMB = opts.rssEmergencyMB ?? 4096;
+  const RSS_EMERGENCY_DEBOUNCE_MS = 10_000;
   let lastRssPressureFiredAt = 0;
   const maxRetainedDumps = opts.maxRetainedDumps ?? 30;
 
@@ -255,22 +275,43 @@ export function startCrashCapture(
         writeSnapshotAndState(`rss-${t}MB`);
       }
     }
-    // RSS safety valve: when native memory has stayed elevated past the
-    // pressure threshold AND the app is in a "should be calm" state (no
-    // active streams), evict idle subprocesses + nudge GC. Debounced so we
-    // don't spam evictions during a real spike.
-    if (
-      opts.onRssPressure &&
+    // RSS safety valve, two phases.
+    //
+    // Phase 1 (calm): when there are no active streams and RSS has crept
+    // above the pressure threshold, evict idle subprocesses + nudge GC.
+    // This breaks the "RSS stuck high after a spike" cycle.
+    //
+    // Phase 2 (emergency): the original valve only fires in the calm
+    // state, but the May 2026 OOM crashes happen DURING streams — V8 heap
+    // climbs from 30 MB to 3.5 GB in under 4 minutes while streams=1, with
+    // no chance for the valve to engage before V8 hits the 4 GB ceiling.
+    // So when RSS or heap is *significantly* above the threshold and we're
+    // approaching the V8 limit, force a GC regardless of stream state. A
+    // forced GC during a stream is preferable to a hard OOM crash that
+    // takes the whole process down.
+    const heapMBPressure = m.heapUsed / 1024 / 1024;
+    const emergencyHeap = heapMBPressure >= heapEmergencyMB;
+    const emergencyRss = rssMB >= rssEmergencyMB;
+    const calmPressure =
       rssMB >= rssPressureThresholdMB &&
-      (!opts.isUnderPressureNow || opts.isUnderPressureNow())
-    ) {
+      (!opts.isUnderPressureNow || opts.isUnderPressureNow());
+
+    if (opts.onRssPressure && (calmPressure || emergencyHeap || emergencyRss)) {
       const since = now() - lastRssPressureFiredAt;
-      if (since >= RSS_PRESSURE_DEBOUNCE_MS) {
+      const debounce = calmPressure
+        ? RSS_PRESSURE_DEBOUNCE_MS
+        : RSS_EMERGENCY_DEBOUNCE_MS;
+      if (since >= debounce) {
         lastRssPressureFiredAt = now();
         try {
           opts.onRssPressure();
+          const reason = emergencyHeap
+            ? `EMERGENCY heap=${Math.round(heapMBPressure)}MB`
+            : emergencyRss
+              ? `EMERGENCY rss=${Math.round(rssMB)}MB`
+              : `rss=${Math.round(rssMB)}MB`;
           console.log(
-            `[crash-capture] RSS safety valve fired: rss=${Math.round(rssMB)}MB threshold=${rssPressureThresholdMB}MB`,
+            `[crash-capture] safety valve fired: ${reason} (heap-limit=4096MB, threshold=${rssPressureThresholdMB}MB)`,
           );
         } catch (err) {
           console.error(`[crash-capture] onRssPressure threw:`, err);

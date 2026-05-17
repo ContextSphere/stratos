@@ -370,11 +370,22 @@ if (!gotLock) {
     };
     onRssPressure = () => {
       if (!agentManager) return;
+      // Always nudge GC first — this is cheap and is the only mitigation
+      // available when streams are running (we can't evict an active
+      // subprocess). When there ARE no active streams, also evict idle
+      // subprocesses so their native heap is reclaimed.
+      const gc = (globalThis as { gc?: () => void }).gc;
+      if (typeof gc === "function") {
+        try {
+          gc();
+          console.log("[index] safety valve: ran globalThis.gc()");
+        } catch {
+          // best-effort
+        }
+      }
       const evicted = agentManager.forceEvictAllIdleSessions();
       if (evicted > 0) {
-        console.log(
-          `[index] RSS safety valve: evicted ${evicted} idle session(s)`,
-        );
+        console.log(`[index] safety valve: evicted ${evicted} idle session(s)`);
       }
     };
   }
