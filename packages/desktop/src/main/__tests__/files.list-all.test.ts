@@ -95,4 +95,40 @@ describe("files:list-all", () => {
     const result = await invoke("files:list-all", "/nonexistent");
     expect(result).toEqual([]);
   });
+
+  it("skips expanded ignore set (target, .gradle, .idea, .pnpm, Pods, etc.)", async () => {
+    readdirMock.mockResolvedValueOnce([
+      { name: "target", isDirectory: () => true },
+      { name: ".gradle", isDirectory: () => true },
+      { name: ".idea", isDirectory: () => true },
+      { name: ".pnpm", isDirectory: () => true },
+      { name: "Pods", isDirectory: () => true },
+      { name: "DerivedData", isDirectory: () => true },
+      { name: ".cache", isDirectory: () => true },
+      { name: "out", isDirectory: () => true },
+      { name: "venv", isDirectory: () => true },
+      { name: "__pycache__", isDirectory: () => true },
+      { name: "vendor", isDirectory: () => true },
+      { name: "Main.kt", isDirectory: () => false },
+    ]);
+
+    const result = await invoke("files:list-all", "/project");
+    expect(result).toEqual(["Main.kt"]);
+    expect(readdirMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps result at 5000 entries to prevent OOM on huge workspaces", async () => {
+    // Single directory containing 10K files. The walk should stop at 5000.
+    const entries = Array.from({ length: 10_000 }, (_, i) => ({
+      name: `file-${i}.ts`,
+      isDirectory: () => false,
+    }));
+    readdirMock.mockResolvedValueOnce(entries);
+
+    const result = (await invoke("files:list-all", "/project")) as string[];
+    expect(result.length).toBe(5000);
+    // First and last paths come from the start of the listing
+    expect(result[0]).toBe("file-0.ts");
+    expect(result[4999]).toBe("file-4999.ts");
+  });
 });

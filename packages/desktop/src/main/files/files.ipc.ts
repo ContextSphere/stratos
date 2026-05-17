@@ -422,8 +422,35 @@ export function registerFilesIpc(): void {
     ".next",
     "dist",
     "build",
+    "out",
     ".turbo",
+    ".cache",
+    ".pnpm",
+    ".gradle",
+    ".idea",
+    "target", // Java/Kotlin/Rust build output
+    ".vscode-test",
+    "coverage",
+    ".nyc_output",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".tox",
+    "vendor",
+    ".bundle",
+    "Pods", // iOS CocoaPods
+    "DerivedData", // Xcode
   ]);
+
+  // Hard cap to prevent OOM on huge workspaces. Each result is a string
+  // allocated in main old_space and then serialized over IPC. The May 16
+  // OOM saw a 37K-file workspace produce 37,738 retained path strings;
+  // multiple concurrent walks (one per dir change) saturated old_space.
+  // 5000 paths covers normal monorepo @-mention use; beyond that the
+  // autocomplete UI would be unusable anyway.
+  const FILES_LIST_ALL_MAX = 5000;
 
   ipcMain.handle(
     IPC_CHANNELS.FILES_GET_EXTERNAL_EDITORS,
@@ -490,7 +517,14 @@ export function registerFilesIpc(): void {
 
       const results: string[] = [];
 
+      // Throws this sentinel once we hit the cap so the recursion unwinds
+      // immediately instead of continuing to allocate path strings we'll
+      // discard. Returning early from a deep recursion via exception is
+      // intentional here.
+      const CAP_HIT = Symbol("cap-hit");
+
       async function walk(dir: string): Promise<void> {
+        if (results.length >= FILES_LIST_ALL_MAX) throw CAP_HIT;
         const entries = await readdir(dir, { withFileTypes: true });
         const subdirs: string[] = [];
         for (const entry of entries) {
@@ -499,6 +533,7 @@ export function registerFilesIpc(): void {
               subdirs.push(join(dir, entry.name));
             }
           } else {
+            if (results.length >= FILES_LIST_ALL_MAX) throw CAP_HIT;
             results.push(relative(resolvedCwd, join(dir, entry.name)));
           }
         }
@@ -509,8 +544,9 @@ export function registerFilesIpc(): void {
 
       try {
         await walk(resolvedCwd);
-      } catch {
-        return [];
+      } catch (err) {
+        if (err !== CAP_HIT) return [];
+        // hit the cap — return what we have so far
       }
 
       return results;
