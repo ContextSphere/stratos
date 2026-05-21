@@ -47,19 +47,68 @@ export interface InputBarRef {
   ) => void;
 }
 
-async function readImageFile(file: File): Promise<ImageAttachment> {
+// Anthropic's many-image API path rejects conversations where any image's
+// longest edge exceeds 2000px. Downscale at upload time so a single oversized
+// screenshot can't permanently break the session.
+const MAX_IMAGE_DIM = 2000;
+
+function readDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () =>
-      resolve({
-        id: crypto.randomUUID(),
-        name: file.name,
-        dataUrl: reader.result as string,
-        mimeType: file.type,
-      });
+    reader.onload = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+async function downscaleIfOversized(
+  dataUrl: string,
+  mimeType: string,
+): Promise<{ dataUrl: string; mimeType: string }> {
+  // SVG is vector — no pixel dimension to enforce.
+  if (mimeType.includes("svg")) return { dataUrl, mimeType };
+  let img: HTMLImageElement;
+  try {
+    img = await loadImage(dataUrl);
+  } catch {
+    return { dataUrl, mimeType };
+  }
+  const longest = Math.max(img.naturalWidth, img.naturalHeight);
+  if (longest <= MAX_IMAGE_DIM) return { dataUrl, mimeType };
+  const scale = MAX_IMAGE_DIM / longest;
+  const w = Math.max(1, Math.round(img.naturalWidth * scale));
+  const h = Math.max(1, Math.round(img.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { dataUrl, mimeType };
+  ctx.drawImage(img, 0, 0, w, h);
+  // Re-encode as PNG to preserve transparency and avoid double-lossy JPEG.
+  return { dataUrl: canvas.toDataURL("image/png"), mimeType: "image/png" };
+}
+
+async function readImageFile(file: File): Promise<ImageAttachment> {
+  const rawDataUrl = await readDataUrl(file);
+  const { dataUrl, mimeType } = await downscaleIfOversized(
+    rawDataUrl,
+    file.type,
+  );
+  return {
+    id: crypto.randomUUID(),
+    name: file.name,
+    dataUrl,
+    mimeType,
+  };
 }
 
 interface ProcessedFiles {
