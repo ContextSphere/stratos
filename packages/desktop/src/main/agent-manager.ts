@@ -264,6 +264,19 @@ function buildOllamaCustomProvider(): Record<
 
 export type RunOrigin = "user" | "manager" | "scheduler";
 
+/** Minimal interface satisfied by WakeupManager. Declared here (not imported)
+ *  because WakeupManager needs an AgentManager reference — a real import
+ *  would create a circular dependency at module load time. */
+export interface WakeupHandler {
+  scheduleWakeup(params: {
+    threadId: string;
+    delaySeconds: number;
+    prompt: string;
+    reason?: string;
+  }): unknown;
+  cancelForThread(threadId: string): number;
+}
+
 export interface StreamCompletedEvent {
   threadId: string;
   runId: string;
@@ -388,6 +401,10 @@ export class AgentManager {
   // claude CLI process and Node-side state) accumulate. Periodic sweep catches
   // this case.
   private idleEvictTimer?: ReturnType<typeof setInterval>;
+  /** Host-side handler for the `ScheduleWakeup` deferred tool. Optional —
+   *  wired post-construction from main/index.ts because WakeupManager itself
+   *  needs an AgentManager reference. See scheduler/wakeup-manager.ts. */
+  private wakeupHandler: WakeupHandler | null = null;
 
   constructor(window: BrowserWindow, storage?: FileStorageAdapter) {
     this.window = window;
@@ -1404,6 +1421,36 @@ export class AgentManager {
           this.openPreviewFile(pending.filePath, pending.content, threadId);
         }
 
+        // ScheduleWakeup: the bundled Claude Code CLI's built-in deferred tool
+        // for /loop dynamic pacing. Its in-CLI poller never runs in SDK mode
+        // (Ink REPL isn't mounted), so we register the wakeup host-side here
+        // and fire it via WakeupManager. See scheduler/wakeup-manager.ts.
+        if (
+          msg.type === "tool_use" &&
+          msg.toolName === "ScheduleWakeup" &&
+          this.wakeupHandler &&
+          msg.input &&
+          typeof msg.input.delaySeconds === "number" &&
+          typeof msg.input.prompt === "string"
+        ) {
+          try {
+            this.wakeupHandler.scheduleWakeup({
+              threadId,
+              delaySeconds: msg.input.delaySeconds,
+              prompt: msg.input.prompt,
+              ...(typeof msg.input.reason === "string"
+                ? { reason: msg.input.reason }
+                : {}),
+            });
+          } catch (err) {
+            safeLog(
+              console.error,
+              `[agent-manager] wakeupHandler.scheduleWakeup failed for thread ${threadId}:`,
+              err,
+            );
+          }
+        }
+
         // Track session ID from init message
         if (msg.type === "session_init") {
           const wasStaleRetry = session.isStaleRetry;
@@ -1639,6 +1686,13 @@ export class AgentManager {
 
   setManagerMcpStatusProvider(provider: () => Promise<McpServerInfo[]>): void {
     this.managerMcpStatusProvider = provider;
+  }
+
+  /** Wire the WakeupManager so the agent-manager can defer ScheduleWakeup
+   *  tool calls to a host-side timer. See scheduler/wakeup-manager.ts and
+   *  the runStream tool_use observer below. */
+  setWakeupHandler(handler: WakeupHandler): void {
+    this.wakeupHandler = handler;
   }
 
   private async getMcpStatusForThread(

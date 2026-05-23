@@ -24,6 +24,7 @@ const execFileAsync = promisify(execFile);
 // Reference to clearThreadSession — set by main/index.ts
 let clearSessionFn: ((threadId: string) => void) | null = null;
 let getRunningIdsFn: (() => string[]) | null = null;
+let onThreadDeletedFn: ((threadId: string) => void) | null = null;
 
 export function setThreadSessionClearer(fn: (threadId: string) => void): void {
   clearSessionFn = fn;
@@ -31,6 +32,13 @@ export function setThreadSessionClearer(fn: (threadId: string) => void): void {
 
 export function setRunningThreadsGetter(fn: () => string[]): void {
   getRunningIdsFn = fn;
+}
+
+/** Register a hook that fires when a thread is fully deleted (not session
+ *  reset / eviction). Used to drop ScheduleWakeup timers tied to dead threads
+ *  so they don't fire later and resurrect the conversation. */
+export function setThreadDeletedHook(fn: (threadId: string) => void): void {
+  onThreadDeletedFn = fn;
 }
 
 /**
@@ -305,6 +313,7 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
       }
 
       clearSessionFn?.(threadId);
+      onThreadDeletedFn?.(threadId);
       return storage.deleteThread(threadId);
     },
   );

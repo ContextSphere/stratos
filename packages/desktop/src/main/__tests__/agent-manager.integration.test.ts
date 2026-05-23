@@ -329,6 +329,179 @@ describe("AgentManager (integration)", () => {
     });
   });
 
+  describe("ScheduleWakeup observer", () => {
+    it("forwards ScheduleWakeup tool_use to the wired WakeupHandler", async () => {
+      const mockStorage = {
+        getThread: vi.fn().mockResolvedValue({
+          id: "t-wake",
+          model: "claude-sonnet-4-6",
+          provider: "claude-code",
+          cwd: "/home/user",
+        }),
+        updateThread: vi.fn().mockResolvedValue(undefined),
+        clearPersistedSessionId: vi.fn(),
+        loadMessages: vi.fn().mockResolvedValue([]),
+        saveMessages: vi.fn(),
+      };
+
+      // Fake provider that yields a single ScheduleWakeup tool_use then exits.
+      const fakeProvider = {
+        name: "claude-code",
+        initialize: vi.fn().mockResolvedValue(undefined),
+        sendMessage: vi.fn().mockImplementation(async function* () {
+          yield {
+            type: "tool_use" as const,
+            toolName: "ScheduleWakeup",
+            toolCallId: "call-1",
+            input: {
+              delaySeconds: 60,
+              prompt: "fire-me-later",
+              reason: "test",
+            },
+          };
+        }),
+        interrupt: vi.fn().mockResolvedValue(undefined),
+        canResume: vi.fn().mockReturnValue(false),
+        getAvailableModels: vi.fn().mockResolvedValue([]),
+        discoverSlashCommands: vi.fn().mockResolvedValue([]),
+        dispose: vi.fn().mockResolvedValue(undefined),
+        getMcpServerStatus: vi.fn().mockResolvedValue([]),
+      };
+
+      const manager = new AgentManager(mockWindow);
+      (manager as any).storage = mockStorage;
+      // Pre-seed a session so runStream uses our fake provider instead of
+      // spinning up a real one.
+      (manager as any).sessions.set("t-wake", {
+        provider: fakeProvider,
+        interruptRequested: false,
+      });
+
+      const scheduleSpy = vi.fn();
+      manager.setWakeupHandler({
+        scheduleWakeup: scheduleSpy,
+        cancelForThread: vi.fn().mockReturnValue(0),
+      });
+
+      await (manager as any).runStream("t-wake", "ignored").catch(() => {});
+
+      expect(scheduleSpy).toHaveBeenCalledTimes(1);
+      expect(scheduleSpy).toHaveBeenCalledWith({
+        threadId: "t-wake",
+        delaySeconds: 60,
+        prompt: "fire-me-later",
+        reason: "test",
+      });
+      manager.dispose();
+    });
+
+    it("does NOT crash when WakeupHandler is unwired and ScheduleWakeup fires", async () => {
+      const mockStorage = {
+        getThread: vi.fn().mockResolvedValue({
+          id: "t-bare",
+          model: "claude-sonnet-4-6",
+          provider: "claude-code",
+          cwd: "/home/user",
+        }),
+        updateThread: vi.fn().mockResolvedValue(undefined),
+        clearPersistedSessionId: vi.fn(),
+        loadMessages: vi.fn().mockResolvedValue([]),
+        saveMessages: vi.fn(),
+      };
+
+      const fakeProvider = {
+        name: "claude-code",
+        initialize: vi.fn().mockResolvedValue(undefined),
+        sendMessage: vi.fn().mockImplementation(async function* () {
+          yield {
+            type: "tool_use" as const,
+            toolName: "ScheduleWakeup",
+            toolCallId: "call-1",
+            input: { delaySeconds: 60, prompt: "p" },
+          };
+        }),
+        interrupt: vi.fn().mockResolvedValue(undefined),
+        canResume: vi.fn().mockReturnValue(false),
+        getAvailableModels: vi.fn().mockResolvedValue([]),
+        discoverSlashCommands: vi.fn().mockResolvedValue([]),
+        dispose: vi.fn().mockResolvedValue(undefined),
+        getMcpServerStatus: vi.fn().mockResolvedValue([]),
+      };
+
+      const manager = new AgentManager(mockWindow);
+      (manager as any).storage = mockStorage;
+      (manager as any).sessions.set("t-bare", {
+        provider: fakeProvider,
+        interruptRequested: false,
+      });
+      // No wakeup handler wired
+
+      await expect(
+        (manager as any).runStream("t-bare", "ignored").catch(() => {}),
+      ).resolves.toBeUndefined();
+      manager.dispose();
+    });
+
+    it("ignores malformed ScheduleWakeup input (missing fields)", async () => {
+      const mockStorage = {
+        getThread: vi.fn().mockResolvedValue({
+          id: "t-bad",
+          model: "claude-sonnet-4-6",
+          provider: "claude-code",
+          cwd: "/home/user",
+        }),
+        updateThread: vi.fn().mockResolvedValue(undefined),
+        clearPersistedSessionId: vi.fn(),
+        loadMessages: vi.fn().mockResolvedValue([]),
+        saveMessages: vi.fn(),
+      };
+
+      const fakeProvider = {
+        name: "claude-code",
+        initialize: vi.fn().mockResolvedValue(undefined),
+        sendMessage: vi.fn().mockImplementation(async function* () {
+          // Missing prompt
+          yield {
+            type: "tool_use" as const,
+            toolName: "ScheduleWakeup",
+            toolCallId: "call-1",
+            input: { delaySeconds: 60 },
+          };
+          // Non-number delay
+          yield {
+            type: "tool_use" as const,
+            toolName: "ScheduleWakeup",
+            toolCallId: "call-2",
+            input: { delaySeconds: "soon", prompt: "p" },
+          };
+        }),
+        interrupt: vi.fn().mockResolvedValue(undefined),
+        canResume: vi.fn().mockReturnValue(false),
+        getAvailableModels: vi.fn().mockResolvedValue([]),
+        discoverSlashCommands: vi.fn().mockResolvedValue([]),
+        dispose: vi.fn().mockResolvedValue(undefined),
+        getMcpServerStatus: vi.fn().mockResolvedValue([]),
+      };
+
+      const manager = new AgentManager(mockWindow);
+      (manager as any).storage = mockStorage;
+      (manager as any).sessions.set("t-bad", {
+        provider: fakeProvider,
+        interruptRequested: false,
+      });
+
+      const scheduleSpy = vi.fn();
+      manager.setWakeupHandler({
+        scheduleWakeup: scheduleSpy,
+        cancelForThread: vi.fn().mockReturnValue(0),
+      });
+
+      await (manager as any).runStream("t-bad", "ignored").catch(() => {});
+      expect(scheduleSpy).not.toHaveBeenCalled();
+      manager.dispose();
+    });
+  });
+
   describe("stale model detection", () => {
     it("falls back to first available model and updates settings when saved model is not in cache", async () => {
       const mockStorage = {

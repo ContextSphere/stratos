@@ -82,6 +82,22 @@ export {
   listScheduleRuns,
 } from "./storage/schedule-runs.store";
 
+// Loop wakeups (host-side equivalent of the bundled CLI's ScheduleWakeup
+// in-memory poller — see WakeupManager in @stratosapp/desktop)
+export type { LoopWakeup } from "./types/loop-wakeup";
+export {
+  MIN_LOOP_DELAY_SECONDS,
+  MAX_LOOP_DELAY_SECONDS,
+  clampLoopDelaySeconds,
+} from "./types/loop-wakeup";
+export {
+  loadLoopWakeups,
+  saveLoopWakeups,
+  addLoopWakeup,
+  deleteLoopWakeup,
+  deleteLoopWakeupsForThread,
+} from "./storage/loop-wakeups.store";
+
 // Utils
 export type { WorktreeInfo } from "./utils/worktree";
 export {

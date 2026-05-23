@@ -52,6 +52,7 @@ import {
   unregisterThreadIpc,
   setThreadSessionClearer,
   setRunningThreadsGetter,
+  setThreadDeletedHook,
 } from "./threads/thread.ipc";
 import {
   registerGitHubIpc,
@@ -101,6 +102,7 @@ import {
   unregisterTerminalIpc,
 } from "./terminal/terminal-manager";
 import { SchedulerManager } from "./scheduler/scheduler";
+import { WakeupManager } from "./scheduler/wakeup-manager";
 import {
   registerSchedulerIpc,
   unregisterSchedulerIpc,
@@ -205,6 +207,7 @@ if (!gotLock) {
   let mainWindow: BrowserWindow | null = null;
   let agentManager: AgentManager | null = null;
   let schedulerManager: SchedulerManager | null = null;
+  let wakeupManager: WakeupManager | null = null;
   let managerSession: ManagerSession | null = null;
 
   function createWindow(): void {
@@ -338,6 +341,16 @@ if (!gotLock) {
     schedulerManager = new SchedulerManager(agentManager, storage, mainWindow);
     registerSchedulerIpc(schedulerManager);
     schedulerManager.initialize();
+
+    // ScheduleWakeup support (host-side equivalent of the bundled CLI's
+    // in-memory cron-task poller for /loop dynamic pacing). See
+    // scheduler/wakeup-manager.ts.
+    wakeupManager = new WakeupManager(agentManager);
+    agentManager.setWakeupHandler(wakeupManager);
+    wakeupManager.initialize();
+    setThreadDeletedHook((threadId: string) => {
+      wakeupManager?.cancelForThread(threadId);
+    });
 
     // Manager Agent
     managerSession = ManagerSession.initialize(
@@ -475,6 +488,7 @@ if (!gotLock) {
 
   app.on("will-quit", () => {
     globalShortcut.unregisterAll();
+    wakeupManager?.dispose();
   });
 
   app.on("window-all-closed", () => {
