@@ -1505,8 +1505,13 @@ export class AgentManager {
       }
     } catch (err: any) {
       caughtError = err;
-      // If the error is due to a stale session (process exited), retry once
-      // without the sessionId so a fresh session is started.
+      // If the error is due to a stale session, retry once without the
+      // sessionId so a fresh session is started. Two shapes we treat as stale:
+      //   - "process exited" / "exited with code": the SDK subprocess died.
+      //   - "no conversation found with session id": the CLI couldn't find
+      //     the JSONL for our persisted sessionId (transcript was deleted
+      //     or never existed). Without this branch the resume retries the
+      //     same dead session ID forever.
       // Do NOT retry if the user explicitly interrupted — provider.interrupt()
       // kills the subprocess which also raises "process exited", and we must
       // not mistake a user stop for a dead session.
@@ -1514,7 +1519,9 @@ export class AgentManager {
         session.sessionId &&
         !session.interruptRequested &&
         typeof err?.message === "string" &&
-        /process exited|exited with code/i.test(err.message);
+        /process exited|exited with code|no conversation found with session id/i.test(
+          err.message,
+        );
 
       if (isStaleSession) {
         console.warn(

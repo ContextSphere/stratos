@@ -372,28 +372,68 @@ export class ManagerSession {
       replyText = textBlocks.join("\n\n");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error("[manager-session] stream error:", message);
-      this.sendToRenderer(
-        IPC_CHANNELS.STREAM_MESSAGE,
-        {
-          type: "error",
-          message,
-          _streamId: `manager-${Date.now()}`,
-        },
-        threadId,
-      );
 
-      // Reset provider on error so it reinitializes next time.
-      // CRITICAL: do NOT clear this.sessionId — the next send should still
-      // resume the original SDK session so prior conversation context
-      // survives the error. Overwriting it here caused every error to
-      // fork a brand-new session, orphaning the transcript and making
-      // the manager appear to "forget" everything.
-      if (this.provider) {
+      // Stale session: the CLI couldn't find the JSONL for our persisted
+      // sessionId. The transcript is gone — keeping the sessionId would
+      // brick the manager forever (every resume retries the same dead ID).
+      // Clear it (memory + storage) so the next send starts a fresh session.
+      const isStaleSession =
+        !!this.sessionId &&
+        /no conversation found with session id|process exited|exited with code/i.test(
+          message,
+        );
+
+      if (isStaleSession) {
+        console.warn(
+          "[manager-session] stale session, clearing sessionId:",
+          message,
+        );
+        this.sessionId = undefined;
         try {
-          await this.provider.dispose();
+          this.storage.updateThread(threadId, { sessionId: undefined });
         } catch {}
-        this.provider = null;
+        if (this.provider) {
+          try {
+            await this.provider.dispose();
+          } catch {}
+          this.provider = null;
+        }
+        // Surface a friendlier message — the next send will start a fresh
+        // SDK session because sessionId is now cleared.
+        this.sendToRenderer(
+          IPC_CHANNELS.STREAM_MESSAGE,
+          {
+            type: "error",
+            message:
+              "Manager session was reset (the prior transcript is no longer available). Please resend your message — a new session will start automatically.",
+            _streamId: `manager-${Date.now()}`,
+          },
+          threadId,
+        );
+      } else {
+        console.error("[manager-session] stream error:", message);
+        this.sendToRenderer(
+          IPC_CHANNELS.STREAM_MESSAGE,
+          {
+            type: "error",
+            message,
+            _streamId: `manager-${Date.now()}`,
+          },
+          threadId,
+        );
+
+        // Reset provider on error so it reinitializes next time.
+        // CRITICAL: do NOT clear this.sessionId here — the next send should
+        // still resume the original SDK session so prior conversation context
+        // survives the error. Overwriting it here caused every error to
+        // fork a brand-new session, orphaning the transcript and making
+        // the manager appear to "forget" everything.
+        if (this.provider) {
+          try {
+            await this.provider.dispose();
+          } catch {}
+          this.provider = null;
+        }
       }
     } finally {
       this.activeStream = false;
