@@ -6,7 +6,12 @@ import {
   type ProviderType,
 } from "./utils/modes";
 
-const KNOWN_PROVIDERS = new Set<string>(["claude-code", "codex", "opencode"]);
+const KNOWN_PROVIDERS = new Set<string>([
+  "claude-code",
+  "codex",
+  "opencode",
+  "copilot",
+]);
 function normalizeProvider(p: string | undefined): ProviderType {
   return (p && KNOWN_PROVIDERS.has(p) ? p : "claude-code") as ProviderType;
 }
@@ -148,7 +153,7 @@ function AppInner(): React.ReactElement {
       if (Array.isArray(info.enabledProviders)) {
         setEnabledProviders(info.enabledProviders as ProviderType[]);
       } else {
-        setEnabledProviders(["claude-code", "codex", "opencode"]);
+        setEnabledProviders(["claude-code", "codex", "opencode", "copilot"]);
       }
     });
   }, []);

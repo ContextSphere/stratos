@@ -64,7 +64,7 @@ export function createSchedulerHandlers(deps: SchedulerDeps): HandlerDef[] {
           .optional()
           .describe("Folder by exact path (alternative to folder)"),
         provider: z
-          .enum(["claude-code", "codex", "opencode"])
+          .enum(["claude-code", "codex", "opencode", "copilot"])
           .optional()
           .describe("Agent provider (default: claude-code)"),
         model: z

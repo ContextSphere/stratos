@@ -84,7 +84,7 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
           .describe("Absolute path to the working directory"),
         prompt: z.string().describe("Initial prompt to send to the agent"),
         provider: z
-          .enum(["claude-code", "codex", "opencode"])
+          .enum(["claude-code", "codex", "opencode", "copilot"])
           .optional()
           .describe("Agent provider (default: claude-code)"),
         model: z
@@ -491,7 +491,7 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
               .optional()
               .describe("Filter by working directory path"),
             provider: z
-              .enum(["claude-code", "codex", "opencode"])
+              .enum(["claude-code", "codex", "opencode", "copilot"])
               .optional()
               .describe("Filter by provider"),
           })
