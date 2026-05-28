@@ -2,9 +2,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-export type ProviderType = "claude-code" | "codex" | "opencode";
+export type ProviderType = "claude-code" | "codex" | "opencode" | "copilot";
 
-const ALL_PROVIDERS: ProviderType[] = ["claude-code", "codex", "opencode"];
+const ALL_PROVIDERS: ProviderType[] = [
+  "claude-code",
+  "codex",
+  "opencode",
+  "copilot",
+];
 
 interface StratosConfig {
   providers?: ProviderType[];

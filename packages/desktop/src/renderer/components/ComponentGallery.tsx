@@ -9,7 +9,7 @@ import {
   TaskCard,
 } from "@stratosapp/ui";
 import type { ToolCall, TaskInfo } from "@stratosapp/ui";
-type ProviderType = "claude-code" | "codex" | "opencode";
+type ProviderType = "claude-code" | "codex" | "opencode" | "copilot";
 type AgentMode =
   | "plan"
   | "default"

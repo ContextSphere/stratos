@@ -49,6 +49,7 @@ export { READ_ONLY_TOOLS } from "./providers/types";
 export { ClaudeCodeProvider } from "./providers/claude-code.provider";
 export { CodexProvider } from "./providers/codex.provider";
 export { OpencodeProvider } from "./providers/opencode.provider";
+export { CopilotProvider } from "./providers/copilot.provider";
 export { createProvider, getAvailableProviders } from "./providers/index";
 
 // Storage

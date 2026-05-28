@@ -7,7 +7,7 @@ export type AgentMode =
   | "bypassPermissions"
   | "fullAccess";
 
-export type ProviderType = "claude-code" | "codex" | "opencode";
+export type ProviderType = "claude-code" | "codex" | "opencode" | "copilot";
 
 export function normalizeMode(
   mode: string | undefined,
@@ -16,6 +16,9 @@ export function normalizeMode(
   if (!mode || mode === "execute") return "default";
   if (provider === "codex") {
     if (mode === "acceptEdits") return "default";
+    if (mode === "bypassPermissions") return "fullAccess";
+  }
+  if (provider === "copilot") {
     if (mode === "bypassPermissions") return "fullAccess";
   }
   if (
@@ -36,6 +39,7 @@ const PROVIDER_AGENT_MODES: Record<ProviderType, AgentMode[]> = {
   "claude-code": ["plan", "default", "acceptEdits", "bypassPermissions"],
   codex: ["plan", "default", "fullAccess"],
   opencode: ["default", "bypassPermissions"],
+  copilot: ["plan", "default", "acceptEdits", "fullAccess"],
 };
 
 export function getAgentModes(provider: ProviderType): AgentMode[] {

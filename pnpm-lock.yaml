@@ -66,6 +66,9 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.2.114
         version: 0.2.114(zod@4.3.6)
+      '@github/copilot-sdk':
+        specifier: 1.0.0-beta.9
+        version: 1.0.0-beta.9
       '@openai/codex-sdk':
         specifier: ^0.111.0
         version: 0.111.0
@@ -84,6 +87,9 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.2.114
         version: 0.2.114(zod@4.3.6)
+      '@github/copilot-sdk':
+        specifier: 1.0.0-beta.9
+        version: 1.0.0-beta.9
       '@monaco-editor/react':
         specifier: ^4.7.0
         version: 4.7.0(monaco-editor@0.55.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -919,6 +925,62 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@github/copilot-darwin-arm64@1.0.55-7':
+    resolution: {integrity: sha512-QReU4F5+W0x/Nuc6qO+xYPeNnRjuHIIAeMBc1S+RFQ0T+YWynxRzNHGs9ZkUiIcLJ1F/y8GDq6sq7760Cn+onQ==}
+    cpu: [arm64]
+    os: [darwin]
+    hasBin: true
+
+  '@github/copilot-darwin-x64@1.0.55-7':
+    resolution: {integrity: sha512-qQ0d+XyvIPbNiaIydHBSCTQfWK5s0x1XnlrUKSzadgOnsFobGeldLSKtB159zJEiz0F/in5ythiUGJjWoAQVrA==}
+    cpu: [x64]
+    os: [darwin]
+    hasBin: true
+
+  '@github/copilot-linux-arm64@1.0.55-7':
+    resolution: {integrity: sha512-+2zlHahK3fUfkrnlHqbdQsZMPZwRfchoTxDZd9UHbEhQF7eNLzYN+7frWs6AZujU+h/1i92+mcLT18AQXI3KxQ==}
+    cpu: [arm64]
+    os: [linux]
+    hasBin: true
+
+  '@github/copilot-linux-x64@1.0.55-7':
+    resolution: {integrity: sha512-SGmvWcJHIKDIsjYZdFQloGw3Re6r2N1Zv1VuB1yV1ClVqfG5i5pTvai6vzX8d3WgGgRzrkLksDrzZKR27zJZ7A==}
+    cpu: [x64]
+    os: [linux]
+    hasBin: true
+
+  '@github/copilot-linuxmusl-arm64@1.0.55-7':
+    resolution: {integrity: sha512-rJkZLvz4KeGoLgyX6gcONgTNfFxeoQvN4jaAXlbD1nFP3hJbLTuY0CB4fBHmZWktrPkRL/j5aDGxrcIcl+Xg3A==}
+    cpu: [arm64]
+    os: [linux]
+    hasBin: true
+
+  '@github/copilot-linuxmusl-x64@1.0.55-7':
+    resolution: {integrity: sha512-uPb08qgJHY1QW2YhA1OBJ9PB0CDwCvtuttWbeZ+AW+qfFVsvBpARU1cdEl/xT4IXMhBFoJiePv3BnLGjVZtoWA==}
+    cpu: [x64]
+    os: [linux]
+    hasBin: true
+
+  '@github/copilot-sdk@1.0.0-beta.9':
+    resolution: {integrity: sha512-D4yiGL4/faFCjL7bozhX7bgxt/x1wp2LZ2p9Tw+xrA5hbcLh5Be5kPen+bFA8NbVfgt1G2djDYFZlrZjXXmcBw==}
+    engines: {node: '>=20.0.0'}
+
+  '@github/copilot-win32-arm64@1.0.55-7':
+    resolution: {integrity: sha512-mb4Sg2sJjmK9Rq8XCRuhoIOjUScB5p2Ct9ZtTbC3ipvONWMOMjYPbLvC8K9GAHcYcHLdv98hvzv3+qjBhb5tZQ==}
+    cpu: [arm64]
+    os: [win32]
+    hasBin: true
+
+  '@github/copilot-win32-x64@1.0.55-7':
+    resolution: {integrity: sha512-GL9jAtkn2Kx4IO9ZfTiMC3LFd539KuuOx3uOIKciWKMuCvcfct0rdVkXlDr+EnrmPzu1A4PavcJ0RScpI39jUQ==}
+    cpu: [x64]
+    os: [win32]
+    hasBin: true
+
+  '@github/copilot@1.0.55-7':
+    resolution: {integrity: sha512-TczFrIaHH2sel6FM007H4FzT+Ipkj++I5u8Vx2ECWz9u24H7WOx/RpWcp6ExnSY1KSK1MtXaGcniAuqVi8Khaw==}
+    hasBin: true
 
   '@hapi/boom@10.0.1':
     resolution: {integrity: sha512-ERcCZaEjdH3OgSJlyjVk8pHIFeus91CjKP3v+MpgBNp5IvGzP2l/bRiD78nqYcKPaZdbKkK5vDBVPd2ohHBlsA==}
@@ -1870,10 +1932,6 @@ packages:
         optional: true
       link-preview-js:
         optional: true
-
-  '@whiskeysockets/libsignal-node@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67':
-    resolution: {tarball: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67}
-    version: 2.0.1
 
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
@@ -3545,6 +3603,10 @@ packages:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
 
+  libsignal@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7:
+    resolution: {tarball: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7}
+    version: 6.0.0
+
   lightningcss-android-arm64@1.31.1:
     resolution: {integrity: sha512-HXJF3x8w9nQ4jbXRiNppBCqeZPIAfUo8zE/kOEGbW5NZvGc/K7nMxbhIr+YlFlHW5mpbg/YFPdbnCh1wAXCKFg==}
     engines: {node: '>= 12.0.0'}
@@ -5141,6 +5203,10 @@ packages:
     resolution: {integrity: sha512-C+r0eKJUIfiDIfwJhria30+TYWPtuHJXHtI7J0YlOmKAo7ogxP20T0zxB7HZQIFhIyvoBPwWskjxrvAtfjyZfA==}
     engines: {node: '>=14.0.0'}
 
+  vscode-jsonrpc@8.2.1:
+    resolution: {integrity: sha512-kdjOSJ2lLIn7r1rtrMbbNCHjyMPfRnowdKjBQ+mGq6NAW5QY2bEZC/khaC5OR8svbbjvLEaIXkOq45e2X9BIbQ==}
+    engines: {node: '>=14.0.0'}
+
   vscode-languageserver-protocol@3.17.5:
     resolution: {integrity: sha512-mb1bvRJN8SVznADSGWM9u/b07H7Ecg0I3OgXDuLdn307rl/J3A9YD6/eYOssqhecL27hK1IPZAsaqh00i/Jljg==}
 
@@ -5881,6 +5947,49 @@ snapshots:
     dependencies:
       '@eslint/core': 0.17.0
       levn: 0.4.1
+
+  '@github/copilot-darwin-arm64@1.0.55-7':
+    optional: true
+
+  '@github/copilot-darwin-x64@1.0.55-7':
+    optional: true
+
+  '@github/copilot-linux-arm64@1.0.55-7':
+    optional: true
+
+  '@github/copilot-linux-x64@1.0.55-7':
+    optional: true
+
+  '@github/copilot-linuxmusl-arm64@1.0.55-7':
+    optional: true
+
+  '@github/copilot-linuxmusl-x64@1.0.55-7':
+    optional: true
+
+  '@github/copilot-sdk@1.0.0-beta.9':
+    dependencies:
+      '@github/copilot': 1.0.55-7
+      vscode-jsonrpc: 8.2.1
+      zod: 4.3.6
+
+  '@github/copilot-win32-arm64@1.0.55-7':
+    optional: true
+
+  '@github/copilot-win32-x64@1.0.55-7':
+    optional: true
+
+  '@github/copilot@1.0.55-7':
+    dependencies:
+      detect-libc: 2.1.2
+    optionalDependencies:
+      '@github/copilot-darwin-arm64': 1.0.55-7
+      '@github/copilot-darwin-x64': 1.0.55-7
+      '@github/copilot-linux-arm64': 1.0.55-7
+      '@github/copilot-linux-x64': 1.0.55-7
+      '@github/copilot-linuxmusl-arm64': 1.0.55-7
+      '@github/copilot-linuxmusl-x64': 1.0.55-7
+      '@github/copilot-win32-arm64': 1.0.55-7
+      '@github/copilot-win32-x64': 1.0.55-7
 
   '@hapi/boom@10.0.1':
     dependencies:
@@ -6824,7 +6933,7 @@ snapshots:
       '@cacheable/node-cache': 1.7.6
       '@hapi/boom': 9.1.4
       async-mutex: 0.5.0
-      libsignal: '@whiskeysockets/libsignal-node@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67'
+      libsignal: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7
       lru-cache: 11.3.5
       music-metadata: 11.12.3
       p-queue: 9.1.2
@@ -6838,11 +6947,6 @@ snapshots:
       - bufferutil
       - supports-color
       - utf-8-validate
-
-  '@whiskeysockets/libsignal-node@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67':
-    dependencies:
-      curve25519-js: 0.0.4
-      protobufjs: 7.5.5
 
   '@xmldom/xmldom@0.8.13': {}
 
@@ -8797,6 +8901,11 @@ snapshots:
     dependencies:
       prelude-ls: 1.2.1
       type-check: 0.4.0
+
+  libsignal@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7:
+    dependencies:
+      curve25519-js: 0.0.4
+      protobufjs: 7.5.5
 
   lightningcss-android-arm64@1.31.1:
     optional: true
@@ -10804,6 +10913,8 @@ snapshots:
       - yaml
 
   vscode-jsonrpc@8.2.0: {}
+
+  vscode-jsonrpc@8.2.1: {}
 
   vscode-languageserver-protocol@3.17.5:
     dependencies:

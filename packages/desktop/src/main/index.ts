@@ -64,6 +64,10 @@ import {
 } from "./integrations/claude.ipc";
 import { registerCodexIpc, unregisterCodexIpc } from "./integrations/codex.ipc";
 import {
+  registerCopilotIpc,
+  unregisterCopilotIpc,
+} from "./integrations/copilot.ipc";
+import {
   getEnabledProviders,
   isProviderEnabled,
 } from "./config/stratos-config";
@@ -320,6 +324,13 @@ if (!gotLock) {
     } else {
       console.log(
         "[stratos] Codex provider disabled via ~/.stratos/config.json",
+      );
+    }
+    if (isProviderEnabled("copilot")) {
+      registerCopilotIpc(mainWindow);
+    } else {
+      console.log(
+        "[stratos] Copilot provider disabled via ~/.stratos/config.json",
       );
     }
     ipcMain.handle(IPC_CHANNELS.WHATSAPP_IS_ENABLED, () => isWhatsAppEnabled());

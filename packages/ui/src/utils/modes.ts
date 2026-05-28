@@ -7,7 +7,7 @@ export type AgentMode =
   | "bypassPermissions"
   | "fullAccess";
 
-export type ProviderType = "claude-code" | "codex" | "opencode";
+export type ProviderType = "claude-code" | "codex" | "opencode" | "copilot";
 
 export interface ModeConfig {
   label: string;
@@ -60,6 +60,7 @@ const PROVIDER_AGENT_MODES: Record<ProviderType, AgentMode[]> = {
   "claude-code": ["plan", "default", "acceptEdits", "bypassPermissions"],
   codex: ["plan", "default", "fullAccess"],
   opencode: ["default", "bypassPermissions"],
+  copilot: ["plan", "default", "acceptEdits", "fullAccess"],
 };
 
 const PROVIDER_MODE_CONFIG_OVERRIDES: Partial<
@@ -70,6 +71,26 @@ const PROVIDER_MODE_CONFIG_OVERRIDES: Partial<
       label: "Default permissions",
       description:
         "Lets Codex edit and run commands in the workspace. Prompts before network or actions outside that scope.",
+    },
+  },
+  copilot: {
+    plan: {
+      label: "Plan",
+      description: "Read-only. Copilot plans without modifying files.",
+    },
+    default: {
+      label: "Interactive",
+      description:
+        "Prompts before file writes, shell commands, network access, and MCP tool calls.",
+    },
+    acceptEdits: {
+      label: "Accept Edits",
+      description:
+        "Auto-approves file writes. Still prompts for shell, network, and MCP.",
+    },
+    fullAccess: {
+      label: "Autopilot",
+      description: "Fully autonomous. Skips all permission prompts. Risky.",
     },
   },
 };

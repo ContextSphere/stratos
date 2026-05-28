@@ -185,7 +185,7 @@ const api = {
     isWorktree: boolean;
     worktreeName: string | null;
     cdpPort: number | null;
-    enabledProviders: ("claude-code" | "codex" | "opencode")[];
+    enabledProviders: ("claude-code" | "codex" | "opencode" | "copilot")[];
   }> => ipcRenderer.invoke(IPC_CHANNELS.APP_INFO),
 
   openExternal: (url: string): Promise<void> =>

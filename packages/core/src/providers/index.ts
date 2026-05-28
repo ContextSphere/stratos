@@ -2,6 +2,7 @@ import type { AgentProvider } from "./types";
 import { ClaudeCodeProvider } from "./claude-code.provider";
 import { CodexProvider } from "./codex.provider";
 import { OpencodeProvider } from "./opencode.provider";
+import { CopilotProvider } from "./copilot.provider";
 
 export type {
   AgentProvider,
@@ -18,6 +19,7 @@ const registry: Record<string, ProviderConstructor> = {
   "claude-code": ClaudeCodeProvider,
   codex: CodexProvider,
   opencode: OpencodeProvider,
+  copilot: CopilotProvider,
 };
 
 export function createProvider(name: string): AgentProvider {

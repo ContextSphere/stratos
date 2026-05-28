@@ -68,6 +68,12 @@ export const IPC_CHANNELS = {
   CODEX_DISCONNECT: "integration:codex:disconnect",
   CODEX_GET_CONNECTION: "integration:codex:get-connection",
 
+  // Copilot — connection management (gh copilot CLI)
+  COPILOT_CHECK_CLI: "integration:copilot:check-cli",
+  COPILOT_CONNECT: "integration:copilot:connect",
+  COPILOT_DISCONNECT: "integration:copilot:disconnect",
+  COPILOT_GET_CONNECTION: "integration:copilot:get-connection",
+
   // Opencode — provider key management
   OPENCODE_GET_PROVIDER_KEYS: "integration:opencode:get-provider-keys",
   OPENCODE_SET_PROVIDER_KEY: "integration:opencode:set-provider-key",

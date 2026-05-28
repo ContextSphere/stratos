@@ -15,6 +15,9 @@ export function normalizeMode(
     if (mode === "acceptEdits") return "default";
     if (mode === "bypassPermissions") return "fullAccess";
   }
+  if (provider === "copilot") {
+    if (mode === "bypassPermissions") return "fullAccess";
+  }
   if (
     [
       "plan",
@@ -58,7 +61,7 @@ export interface ThreadWorktree {
 }
 
 /** Supported provider identifiers */
-export type ProviderType = "claude-code" | "codex" | "opencode";
+export type ProviderType = "claude-code" | "codex" | "opencode" | "copilot";
 
 export interface Thread {
   id: string;
