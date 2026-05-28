@@ -1272,6 +1272,32 @@ export class CopilotProvider implements AgentProvider {
     this.sessionId = session.sessionId;
     ctx.sessionId = session.sessionId;
 
+    // OpenAI-family models hide reasoning unless we explicitly request a
+    // reasoning summary. `setModel` is the only RPC that accepts the
+    // `reasoningSummary` field; the SDK's TypeScript types don't expose
+    // it yet, so cast. Best-effort — models without reasoning summary
+    // support reject the call, which we ignore.
+    const modelForReasoning = params.model ?? this.config.model;
+    if (modelForReasoning) {
+      try {
+        await (
+          session as unknown as {
+            setModel: (
+              id: string,
+              opts: Record<string, unknown>,
+            ) => Promise<void>;
+          }
+        ).setModel(modelForReasoning, {
+          ...(reasoningEffort ? { reasoningEffort } : {}),
+          reasoningSummary: "detailed",
+        });
+      } catch (err) {
+        console.warn(
+          `[copilot] enabling reasoning summary failed: ${(err as Error)?.message ?? err}`,
+        );
+      }
+    }
+
     // Emit initial session_init synthesized from what we know now; events
     // for tools/commands/mcp will refine via the cached fields.
     const init = emitInitIfReady(ctx);
