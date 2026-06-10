@@ -414,4 +414,189 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
 
     expect(mockInterrupt).toHaveBeenCalled();
   });
+
+  describe("streaming-input prompt lifecycle", () => {
+    // Regression: the prompt generator handed to the SDK previously returned
+    // immediately after its one yield, causing the SDK transport to send
+    // stdin EOF to the Claude CLI subprocess mid-turn. The CLI would then set
+    // inputClosed=true, and every subsequent can_use_tool request from the
+    // CLI would synchronously fail with "Stream closed", surfacing in the UI
+    // as: "Tool permission request failed: Error: Stream closed".
+    //
+    // Fix: keep the generator parked on a Promise until the for-await loop
+    // on the output side terminates (success, error, or interrupt).
+
+    // Capture only the FIRST query() call (the per-turn streaming-input one).
+    // sendMessage also spins up a background control query at end-of-turn
+    // which would otherwise overwrite our capture.
+    function captureFirstPromptFromQuery() {
+      type AsyncIterableLike<T> = {
+        [Symbol.asyncIterator]: () => AsyncIterator<T>;
+      };
+      let captured: AsyncIterator<unknown> | undefined;
+      mockQuery.mockImplementation(
+        ({ prompt }: { prompt: AsyncIterableLike<unknown> }) => {
+          if (captured === undefined) {
+            captured = prompt[Symbol.asyncIterator]();
+          }
+          return makeStream([
+            {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-stream",
+              tools: [],
+              slash_commands: [],
+            },
+          ]);
+        },
+      );
+      return () => captured;
+    }
+
+    it("prompt generator stays parked after yielding the user message", async () => {
+      const getGen = captureFirstPromptFromQuery();
+      const provider = new ClaudeCodeProvider();
+      await provider.initialize({});
+
+      // Drain the turn — the for-await loop runs, then its finally releases
+      // the parked generator. We inspect the generator state below.
+      await collectMessages(provider, "hi");
+
+      const gen = getGen();
+      expect(gen).toBeDefined();
+
+      // First yield: the initial user message.
+      const first = await gen!.next();
+      expect(first.done).toBe(false);
+      const value = first.value as {
+        type: string;
+        message: { content: unknown };
+      };
+      expect(value.type).toBe("user");
+      expect(value.message.content).toBe("hi");
+
+      // After the for-await finally released the park, the generator must
+      // complete on the next pull (rather than yielding another value).
+      const second = await gen!.next();
+      expect(second.done).toBe(true);
+    });
+
+    it("prompt generator does NOT complete before for-await loop finishes", async () => {
+      // Build an SDK stream that parks on its second event so the for-await
+      // loop in sendMessage stays live. The prompt generator must still be
+      // parked at that point — that's the entire point of the fix.
+      let resolveStream: (() => void) | undefined;
+      type AsyncIterableLike<T> = {
+        [Symbol.asyncIterator]: () => AsyncIterator<T>;
+      };
+      let capturedPrompt: AsyncIterator<unknown> | undefined;
+      mockQuery.mockImplementation(
+        ({ prompt }: { prompt: AsyncIterableLike<unknown> }) => {
+          if (capturedPrompt === undefined) {
+            capturedPrompt = prompt[Symbol.asyncIterator]();
+          }
+          return {
+            [Symbol.asyncIterator]: async function* () {
+              yield {
+                type: "system",
+                subtype: "init",
+                session_id: "sess-park",
+                tools: [],
+                slash_commands: [],
+              };
+              await new Promise<void>((r) => {
+                resolveStream = r;
+              });
+            },
+            interrupt: vi.fn().mockResolvedValue(undefined),
+          };
+        },
+      );
+
+      const provider = new ClaudeCodeProvider();
+      await provider.initialize({});
+
+      const turn = provider.sendMessage({
+        prompt: "park me",
+        permissionHandler: autoApprove,
+      });
+
+      // Drive the outer generator past its first yield so the inner for-await
+      // is actively iterating the mocked SDK stream.
+      await turn.next();
+
+      // Consume the first yield from the prompt generator (the user message).
+      expect(capturedPrompt).toBeDefined();
+      const first = await capturedPrompt!.next();
+      expect(first.done).toBe(false);
+
+      // The second pull must hit `await parked` and remain pending because
+      // the for-await loop in sendMessage hasn't finished yet — its mocked
+      // SDK stream is suspended on resolveStream.
+      const nextP = capturedPrompt!.next();
+      const settled = await Promise.race([
+        nextP.then(() => "settled" as const),
+        new Promise<"pending">((r) => setTimeout(() => r("pending"), 50)),
+      ]);
+      expect(settled).toBe("pending");
+
+      // Release the inner SDK stream so the for-await loop can complete,
+      // which releases the parked generator.
+      resolveStream?.();
+      await turn.return?.(undefined);
+      // Await the parked next() so vitest doesn't flag an unhandled promise.
+      await nextP.catch(() => undefined);
+    });
+
+    it("interrupt releases the parked prompt generator", async () => {
+      let resolveStream: (() => void) | undefined;
+      type AsyncIterableLike<T> = {
+        [Symbol.asyncIterator]: () => AsyncIterator<T>;
+      };
+      let capturedPrompt: AsyncIterator<unknown> | undefined;
+      mockQuery.mockImplementation(
+        ({ prompt }: { prompt: AsyncIterableLike<unknown> }) => {
+          if (capturedPrompt === undefined) {
+            capturedPrompt = prompt[Symbol.asyncIterator]();
+          }
+          return {
+            [Symbol.asyncIterator]: async function* () {
+              yield {
+                type: "system",
+                subtype: "init",
+                session_id: "sess-irq",
+                tools: [],
+                slash_commands: [],
+              };
+              await new Promise<void>((r) => {
+                resolveStream = r;
+              });
+            },
+            interrupt: vi.fn().mockResolvedValue(undefined),
+          };
+        },
+      );
+
+      const provider = new ClaudeCodeProvider();
+      await provider.initialize({});
+
+      const turn = provider.sendMessage({
+        prompt: "go",
+        permissionHandler: autoApprove,
+      });
+      await turn.next();
+      // Consume the first yield (the user message).
+      await capturedPrompt!.next();
+
+      // Calling interrupt() must release the parked generator without
+      // needing the for-await loop to drain.
+      await provider.interrupt();
+      const after = await capturedPrompt!.next();
+      expect(after.done).toBe(true);
+
+      // Clean up the test SDK stream so vitest doesn't hang.
+      resolveStream?.();
+      await turn.return?.(undefined);
+    });
+  });
 });

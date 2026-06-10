@@ -123,6 +123,13 @@ export class ClaudeCodeProvider implements AgentProvider {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private controlQuery?: any;
   private controlCleanup?: () => void;
+  // Releases the parked streamingPrompt generator at end-of-turn so the SDK's
+  // stdin pipe stays open while the CLI is still emitting control_requests
+  // (can_use_tool, etc.). If the generator returned immediately after its one
+  // yield, the SDK would call stdin.end() on the CLI, the CLI would set
+  // inputClosed=true, and every subsequent canUseTool would synchronously
+  // fail with "Tool permission request failed: Error: Stream closed".
+  private releaseStreamingPrompt?: () => void;
   // Auto-close the control query after 5 minutes of inactivity. Each new turn
   // cancels and resets this timer. Prevents idle claude subprocesses from
   // accumulating when the user hasn't interacted with a thread for a while.
@@ -272,13 +279,30 @@ export class ClaudeCodeProvider implements AgentProvider {
     // Always use streaming-input mode so SDK control requests
     // (getContextUsage, interrupt, mcp toggles) remain available
     // throughout the turn — not just when MCP/images are involved.
+    //
+    // The generator must NOT return after the single yield: the SDK's
+    // transport closes stdin to the CLI subprocess as soon as the prompt
+    // generator is exhausted. Once the CLI sees stdin EOF it sets
+    // inputClosed=true, and every subsequent control_request it tries to
+    // send (notably can_use_tool) fails with "Stream closed", which the
+    // CLI surfaces back as a per-tool denial:
+    //     "Tool permission request failed: Error: Stream closed"
+    // To keep the pipe open for the entire turn, we park the generator on
+    // a Promise that resolves only when the for-await loop below finishes
+    // (success, error, or interrupt). See releaseStreamingPrompt.
+    this.releaseStreamingPrompt?.();
+    const parked = new Promise<void>((resolve) => {
+      this.releaseStreamingPrompt = resolve;
+    });
+    const initialMessage = {
+      type: "user" as const,
+      message: { role: "user" as const, content: messageContent },
+      parent_tool_use_id: null,
+      session_id: "",
+    };
     async function* streamingPrompt() {
-      yield {
-        type: "user" as const,
-        message: { role: "user" as const, content: messageContent },
-        parent_tool_use_id: null,
-        session_id: "",
-      };
+      yield initialMessage;
+      await parked;
     }
     this.currentQuery = query({ prompt: streamingPrompt(), options });
 
@@ -290,20 +314,29 @@ export class ClaudeCodeProvider implements AgentProvider {
       pendingToolIds: new Map<number, string>(),
     };
 
-    for await (const msg of this.currentQuery) {
-      if (params.traceCallback) {
-        params.traceCallback({
-          timestamp: Date.now(),
-          sessionId: this.sessionId,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          messageUuid: (msg as any).uuid,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          parentToolUseId: (msg as any).parent_tool_use_id,
-          messageType: msg.type,
-          data: truncateForTrace(msg),
-        });
+    try {
+      for await (const msg of this.currentQuery) {
+        if (params.traceCallback) {
+          params.traceCallback({
+            timestamp: Date.now(),
+            sessionId: this.sessionId,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            messageUuid: (msg as any).uuid,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            parentToolUseId: (msg as any).parent_tool_use_id,
+            messageType: msg.type,
+            data: truncateForTrace(msg),
+          });
+        }
+        yield* this.transformMessage(msg, streamCtx);
       }
-      yield* this.transformMessage(msg, streamCtx);
+    } finally {
+      // Release the parked generator so the SDK transport tears down cleanly.
+      // Must run on every exit path (normal completion, thrown error, or
+      // caller aborting the async iterator) — otherwise the generator stays
+      // suspended and the subprocess lingers.
+      this.releaseStreamingPrompt?.();
+      this.releaseStreamingPrompt = undefined;
     }
 
     // The turn is done — the query's transport is now closed.
@@ -431,6 +464,11 @@ export class ClaudeCodeProvider implements AgentProvider {
     ) {
       await this.currentQuery.interrupt();
     }
+    // Unblock the parked streamingPrompt generator so the SDK transport
+    // can tear down cleanly. The for-await loop's finally also handles
+    // this, but interrupt() may be called before/outside that scope.
+    this.releaseStreamingPrompt?.();
+    this.releaseStreamingPrompt = undefined;
   }
 
   canResume(sessionId: string): boolean {
@@ -709,6 +747,8 @@ export class ClaudeCodeProvider implements AgentProvider {
     this.closeControlQuery();
     this.sessionId = undefined;
     this.currentQuery = undefined;
+    this.releaseStreamingPrompt?.();
+    this.releaseStreamingPrompt = undefined;
   }
 
   private *transformMessage(
