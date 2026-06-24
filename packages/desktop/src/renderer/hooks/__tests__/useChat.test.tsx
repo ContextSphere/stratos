@@ -494,6 +494,66 @@ describe("useChat — handleInteractiveResponse", () => {
   });
 });
 
+describe("useChat — streaming throttle", () => {
+  // Regression: the active-thread UI was stuck at the first text fragment when
+  // events arrived faster than the batching window. A pure debounce reset the
+  // timer on every event and never fired during sustained streams. The
+  // throttle must fire periodically even while events keep arriving.
+
+  it("renders interim updates during a sustained burst of stream events", async () => {
+    vi.useFakeTimers();
+
+    let streamHandler:
+      | ((data: unknown, threadId: string | null) => void)
+      | null = null;
+    mockApi.onStreamMessage.mockImplementation((cb) => {
+      streamHandler = cb;
+    });
+
+    mockApi.threadsLoadMessages.mockResolvedValue([]);
+
+    const { result } = renderUseChat("thread-1");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(streamHandler).not.toBeNull();
+
+    // Bootstrap streaming state via the user_message synthetic event.
+    await act(async () => {
+      streamHandler!(
+        { type: "user_message", content: "hi", _streamId: "s1" },
+        "thread-1",
+      );
+    });
+
+    // Simulate 30 text chunks arriving every 10 ms (faster than the 50 ms
+    // window). A debounce would never fire; a throttle must produce at
+    // least one interim render before the burst ends.
+    await act(async () => {
+      for (let i = 0; i < 30; i++) {
+        streamHandler!(
+          { type: "text", content: `${i} `, _streamId: "s1" },
+          "thread-1",
+        );
+        vi.advanceTimersByTime(10);
+      }
+      await Promise.resolve();
+    });
+
+    // After 300 ms of sustained events we must have seen interim content —
+    // not the empty initial state, not the final post-burst state.
+    const assistant = result.current.messages.find(
+      (m) => m.role === "assistant",
+    );
+    expect(assistant).toBeDefined();
+    // At least the first few fragments are visible mid-burst.
+    expect(assistant!.content.length).toBeGreaterThan(0);
+    expect(assistant!.content).toContain("0 ");
+
+    vi.useRealTimers();
+  });
+});
+
 describe("useChat — result-event reload race", () => {
   // The SDK CLI writes its JSONL with async fs.appendFile, so when the
   // `result` event arrives over IPC the final assistant turn may not yet

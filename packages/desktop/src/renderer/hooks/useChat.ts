@@ -540,22 +540,23 @@ export function useChat(
       const apply = (updater: (msgs: ChatMessage[]) => ChatMessage[]) => {
         const next = updater(state!.messages);
         state!.messages = next;
-        if (activeThreadIdRef.current === threadId) {
-          // Batch React re-renders: replace the pending flush timer instead of
-          // calling setMessages on every streaming event.
-          const existing = pendingSetRef.current.get(threadId);
-          if (existing) clearTimeout(existing);
-          pendingSetRef.current.set(
-            threadId,
-            setTimeout(() => {
-              pendingSetRef.current.delete(threadId);
-              const s = streamingThreadsRef.current.get(threadId);
-              if (s && activeThreadIdRef.current === threadId) {
-                setMessages(s.messages);
-              }
-            }, 50),
-          );
-        }
+        if (activeThreadIdRef.current !== threadId) return;
+        // Throttle React re-renders to ~20 fps. A pure debounce here breaks
+        // sustained streams: text/thinking events arrive faster than 50 ms,
+        // so resetting the timer on each event meant it never fired and the
+        // user saw no updates until the stream ended (or they switched
+        // threads and back, which calls setMessages directly).
+        if (pendingSetRef.current.has(threadId)) return;
+        pendingSetRef.current.set(
+          threadId,
+          setTimeout(() => {
+            pendingSetRef.current.delete(threadId);
+            const s = streamingThreadsRef.current.get(threadId);
+            if (s && activeThreadIdRef.current === threadId) {
+              setMessages(s.messages);
+            }
+          }, 50),
+        );
       };
 
       // Flush any pending batched state update immediately, then cancel the timer.
