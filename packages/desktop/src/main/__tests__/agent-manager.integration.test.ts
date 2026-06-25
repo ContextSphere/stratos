@@ -502,6 +502,145 @@ describe("AgentManager (integration)", () => {
     });
   });
 
+  describe("non-user-initiated runs bootstrap renderer state", () => {
+    // Regression: useChat's stream-message handler auto-initializes its
+    // streamingThreadsRef on a `user_message` event but drops every other
+    // event when there is no state. User-initiated sends create the state
+    // optimistically in the renderer; scheduler wakeups and manager/MCP
+    // send_message calls do not. Without a synthetic user_message the
+    // entire turn (session_init, text, tool_use, result) is silently
+    // discarded by the UI and the thread sits in "thinking" forever.
+
+    const buildHarness = () => {
+      const mockStorage = {
+        getThread: vi.fn().mockResolvedValue({
+          id: "t-origin",
+          model: "claude-sonnet-4-6",
+          provider: "claude-code",
+          cwd: "/home/user",
+        }),
+        updateThread: vi.fn().mockResolvedValue(undefined),
+        clearPersistedSessionId: vi.fn(),
+        loadMessages: vi.fn().mockResolvedValue([]),
+        saveMessages: vi.fn(),
+      };
+      const fakeProvider = {
+        name: "claude-code",
+        initialize: vi.fn().mockResolvedValue(undefined),
+        sendMessage: vi.fn().mockImplementation(async function* () {
+          yield {
+            type: "result" as const,
+            content: "",
+            cost: 0,
+            usage: { inputTokens: 0, outputTokens: 0 },
+          };
+        }),
+        interrupt: vi.fn().mockResolvedValue(undefined),
+        canResume: vi.fn().mockReturnValue(false),
+        getAvailableModels: vi.fn().mockResolvedValue([]),
+        discoverSlashCommands: vi.fn().mockResolvedValue([]),
+        dispose: vi.fn().mockResolvedValue(undefined),
+        getMcpServerStatus: vi.fn().mockResolvedValue([]),
+      };
+      return { mockStorage, fakeProvider };
+    };
+
+    it("emits a synthetic user_message before the stream when origin is 'scheduler'", async () => {
+      const { mockStorage, fakeProvider } = buildHarness();
+      const manager = new AgentManager(mockWindow);
+      (manager as any).storage = mockStorage;
+      (manager as any).sessions.set("t-origin", {
+        provider: fakeProvider,
+        interruptRequested: false,
+      });
+
+      await (manager as any)
+        .runStream(
+          "t-origin",
+          "<<autonomous-loop-dynamic>>",
+          undefined,
+          "scheduler",
+        )
+        .catch(() => {});
+
+      const userMessages = sentMessages.filter(
+        (m) =>
+          m.channel === "chat:stream-message" &&
+          (m.data as { type?: string })?.type === "user_message",
+      );
+      expect(userMessages).toHaveLength(1);
+      const payload = userMessages[0].data as {
+        type: string;
+        content: string;
+        _streamId: string;
+      };
+      expect(payload.content).toBe("<<autonomous-loop-dynamic>>");
+      expect(payload._streamId).toMatch(/^t-origin-/);
+      expect(userMessages[0].threadId).toBe("t-origin");
+
+      // Must arrive BEFORE the running-state notification so the renderer's
+      // state exists by the time subsequent stream events show up.
+      const userMsgIdx = sentMessages.findIndex(
+        (m) =>
+          m.channel === "chat:stream-message" &&
+          (m.data as { type?: string })?.type === "user_message",
+      );
+      const runningStateIdx = sentMessages.findIndex(
+        (m) => m.channel === "chat:thread-stream-state",
+      );
+      expect(userMsgIdx).toBeGreaterThanOrEqual(0);
+      expect(runningStateIdx).toBeGreaterThan(userMsgIdx);
+      manager.dispose();
+    });
+
+    it("emits a synthetic user_message when origin is 'manager' (MCP send_message)", async () => {
+      const { mockStorage, fakeProvider } = buildHarness();
+      const manager = new AgentManager(mockWindow);
+      (manager as any).storage = mockStorage;
+      (manager as any).sessions.set("t-origin", {
+        provider: fakeProvider,
+        interruptRequested: false,
+      });
+
+      await (manager as any)
+        .runStream("t-origin", "do the thing", undefined, "manager")
+        .catch(() => {});
+
+      const userMessages = sentMessages.filter(
+        (m) =>
+          m.channel === "chat:stream-message" &&
+          (m.data as { type?: string })?.type === "user_message",
+      );
+      expect(userMessages).toHaveLength(1);
+      expect((userMessages[0].data as { content: string }).content).toBe(
+        "do the thing",
+      );
+      manager.dispose();
+    });
+
+    it("does NOT emit a synthetic user_message when origin is 'user' (renderer already added it)", async () => {
+      const { mockStorage, fakeProvider } = buildHarness();
+      const manager = new AgentManager(mockWindow);
+      (manager as any).storage = mockStorage;
+      (manager as any).sessions.set("t-origin", {
+        provider: fakeProvider,
+        interruptRequested: false,
+      });
+
+      await (manager as any)
+        .runStream("t-origin", "hello", undefined, "user")
+        .catch(() => {});
+
+      const userMessages = sentMessages.filter(
+        (m) =>
+          m.channel === "chat:stream-message" &&
+          (m.data as { type?: string })?.type === "user_message",
+      );
+      expect(userMessages).toHaveLength(0);
+      manager.dispose();
+    });
+  });
+
   describe("stale model detection", () => {
     it("falls back to first available model and updates settings when saved model is not in cache", async () => {
       const mockStorage = {

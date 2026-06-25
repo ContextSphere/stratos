@@ -1105,6 +1105,28 @@ export class AgentManager {
       });
     }
 
+    // For non-user-initiated runs (scheduler wakeup, manager/MCP send_message),
+    // there is no renderer-side optimistic user message to bootstrap streaming
+    // state. The renderer's useChat hook auto-initializes streamingThreadsRef
+    // when it sees a `user_message` event but DROPS any other event when no
+    // state exists — so without this synthetic message the entire turn's
+    // events (session_init, text, tool_use, result) get discarded by the UI.
+    // Symptom: thread stays in "thinking" state with no visible progress
+    // until the user switches threads and back (which falls through to the
+    // disk-load path that reads the SDK transcript). Carrying _streamId here
+    // also lets the renderer reject late events from a prior interrupted run.
+    if (origin !== "user") {
+      this.sendToRenderer(
+        IPC_CHANNELS.STREAM_MESSAGE,
+        {
+          type: "user_message",
+          content: prompt,
+          _streamId: streamId,
+        },
+        threadId,
+      );
+    }
+
     // Lazy worktree creation: if user selected worktree mode but no worktree exists yet
     if (thread.worktreeMode === "worktree" && !thread.worktree && thread.cwd) {
       this.sendToRenderer(
