@@ -329,6 +329,18 @@ export class ClaudeCodeProvider implements AgentProvider {
           });
         }
         yield* this.transformMessage(msg, streamCtx);
+        // End-of-turn marker — break so JavaScript invokes the SDK
+        // iterator's return(), which runs readSdkMessages' finally → B9
+        // cleanup() → transport.close() → CLI exits. Without this, the
+        // streaming-input prompt keeps the CLI's stdin parked open even
+        // after the final result event; the SDK's readMessages loop only
+        // auto-closes stdin when isSingleUserTurn is true (string prompt
+        // path), and we use the async-iterable path. The result was that
+        // our for-await — and the host's — hung forever, leaving the
+        // thread stuck showing "Working" in the sidebar and blocking
+        // WakeupManager.fire() from firing (it defers while
+        // isStreaming(threadId) is true).
+        if (msg.type === "result") break;
       }
     } finally {
       // Release the parked generator so the SDK transport tears down cleanly.

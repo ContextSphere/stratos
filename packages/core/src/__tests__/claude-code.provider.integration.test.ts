@@ -598,5 +598,66 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
       resolveStream?.();
       await turn.return?.(undefined);
     });
+
+    it("breaks out of for-await after the result event so the SDK iterator's return() runs", async () => {
+      // Regression: in streaming-input mode (async-iterable prompt) the SDK
+      // sets isSingleUserTurn=false and does NOT auto-close stdin after the
+      // result event. transport.readMessages keeps waiting on the parked
+      // CLI's stdout, inputStream never drains, and readSdkMessages never
+      // returns. The provider's for-await would hang forever, leaving the
+      // host's activeStreams populated and the sidebar stuck on "Working".
+      //
+      // The fix: detect `result` inside the for-await and break, so
+      // JavaScript invokes the iterator's return(), which triggers
+      // B9.cleanup() → transport.close() → CLI exits.
+      const returnSpy = vi
+        .fn()
+        .mockResolvedValue({ done: true, value: undefined });
+      let yieldedResult = false;
+      mockQuery.mockImplementation(() => {
+        const iterator: AsyncIterator<unknown> = {
+          async next() {
+            if (!yieldedResult) {
+              yieldedResult = true;
+              return {
+                done: false,
+                value: {
+                  type: "result",
+                  subtype: "success",
+                  total_cost_usd: 0,
+                  usage: { input_tokens: 1, output_tokens: 1 },
+                  modelUsage: {},
+                  result: "ok",
+                  stop_reason: null,
+                  is_error: false,
+                },
+              };
+            }
+            // Mirrors real multi-turn SDK behavior: after result we sit on
+            // transport.readMessages forever waiting for the parked CLI.
+            // If the provider doesn't break, the test will time out.
+            return await new Promise<{ done: boolean; value: unknown }>(() => {
+              /* never resolves */
+            });
+          },
+          return: returnSpy,
+        };
+        return {
+          [Symbol.asyncIterator]: () => iterator,
+          interrupt: vi.fn().mockResolvedValue(undefined),
+        };
+      });
+
+      const provider = new ClaudeCodeProvider();
+      await provider.initialize({});
+
+      // collectMessages drains sendMessage to completion. With the fix this
+      // returns promptly after the result event; without it, this would
+      // hang and the test would time out.
+      const msgs = await collectMessages(provider, "go");
+      expect(msgs.some((m) => m.type === "result")).toBe(true);
+      // JavaScript's for-await invokes iterator.return() on break/early exit.
+      expect(returnSpy).toHaveBeenCalled();
+    });
   });
 });
