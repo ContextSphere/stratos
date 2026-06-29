@@ -7,8 +7,25 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import pino from "pino";
+import { existsSync, readdirSync, unlinkSync } from "fs";
+import { join } from "path";
 
 const logger = pino({ level: "silent" });
+
+/**
+ * Wipe every file under `authDir`. Exported for unit testing — the gateway
+ * calls this when WhatsApp says our saved session is no longer valid.
+ */
+export function clearAuthDir(authDir: string): void {
+  if (!existsSync(authDir)) return;
+  for (const f of readdirSync(authDir)) {
+    try {
+      unlinkSync(join(authDir, f));
+    } catch {
+      // best-effort: a single file failing must not block re-pairing
+    }
+  }
+}
 
 export type ResolveJid = (jid: string) => Promise<string>;
 export type OnReady = (sock: WASocket, resolveJid: ResolveJid) => void;
@@ -27,8 +44,17 @@ export async function startWhatsApp(
   callbacks: WhatsAppCallbacks,
   stopped: () => boolean,
 ): Promise<void> {
-  const { state, saveCreds } = await useMultiFileAuthState(authDir);
+  let { state, saveCreds } = await useMultiFileAuthState(authDir);
   const { version } = await fetchLatestBaileysVersion();
+
+  // Refresh credentials after wiping the auth dir so the next connect()
+  // pairs from scratch and triggers a QR.
+  async function resetAuthState(): Promise<void> {
+    clearAuthDir(authDir);
+    const fresh = await useMultiFileAuthState(authDir);
+    state = fresh.state;
+    saveCreds = fresh.saveCreds;
+  }
 
   // Cache lid → phoneNumber JID from contacts events.
   const lidToPhone = new Map<string, string>();
@@ -86,30 +112,42 @@ export async function startWhatsApp(
       ),
     );
 
-    sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
-      if (qr) callbacks.onQr(qr);
+    sock.ev.on(
+      "connection.update",
+      async ({ connection, lastDisconnect, qr }) => {
+        if (qr) callbacks.onQr(qr);
 
-      if (connection === "open") {
-        callbacks.onStatus("connected");
-        callbacks.onLog("[whatsapp] connected");
-        onReady(sock, (jid) => resolveJid(sock, jid));
-      }
-
-      if (connection === "close") {
-        callbacks.onStatus("disconnected");
-        const code = (lastDisconnect?.error as Boom)?.output?.statusCode;
-        if (code === DisconnectReason.loggedOut) {
-          callbacks.onLog(
-            "[whatsapp] logged out — delete auth and reconnect to re-pair",
-          );
-        } else if (!stopped()) {
-          callbacks.onLog(
-            `[whatsapp] disconnected (${code}), reconnecting in 5s…`,
-          );
-          setTimeout(connect, 5000);
+        if (connection === "open") {
+          callbacks.onStatus("connected");
+          callbacks.onLog("[whatsapp] connected");
+          onReady(sock, (jid) => resolveJid(sock, jid));
         }
-      }
-    });
+
+        if (connection === "close") {
+          callbacks.onStatus("disconnected");
+          const code = (lastDisconnect?.error as Boom)?.output?.statusCode;
+          if (code === DisconnectReason.loggedOut) {
+            callbacks.onLog(
+              "[whatsapp] logged out — clearing stale auth and re-pairing",
+            );
+            if (stopped()) return;
+            try {
+              await resetAuthState();
+              await connect();
+            } catch (err) {
+              callbacks.onLog(
+                `[whatsapp] auth reset failed: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
+          } else if (!stopped()) {
+            callbacks.onLog(
+              `[whatsapp] disconnected (${code}), reconnecting in 5s…`,
+            );
+            setTimeout(connect, 5000);
+          }
+        }
+      },
+    );
   }
 
   await connect();
