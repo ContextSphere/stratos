@@ -164,6 +164,9 @@ export function PreviewPane({
           getExternalEditors={filesBridge.getExternalEditors}
           openInExternalEditor={filesBridge.openInExternalEditor}
           showInFolder={filesBridge.showInFolder}
+          getLibreOfficeStatus={filesBridge.getLibreOfficeStatus}
+          installLibreOffice={filesBridge.installLibreOffice}
+          onLibreOfficeProgress={filesBridge.onLibreOfficeProgress}
         />
       ) : preview.type === "artifact-editor" &&
         preview.artifactContent !== undefined &&

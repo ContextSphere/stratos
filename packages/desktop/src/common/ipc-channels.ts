@@ -125,6 +125,9 @@ export const IPC_CHANNELS = {
   FILES_GET_EXTERNAL_EDITORS: "files:get-external-editors",
   FILES_OPEN_IN_EXTERNAL_EDITOR: "files:open-in-external-editor",
   FILES_SHOW_IN_FOLDER: "files:show-in-folder",
+  FILES_LIBREOFFICE_STATUS: "files:libreoffice-status",
+  FILES_LIBREOFFICE_INSTALL: "files:libreoffice-install",
+  FILES_LIBREOFFICE_PROGRESS: "files:libreoffice-progress",
 
   // Skills
   SKILLS_LIST: "skills:list",

@@ -117,6 +117,10 @@ export function createDesktopBridge(): StratosContextValue {
       openInExternalEditor: (editorId, filePath) =>
         window.api.filesOpenInExternalEditor(editorId, filePath),
       showInFolder: (filePath) => window.api.filesShowInFolder(filePath),
+      getLibreOfficeStatus: () => window.api.filesLibreOfficeStatus(),
+      installLibreOffice: () => window.api.filesInstallLibreOffice(),
+      onLibreOfficeProgress: (callback) =>
+        window.api.filesOnLibreOfficeProgress(callback),
     },
   };
 }

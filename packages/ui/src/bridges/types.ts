@@ -207,4 +207,19 @@ export interface FilesBridge {
   getExternalEditors?(): Promise<ExternalEditor[]>;
   openInExternalEditor?(editorId: string, filePath: string): Promise<void>;
   showInFolder?(filePath: string): Promise<void>;
+  getLibreOfficeStatus?(): Promise<{
+    installed: boolean;
+    path: string | null;
+    canAutoInstall: boolean;
+  }>;
+  installLibreOffice?(): Promise<void>;
+  onLibreOfficeProgress?(
+    callback: (progress: LibreOfficeInstallProgress) => void,
+  ): () => void;
 }
+
+export type LibreOfficeInstallProgress = {
+  phase: "downloading" | "extracting" | "installing" | "done";
+  bytesDownloaded: number;
+  totalBytes: number;
+};

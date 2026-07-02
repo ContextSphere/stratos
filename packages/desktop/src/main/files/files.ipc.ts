@@ -5,7 +5,13 @@ import { spawn } from "child_process";
 import type { FSWatcher } from "fs";
 import { extname, join, resolve, dirname, relative } from "path";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
-import { getPdfPagesForFile, isPdfOrOfficePath } from "../pdf-render";
+import {
+  getPdfPagesForFile,
+  isPdfOrOfficePath,
+  getLibreOfficeStatus,
+  installLibreOffice,
+  type LibreOfficeInstallProgress,
+} from "../pdf-render";
 
 // Directory watcher state — one watcher per process
 let activeWatcher: FSWatcher | null = null;
@@ -224,6 +230,30 @@ export function registerFilesIpc(): void {
       }
       const pages = await getPdfPagesForFile(filePath);
       return { pages };
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.FILES_LIBREOFFICE_STATUS, async () => {
+    return getLibreOfficeStatus();
+  });
+
+  // Guards against concurrent install attempts across renderer windows.
+  let installInFlight: Promise<void> | null = null;
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_LIBREOFFICE_INSTALL,
+    async (event): Promise<void> => {
+      if (installInFlight) return installInFlight;
+      const webContents = event.sender;
+      const sendProgress = (progress: LibreOfficeInstallProgress) => {
+        if (!webContents.isDestroyed()) {
+          webContents.send(IPC_CHANNELS.FILES_LIBREOFFICE_PROGRESS, progress);
+        }
+      };
+      installInFlight = installLibreOffice(sendProgress).finally(() => {
+        installInFlight = null;
+      });
+      return installInFlight;
     },
   );
 
@@ -567,6 +597,8 @@ export function unregisterFilesIpc(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILES_GET_EXTERNAL_EDITORS);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_OPEN_IN_EXTERNAL_EDITOR);
   ipcMain.removeHandler(IPC_CHANNELS.FILES_SHOW_IN_FOLDER);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_LIBREOFFICE_STATUS);
+  ipcMain.removeHandler(IPC_CHANNELS.FILES_LIBREOFFICE_INSTALL);
   if (activeWatcher) {
     activeWatcher.close();
     activeWatcher = null;

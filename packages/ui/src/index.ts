@@ -68,6 +68,7 @@ export type {
   StreamEvent,
   ImageAttachment as BridgeImageAttachment,
   McpServerInfo,
+  LibreOfficeInstallProgress,
 } from "./bridges/types";
 export { WhatsAppSettings } from "./components/WhatsAppSettings";
 export { TelegramSettings } from "./components/TelegramSettings";

@@ -492,6 +492,38 @@ const api = {
   filesShowInFolder: (filePath: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.FILES_SHOW_IN_FOLDER, { filePath }),
 
+  filesLibreOfficeStatus: (): Promise<{
+    installed: boolean;
+    path: string | null;
+    canAutoInstall: boolean;
+  }> => ipcRenderer.invoke(IPC_CHANNELS.FILES_LIBREOFFICE_STATUS),
+
+  filesInstallLibreOffice: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILES_LIBREOFFICE_INSTALL),
+
+  filesOnLibreOfficeProgress: (
+    callback: (progress: {
+      phase: "downloading" | "extracting" | "installing" | "done";
+      bytesDownloaded: number;
+      totalBytes: number;
+    }) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      progress: {
+        phase: "downloading" | "extracting" | "installing" | "done";
+        bytesDownloaded: number;
+        totalBytes: number;
+      },
+    ) => callback(progress);
+    ipcRenderer.on(IPC_CHANNELS.FILES_LIBREOFFICE_PROGRESS, listener);
+    return () =>
+      ipcRenderer.removeListener(
+        IPC_CHANNELS.FILES_LIBREOFFICE_PROGRESS,
+        listener,
+      );
+  },
+
   filesOnFileChanged: (
     callback: (event: {
       filePath: string;

@@ -4,11 +4,31 @@
  * soffice (LibreOffice) the first time, then rasterizes pages via
  * pdftoppm and caches everything in os.tmpdir() keyed by path+size+mtime.
  */
-import { promises as fsPromises } from "fs";
+import { promises as fsPromises, createWriteStream } from "fs";
 import { basename, extname, join } from "path";
-import { tmpdir } from "os";
-import { spawn } from "child_process";
+import { tmpdir, homedir } from "os";
+import { execFile, spawn } from "child_process";
+import { promisify } from "util";
 import { createHash } from "crypto";
+import { get as httpsGet } from "https";
+import { get as httpGet, type IncomingMessage } from "http";
+import { pipeline } from "stream/promises";
+
+const execFileAsync = promisify(execFile);
+
+// User-writable install location for the on-demand LibreOffice download.
+// Kept outside the app bundle so upgrades don't wipe it.
+const STRATOS_BIN_DIR = join(homedir(), ".stratos", "bin");
+const MANAGED_LIBREOFFICE_APP = join(STRATOS_BIN_DIR, "LibreOffice.app");
+const MANAGED_SOFFICE_PATH = join(
+  MANAGED_LIBREOFFICE_APP,
+  "Contents/MacOS/soffice",
+);
+
+// Error prefixes so the renderer can detect a missing dependency and offer
+// the auto-install flow instead of showing a raw message.
+export const MISSING_LIBREOFFICE_ERROR = "MISSING_LIBREOFFICE";
+export const MISSING_POPPLER_ERROR = "MISSING_POPPLER";
 
 export const PDF_EXTENSIONS = new Set([".pdf"]);
 export const OFFICE_EXTENSIONS = new Set([
@@ -23,28 +43,184 @@ export const OFFICE_EXTENSIONS = new Set([
   ".ods",
 ]);
 
-const SOFFICE_CANDIDATES = [
+const SOFFICE_ABSOLUTE_PATHS = [
+  MANAGED_SOFFICE_PATH,
   "/Applications/LibreOffice.app/Contents/MacOS/soffice",
   "/opt/homebrew/bin/soffice",
   "/usr/local/bin/soffice",
   "/usr/bin/soffice",
-  "soffice",
 ];
 
 async function findSoffice(): Promise<string | null> {
-  for (const candidate of SOFFICE_CANDIDATES) {
-    if (candidate.startsWith("/")) {
-      try {
-        await fsPromises.access(candidate);
-        return candidate;
-      } catch {
-        continue;
-      }
-    } else {
+  for (const candidate of SOFFICE_ABSOLUTE_PATHS) {
+    try {
+      await fsPromises.access(candidate);
       return candidate;
+    } catch {
+      continue;
     }
   }
+  // Electron's PATH on macOS GUI launches doesn't include Homebrew dirs, so
+  // a bare `spawn("soffice")` fails with ENOENT. Resolve via `which`/`where`
+  // and only return a path that actually exists.
+  try {
+    const finder = process.platform === "win32" ? "where" : "/usr/bin/which";
+    const { stdout } = await execFileAsync(finder, ["soffice"]);
+    const resolved = stdout.trim().split(/\r?\n/)[0];
+    if (resolved) {
+      await fsPromises.access(resolved);
+      return resolved;
+    }
+  } catch {
+    // not in PATH
+  }
   return null;
+}
+
+function sofficeInstallHint(): string {
+  switch (process.platform) {
+    case "darwin":
+      return "Install with: brew install --cask libreoffice";
+    case "linux":
+      return "Install via your package manager (e.g. apt install libreoffice).";
+    case "win32":
+      return "Download from https://www.libreoffice.org/download/";
+    default:
+      return "Install LibreOffice from https://www.libreoffice.org/";
+  }
+}
+
+export async function getLibreOfficeStatus(): Promise<{
+  installed: boolean;
+  path: string | null;
+  canAutoInstall: boolean;
+}> {
+  const path = await findSoffice();
+  return {
+    installed: path !== null,
+    path,
+    // Auto-install is currently only implemented for macOS (DMG mount + copy).
+    canAutoInstall: process.platform === "darwin",
+  };
+}
+
+// Pinned LibreOffice version for auto-install. Bump when the format changes or
+// a security update ships. Matches URLs served by the Document Foundation CDN.
+const LIBREOFFICE_VERSION = "24.8.4";
+
+function libreOfficeDownloadUrl(): string {
+  const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
+  return `https://download.documentfoundation.org/libreoffice/stable/${LIBREOFFICE_VERSION}/mac/${arch}/LibreOffice_${LIBREOFFICE_VERSION}_MacOS_${arch}.dmg`;
+}
+
+export type LibreOfficeInstallProgress = {
+  phase: "downloading" | "extracting" | "installing" | "done";
+  bytesDownloaded: number;
+  totalBytes: number;
+};
+
+function fetchFollowingRedirects(url: string): Promise<IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const getter = url.startsWith("https:") ? httpsGet : httpGet;
+    const req = getter(url, (res) => {
+      const status = res.statusCode ?? 0;
+      if (status >= 300 && status < 400 && res.headers.location) {
+        res.resume();
+        fetchFollowingRedirects(res.headers.location)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+      if (status !== 200) {
+        res.resume();
+        reject(new Error(`Download failed with HTTP ${status}`));
+        return;
+      }
+      resolve(res);
+    });
+    req.on("error", reject);
+  });
+}
+
+async function downloadDmg(
+  destPath: string,
+  onProgress: (bytesDownloaded: number, totalBytes: number) => void,
+): Promise<void> {
+  const res = await fetchFollowingRedirects(libreOfficeDownloadUrl());
+  const totalBytes = Number(res.headers["content-length"] ?? 0);
+  let downloaded = 0;
+  res.on("data", (chunk: Buffer) => {
+    downloaded += chunk.length;
+    onProgress(downloaded, totalBytes);
+  });
+  await pipeline(res, createWriteStream(destPath));
+}
+
+async function mountDmg(dmgPath: string): Promise<string> {
+  const { stdout } = await execFileAsync("/usr/bin/hdiutil", [
+    "attach",
+    dmgPath,
+    "-nobrowse",
+    "-noautoopen",
+    "-mountrandom",
+    "/tmp",
+  ]);
+  // Last non-empty line contains the mount point after tabs.
+  const mountLine = stdout.trim().split("\n").pop() ?? "";
+  const parts = mountLine
+    .split("\t")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const mountPoint = parts[parts.length - 1];
+  if (!mountPoint || !mountPoint.startsWith("/")) {
+    throw new Error(`Could not parse hdiutil mount output: ${stdout}`);
+  }
+  return mountPoint;
+}
+
+async function detachDmg(mountPoint: string): Promise<void> {
+  try {
+    await execFileAsync("/usr/bin/hdiutil", ["detach", mountPoint, "-quiet"]);
+  } catch {
+    // Best-effort cleanup — don't fail the install if unmount hiccups.
+  }
+}
+
+export async function installLibreOffice(
+  onProgress: (progress: LibreOfficeInstallProgress) => void,
+): Promise<void> {
+  if (process.platform !== "darwin") {
+    throw new Error(
+      `Auto-install for LibreOffice is only supported on macOS. ${sofficeInstallHint()}`,
+    );
+  }
+  await fsPromises.mkdir(STRATOS_BIN_DIR, { recursive: true });
+  const dmgPath = join(
+    STRATOS_BIN_DIR,
+    `libreoffice-${LIBREOFFICE_VERSION}.dmg`,
+  );
+  onProgress({ phase: "downloading", bytesDownloaded: 0, totalBytes: 0 });
+  await downloadDmg(dmgPath, (bytesDownloaded, totalBytes) => {
+    onProgress({ phase: "downloading", bytesDownloaded, totalBytes });
+  });
+  onProgress({ phase: "extracting", bytesDownloaded: 1, totalBytes: 1 });
+  const mountPoint = await mountDmg(dmgPath);
+  try {
+    const sourceApp = join(mountPoint, "LibreOffice.app");
+    await fsPromises.access(sourceApp);
+    // Replace any prior managed install atomically-ish: remove old, then copy.
+    onProgress({ phase: "installing", bytesDownloaded: 1, totalBytes: 1 });
+    await fsPromises.rm(MANAGED_LIBREOFFICE_APP, {
+      recursive: true,
+      force: true,
+    });
+    await execFileAsync("/bin/cp", ["-R", sourceApp, MANAGED_LIBREOFFICE_APP]);
+  } finally {
+    await detachDmg(mountPoint);
+    await fsPromises.rm(dmgPath, { force: true });
+  }
+  await fsPromises.access(MANAGED_SOFFICE_PATH);
+  onProgress({ phase: "done", bytesDownloaded: 1, totalBytes: 1 });
 }
 
 async function convertToPdf(
@@ -54,7 +230,7 @@ async function convertToPdf(
   const soffice = await findSoffice();
   if (!soffice) {
     throw new Error(
-      "LibreOffice (soffice) not found. Install it to preview Office documents.",
+      `${MISSING_LIBREOFFICE_ERROR}: LibreOffice is required to preview Office documents. ${sofficeInstallHint()}`,
     );
   }
   await fsPromises.mkdir(outDir, { recursive: true });
@@ -115,6 +291,48 @@ async function getOrConvertPdf(sourcePath: string): Promise<string> {
   }
 }
 
+const PDFTOPPM_ABSOLUTE_PATHS = [
+  "/opt/homebrew/bin/pdftoppm",
+  "/usr/local/bin/pdftoppm",
+  "/usr/bin/pdftoppm",
+];
+
+async function findPdftoppm(): Promise<string | null> {
+  for (const candidate of PDFTOPPM_ABSOLUTE_PATHS) {
+    try {
+      await fsPromises.access(candidate);
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+  try {
+    const finder = process.platform === "win32" ? "where" : "/usr/bin/which";
+    const { stdout } = await execFileAsync(finder, ["pdftoppm"]);
+    const resolved = stdout.trim().split(/\r?\n/)[0];
+    if (resolved) {
+      await fsPromises.access(resolved);
+      return resolved;
+    }
+  } catch {
+    // not in PATH
+  }
+  return null;
+}
+
+function pdftoppmInstallHint(): string {
+  switch (process.platform) {
+    case "darwin":
+      return "Install with: brew install poppler";
+    case "linux":
+      return "Install via your package manager (e.g. apt install poppler-utils).";
+    case "win32":
+      return "Install poppler from https://github.com/oschwartz10612/poppler-windows/releases/";
+    default:
+      return "Install poppler-utils to enable PDF rasterization.";
+  }
+}
+
 const PAGE_DPI = 110;
 
 async function renderPdfToPages(
@@ -126,9 +344,15 @@ async function renderPdfToPages(
   try {
     await fsPromises.access(firstPage);
   } catch {
+    const pdftoppm = await findPdftoppm();
+    if (!pdftoppm) {
+      throw new Error(
+        `${MISSING_POPPLER_ERROR}: pdftoppm (poppler) is required to render PDF pages. ${pdftoppmInstallHint()}`,
+      );
+    }
     await new Promise<void>((resolve, reject) => {
       const proc = spawn(
-        "pdftoppm",
+        pdftoppm,
         ["-jpeg", "-r", String(PAGE_DPI), pdfPath, join(cacheDir, "page")],
         { stdio: ["ignore", "pipe", "pipe"] },
       );

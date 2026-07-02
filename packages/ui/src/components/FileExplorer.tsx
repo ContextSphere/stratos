@@ -11,6 +11,7 @@ import type {
   DirEntry,
   FileChangeEvent,
   ExternalEditor,
+  LibreOfficeInstallProgress,
 } from "../bridges/types";
 import { type TreeNode, mergeTreeNodes } from "./tree-utils";
 import { MarkdownPreview } from "./preview/MarkdownPreview";
@@ -60,6 +61,15 @@ interface Props {
   getExternalEditors?: () => Promise<ExternalEditor[]>;
   openInExternalEditor?: (editorId: string, filePath: string) => Promise<void>;
   showInFolder?: (filePath: string) => Promise<void>;
+  getLibreOfficeStatus?: () => Promise<{
+    installed: boolean;
+    path: string | null;
+    canAutoInstall: boolean;
+  }>;
+  installLibreOffice?: () => Promise<void>;
+  onLibreOfficeProgress?: (
+    callback: (progress: LibreOfficeInstallProgress) => void,
+  ) => () => void;
 }
 
 function formatSize(bytes: number): string {
@@ -107,6 +117,77 @@ function Chevron({ expanded }: { expanded: boolean }) {
   );
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function LibreOfficeInstallPanel({
+  errorMessage,
+  installInProgress,
+  progress,
+  installError,
+  canInstall,
+  onInstall,
+}: {
+  errorMessage: string;
+  installInProgress: boolean;
+  progress?: LibreOfficeInstallProgress;
+  installError?: string;
+  canInstall: boolean;
+  onInstall: () => void;
+}): React.ReactElement {
+  const humanMessage = errorMessage.replace(/^MISSING_LIBREOFFICE:\s*/, "");
+  return (
+    <div className="flex items-center justify-center h-full px-6">
+      <div className="max-w-md text-center space-y-4">
+        <div className="text-[var(--text-muted)] text-sm">{humanMessage}</div>
+        {installInProgress ? (
+          <div className="space-y-2">
+            <div className="text-sm text-[var(--text)]">
+              {progress?.phase === "downloading"
+                ? progress.totalBytes > 0
+                  ? `Downloading… ${formatBytes(progress.bytesDownloaded)} / ${formatBytes(progress.totalBytes)}`
+                  : `Downloading… ${formatBytes(progress?.bytesDownloaded ?? 0)}`
+                : progress?.phase === "extracting"
+                  ? "Mounting installer…"
+                  : progress?.phase === "installing"
+                    ? "Copying LibreOffice.app…"
+                    : progress?.phase === "done"
+                      ? "Finalizing…"
+                      : "Starting…"}
+            </div>
+            {progress?.phase === "downloading" && progress.totalBytes > 0 ? (
+              <div className="w-full h-1.5 rounded-full bg-[var(--border)] overflow-hidden">
+                <div
+                  className="h-full bg-blue-500 transition-all"
+                  style={{
+                    width: `${Math.min(100, (progress.bytesDownloaded / progress.totalBytes) * 100)}%`,
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : canInstall ? (
+          <button
+            type="button"
+            onClick={onInstall}
+            className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
+          >
+            Download &amp; install LibreOffice
+          </button>
+        ) : null}
+        {installError ? (
+          <div className="text-xs text-red-400">{installError}</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function FileExplorer({
   cwd,
   targetFilePath,
@@ -124,6 +205,8 @@ export function FileExplorer({
   getExternalEditors,
   openInExternalEditor,
   showInFolder,
+  installLibreOffice,
+  onLibreOfficeProgress,
 }: Props): React.ReactElement {
   useMonacoFontReady();
   const theme = useTheme();
@@ -137,6 +220,11 @@ export function FileExplorer({
     pdfPages?: string[];
     pdfError?: string;
   } | null>(null);
+  const [libreOfficeInstall, setLibreOfficeInstall] = useState<{
+    inProgress: boolean;
+    progress?: LibreOfficeInstallProgress;
+    error?: string;
+  }>({ inProgress: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cursorTargetLine, setCursorTargetLine] = useState<number | null>(null);
@@ -357,6 +445,56 @@ export function FileExplorer({
     [listDirectory, tree, cwd],
   );
 
+  const loadPdfPages = useCallback(
+    async (filePath: string) => {
+      if (!renderPdfPages) return;
+      try {
+        const { pages } = await renderPdfPages(filePath, cwd);
+        setOpenFile((prev) =>
+          prev && prev.path === filePath
+            ? { ...prev, pdfPages: pages, pdfError: undefined }
+            : prev,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setOpenFile((prev) =>
+          prev && prev.path === filePath
+            ? { ...prev, pdfPages: undefined, pdfError: msg }
+            : prev,
+        );
+      }
+    },
+    [renderPdfPages, cwd],
+  );
+
+  const handleInstallLibreOffice = useCallback(async () => {
+    if (!installLibreOffice) return;
+    setLibreOfficeInstall({ inProgress: true, progress: undefined });
+    try {
+      await installLibreOffice();
+      setLibreOfficeInstall({ inProgress: false });
+      const path = openFileRef.current?.path;
+      if (path && isPdfOrOfficePath(path)) {
+        setOpenFile((prev) =>
+          prev && prev.path === path
+            ? { ...prev, pdfError: undefined, pdfPages: undefined }
+            : prev,
+        );
+        await loadPdfPages(path);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setLibreOfficeInstall({ inProgress: false, error: msg });
+    }
+  }, [installLibreOffice, loadPdfPages]);
+
+  useEffect(() => {
+    if (!onLibreOfficeProgress) return;
+    return onLibreOfficeProgress((progress) => {
+      setLibreOfficeInstall((prev) => ({ ...prev, progress }));
+    });
+  }, [onLibreOfficeProgress]);
+
   const handleFileClick = useCallback(
     async (filePath: string, size?: number, line?: number) => {
       if (isPdfOrOfficePath(filePath) && renderPdfPages) {
@@ -371,19 +509,7 @@ export function FileExplorer({
         setMdMode("preview");
         setSaveStatus("idle");
         setCursorTargetLine(line ?? null);
-        try {
-          const { pages } = await renderPdfPages(filePath, cwd);
-          setOpenFile((prev) =>
-            prev && prev.path === filePath
-              ? { ...prev, pdfPages: pages }
-              : prev,
-          );
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          setOpenFile((prev) =>
-            prev && prev.path === filePath ? { ...prev, pdfError: msg } : prev,
-          );
-        }
+        await loadPdfPages(filePath);
         return;
       }
       const sizeLimit = isImagePath(filePath) ? MAX_IMAGE_SIZE : MAX_FILE_SIZE;
@@ -418,7 +544,7 @@ export function FileExplorer({
         setCursorTargetLine(line ?? null);
       }
     },
-    [readFile, renderPdfPages, cwd],
+    [readFile, renderPdfPages, cwd, loadPdfPages],
   );
 
   const handleBack = useCallback(() => {
@@ -664,9 +790,24 @@ export function FileExplorer({
           {openFile.pdfPages ? (
             <PdfPreview pages={openFile.pdfPages} />
           ) : openFile.pdfError ? (
-            <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm px-4 text-center">
-              Could not render document: {openFile.pdfError}
-            </div>
+            openFile.pdfError.startsWith("MISSING_LIBREOFFICE:") &&
+            installLibreOffice ? (
+              <LibreOfficeInstallPanel
+                errorMessage={openFile.pdfError}
+                installInProgress={libreOfficeInstall.inProgress}
+                progress={libreOfficeInstall.progress}
+                installError={libreOfficeInstall.error}
+                canInstall={true}
+                onInstall={handleInstallLibreOffice}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm px-4 text-center">
+                Could not render document:{" "}
+                {openFile.pdfError
+                  .replace(/^MISSING_LIBREOFFICE:\s*/, "")
+                  .replace(/^MISSING_POPPLER:\s*/, "")}
+              </div>
+            )
           ) : isPdfOrOfficePath(openFile.path) ? (
             <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
               Rendering pages…
