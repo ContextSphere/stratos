@@ -128,6 +128,9 @@ function AppInner(): React.ReactElement {
   const isManagerActive =
     activeThreadId != null && activeThreadId === managerThreadId;
 
+  const isFolderOnboarding =
+    folders.length === 0 && !isManagerActive && !activeThreadId;
+
   // Reset activeThreadId if it points to a thread not visible in any folder
   // (but never reset if it's the manager thread)
   useEffect(() => {
@@ -1249,6 +1252,36 @@ function AppInner(): React.ReactElement {
                             in any workspace.
                           </p>
                         </div>
+                      ) : isFolderOnboarding ? (
+                        <div className="text-center px-6 max-w-md">
+                          <h1 className="text-2xl font-semibold text-gray-300 mb-3">
+                            Welcome to Stratos
+                          </h1>
+                          <p className="text-sm text-gray-400 leading-relaxed mb-6">
+                            Add a folder to get started. Each folder becomes a
+                            workspace where you can start threads with your
+                            agents.
+                          </p>
+                          <button
+                            onClick={handleAddFolder}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={1.5}
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+                              />
+                            </svg>
+                            Add folder
+                          </button>
+                        </div>
                       ) : undefined
                     }
                     completionStatus={
@@ -1261,92 +1294,98 @@ function AppInner(): React.ReactElement {
                     completionError={activeThread?.lastCompletionError}
                   />
 
-                  {/* Input */}
-                  <InputBar
-                    ref={inputRef}
-                    onSend={handleSend}
-                    onInterrupt={handleInterrupt}
-                    isStreaming={isStreaming}
-                    interactiveMode={interactiveMode}
-                    onInteractiveResponse={handleInteractiveResponse}
-                    slashCommands={slashCommands}
-                    cwd={activeThread?.cwd}
-                    filesBridge={filesBridge}
-                  />
+                  {/* Input + toolbar (hidden during first-run folder onboarding) */}
+                  {!isFolderOnboarding && (
+                    <>
+                      <InputBar
+                        ref={inputRef}
+                        onSend={handleSend}
+                        onInterrupt={handleInterrupt}
+                        isStreaming={isStreaming}
+                        interactiveMode={interactiveMode}
+                        onInteractiveResponse={handleInteractiveResponse}
+                        slashCommands={slashCommands}
+                        cwd={activeThread?.cwd}
+                        filesBridge={filesBridge}
+                      />
 
-                  {/* Toolbar: provider + model + mode */}
-                  <div className="flex-shrink-0 bg-[var(--bg-main)] px-4 pb-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <ProviderToggle
-                          provider={
-                            normalizeProvider(activeThread?.provider) ??
-                            pendingProvider
-                          }
-                          onProviderChange={handleProviderChange}
-                          enabledProviders={enabledProviders ?? undefined}
-                          disabled={
-                            isStreaming ||
-                            // Lock the provider once a regular thread has
-                            // messages (switching mid-conversation breaks
-                            // the transcript). The Manager thread is the
-                            // exception: switching resets it cleanly, so
-                            // users can toggle freely.
-                            (activeThreadId !== managerThreadId &&
-                              messages.length > 0)
-                          }
-                        />
-                        <span className="text-xs text-[var(--text-muted)]">
-                          |
-                        </span>
-                        <ModelSelector
-                          selectedModel={activeThread?.model}
-                          onModelChange={handleModelChange}
-                          thinkingEffort={activeThread?.thinkingEffort}
-                          onThinkingEffortChange={handleThinkingEffortChange}
-                          fetchScope={
-                            normalizeProvider(activeThread?.provider) ??
-                            pendingProvider
-                          }
-                          onFetchModels={() =>
-                            settingsBridge.getAvailableModels?.(
-                              normalizeProvider(activeThread?.provider) ??
-                                pendingProvider,
-                            ) ?? Promise.resolve([])
-                          }
-                          isOpen={modelPickerOpen}
-                          onOpenChange={setModelPickerOpen}
-                        />
+                      <div className="flex-shrink-0 bg-[var(--bg-main)] px-4 pb-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <ProviderToggle
+                              provider={
+                                normalizeProvider(activeThread?.provider) ??
+                                pendingProvider
+                              }
+                              onProviderChange={handleProviderChange}
+                              enabledProviders={enabledProviders ?? undefined}
+                              disabled={
+                                isStreaming ||
+                                // Lock the provider once a regular thread has
+                                // messages (switching mid-conversation breaks
+                                // the transcript). The Manager thread is the
+                                // exception: switching resets it cleanly, so
+                                // users can toggle freely.
+                                (activeThreadId !== managerThreadId &&
+                                  messages.length > 0)
+                              }
+                            />
+                            <span className="text-xs text-[var(--text-muted)]">
+                              |
+                            </span>
+                            <ModelSelector
+                              selectedModel={activeThread?.model}
+                              onModelChange={handleModelChange}
+                              thinkingEffort={activeThread?.thinkingEffort}
+                              onThinkingEffortChange={
+                                handleThinkingEffortChange
+                              }
+                              fetchScope={
+                                normalizeProvider(activeThread?.provider) ??
+                                pendingProvider
+                              }
+                              onFetchModels={() =>
+                                settingsBridge.getAvailableModels?.(
+                                  normalizeProvider(activeThread?.provider) ??
+                                    pendingProvider,
+                                ) ?? Promise.resolve([])
+                              }
+                              isOpen={modelPickerOpen}
+                              onOpenChange={setModelPickerOpen}
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {contextUsage && (
+                              <ContextUsageIndicator
+                                usage={contextUsage}
+                                onRefresh={refreshContextUsage}
+                              />
+                            )}
+                            {!isManagerActive && (
+                              <ModeToggle
+                                provider={
+                                  normalizeProvider(activeThread?.provider) ??
+                                  pendingProvider
+                                }
+                                mode={
+                                  activeThread?.mode
+                                    ? normalizeMode(
+                                        activeThread.mode,
+                                        normalizeProvider(
+                                          activeThread?.provider,
+                                        ) ?? pendingProvider,
+                                      )
+                                    : pendingMode
+                                }
+                                onModeChange={handleModeChange}
+                                disabled={isStreaming}
+                              />
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {contextUsage && (
-                          <ContextUsageIndicator
-                            usage={contextUsage}
-                            onRefresh={refreshContextUsage}
-                          />
-                        )}
-                        {!isManagerActive && (
-                          <ModeToggle
-                            provider={
-                              normalizeProvider(activeThread?.provider) ??
-                              pendingProvider
-                            }
-                            mode={
-                              activeThread?.mode
-                                ? normalizeMode(
-                                    activeThread.mode,
-                                    normalizeProvider(activeThread?.provider) ??
-                                      pendingProvider,
-                                  )
-                                : pendingMode
-                            }
-                            onModeChange={handleModeChange}
-                            disabled={isStreaming}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                    </>
+                  )}
                 </div>
               </div>
 
