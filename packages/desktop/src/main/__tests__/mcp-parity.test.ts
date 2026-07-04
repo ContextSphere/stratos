@@ -116,6 +116,26 @@ describe("cross-transport parity: SDK adapter vs socket MCP server", () => {
     }
   });
 
+  it("omits manager tools when includeManager: false", () => {
+    const deps = makeDeps();
+    const withManager = createStratosHandlers(deps).map((h) => h.name);
+    const withoutManager = createStratosHandlers({
+      ...deps,
+      includeManager: false,
+    }).map((h) => h.name);
+
+    // Scheduler + preview stay; manager tools drop out.
+    expect(withoutManager).toContain("schedule_list");
+    expect(withoutManager).toContain("preview_close");
+    expect(withoutManager).not.toContain("create_session");
+    expect(withoutManager).not.toContain("manager_post");
+    expect(withoutManager).not.toContain("get_dashboard");
+
+    // Concretely: 23 with manager, 10 without.
+    expect(withManager).toHaveLength(23);
+    expect(withoutManager).toHaveLength(10);
+  });
+
   it("both transports advertise identical tool descriptions", async () => {
     const deps = makeDeps();
     const handlers = createStratosHandlers(deps);

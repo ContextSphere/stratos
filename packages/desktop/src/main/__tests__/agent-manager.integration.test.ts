@@ -29,6 +29,7 @@ vi.mock("@stratosapp/core", async (importOriginal) => {
 vi.mock("../settings/settings.store", () => ({
   loadSettings: vi.fn().mockReturnValue({}),
   setProviderSettings: vi.fn(),
+  isManagerEnabled: vi.fn().mockReturnValue(false),
 }));
 
 describe("AgentManager (integration)", () => {

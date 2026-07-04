@@ -56,10 +56,34 @@ export function SettingsDialog({
 }: Props): React.ReactElement | null {
   const [whatsappEnabled, setWhatsappEnabled] = useState(false);
   const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [managerEnabled, setManagerEnabled] = useState<boolean | null>(null);
+  const [managerRuntimeEnabled, setManagerRuntimeEnabled] = useState<
+    boolean | null
+  >(null);
   useEffect(() => {
     window.api.whatsapp.isEnabled().then(setWhatsappEnabled);
     window.api.telegram.isEnabled().then(setTelegramEnabled);
+    // Read the persisted setting (what the next launch will use) alongside the
+    // runtime state (what this launch is actually running). If they differ we
+    // show a "restart to apply" hint.
+    window.api.settings
+      .get()
+      .then((s) =>
+        setManagerEnabled(
+          (s as { managerEnabled?: boolean }).managerEnabled === true,
+        ),
+      )
+      .catch(() => setManagerEnabled(false));
+    window.api
+      .managerIsEnabled()
+      .then(setManagerRuntimeEnabled)
+      .catch(() => setManagerRuntimeEnabled(false));
   }, []);
+
+  const handleManagerToggle = async (next: boolean) => {
+    setManagerEnabled(next);
+    await window.api.settings.update({ managerEnabled: next });
+  };
 
   return (
     <Dialog
@@ -174,6 +198,47 @@ export function SettingsDialog({
                 );
               })}
             </div>
+          </section>
+
+          {/* Manager Agent — off by default */}
+          <section>
+            <h3
+              className="text-xs font-semibold uppercase tracking-wider mb-3"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Manager Agent
+            </h3>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={managerEnabled === true}
+                onChange={(e) => handleManagerToggle(e.target.checked)}
+                className="mt-1"
+              />
+              <div className="flex-1">
+                <div
+                  className="text-sm font-medium"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  Enable the Manager Agent
+                </div>
+                <p
+                  className="text-xs mt-0.5"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  Adds a pinned Manager thread that orchestrates other agents
+                  via the <code>mcp__stratos__*</code> tools. Off by default —
+                  most users don't need it.
+                </p>
+                {managerRuntimeEnabled !== null &&
+                  managerEnabled !== null &&
+                  managerRuntimeEnabled !== managerEnabled && (
+                    <p className="text-xs mt-1 text-amber-400">
+                      Restart Stratos to apply this change.
+                    </p>
+                  )}
+              </div>
+            </label>
           </section>
 
           {/* WhatsApp — only shown when ~/.stratos/whatsapp.json exists */}

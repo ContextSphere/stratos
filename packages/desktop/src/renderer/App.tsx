@@ -96,14 +96,34 @@ function AppInner(): React.ReactElement {
 
   const { folders, addFolder, removeFolder, updateFolder } = useFolders();
 
-  // Manager thread ID
+  // Manager thread ID — only fetched when the Manager Agent setting is on. When
+  // off (the default), the manager thread stays hidden from the sidebar and
+  // `isManagerActive` stays false, so the app behaves as if there is no Manager.
   const [managerThreadId, setManagerThreadId] = useState<string | null>(null);
+  // `null` = still loading; important so we don't flash-hide the Manager row
+  // while the IPC call is in-flight for users who have Manager enabled.
+  const [managerEnabled, setManagerEnabled] = useState<boolean | null>(null);
   useEffect(() => {
     window.api
-      .managerGetThreadId()
-      .then(setManagerThreadId)
-      .catch(() => {});
+      .managerIsEnabled()
+      .then((enabled) => {
+        setManagerEnabled(enabled);
+        if (!enabled) return;
+        return window.api.managerGetThreadId().then(setManagerThreadId);
+      })
+      .catch(() => setManagerEnabled(false));
   }, []);
+
+  // When Manager is off, filter any stale `isManagerThread` records out of the
+  // sidebar. The records stay in storage — flipping the setting on brings the
+  // Manager thread (and its transcript) back.
+  const visibleThreads = useMemo(
+    () =>
+      managerEnabled === false
+        ? threads.filter((t) => !t.isManagerThread)
+        : threads,
+    [threads, managerEnabled],
+  );
 
   const isManagerActive =
     activeThreadId != null && activeThreadId === managerThreadId;
@@ -996,7 +1016,7 @@ function AppInner(): React.ReactElement {
           style={{ width: sidebarCollapsed ? 0 : 232 }}
         >
           <Sidebar
-            threads={threads}
+            threads={visibleThreads}
             folders={folders}
             activeThreadId={activeThreadId}
             onThreadClick={handleThreadClick}

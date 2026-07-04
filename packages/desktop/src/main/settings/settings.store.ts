@@ -57,6 +57,13 @@ export interface AppSettings {
   opencodeEnabledModelsArchive?: Record<string, string[]>;
   /** Ollama local model server configuration */
   ollamaConfig?: OllamaConfig;
+  /**
+   * Enables the Manager Agent (pinned Manager thread + `mcp__stratos__*`
+   * orchestration tools). Off by default: most users don't use it and an empty
+   * Manager thread makes an otherwise-empty sidebar confusing. Requires an app
+   * restart to take effect since Manager wiring happens once at startup.
+   */
+  managerEnabled?: boolean;
   [key: string]: unknown;
 }
 
@@ -267,4 +274,9 @@ export function clearOllamaConfig(): void {
   const current = loadSettings();
   const { ollamaConfig: _, ...rest } = current;
   saveSettings(rest as AppSettings);
+}
+
+/** True iff the user has explicitly opted into the Manager Agent. */
+export function isManagerEnabled(): boolean {
+  return loadSettings().managerEnabled === true;
 }

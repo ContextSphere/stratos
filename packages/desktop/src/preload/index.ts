@@ -692,6 +692,9 @@ const api = {
   ): Promise<{ status: string; provider: string }> =>
     ipcRenderer.invoke(IPC_CHANNELS.MANAGER_SWITCH_PROVIDER, provider, model),
 
+  managerIsEnabled: (): Promise<boolean> =>
+    ipcRenderer.invoke(IPC_CHANNELS.MANAGER_IS_ENABLED),
+
   // WhatsApp gateway
   whatsapp: {
     isEnabled: (): Promise<boolean> =>

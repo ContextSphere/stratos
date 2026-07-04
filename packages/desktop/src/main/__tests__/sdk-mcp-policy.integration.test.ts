@@ -2,7 +2,8 @@
  * End-to-end: spawn a real `claude` CLI child via the Claude Agent SDK
  * with our unified `stratos` SDK MCP and assert:
  *   1. `system.init` lists `stratos` as connected.
- *   2. All 19 `mcp__stratos__*` tool names are registered.
+ *   2. All `mcp__stratos__*` tool names are registered (scheduler + preview +
+ *      manager = 23 tools when `includeManager` is on, which is the default).
  *   3. No `Warning: MCP server blocked by enterprise policy` on stderr.
  *
  * Skipped when running nested inside another Claude session (CLAUDECODE=1).
@@ -20,7 +21,7 @@ const nested = Boolean(process.env.CLAUDECODE) || Boolean(process.env.CI);
 describe.skipIf(nested)(
   "SDK MCP bypasses LinkedIn enterprise allowlist",
   () => {
-    it("registers the unified `stratos` server with all 20 tools, no policy warning", async () => {
+    it("registers the unified `stratos` server with all 23 tools, no policy warning", async () => {
       const storage = {
         listFolders: () => [],
         listThreads: () => [],
@@ -107,7 +108,7 @@ describe.skipIf(nested)(
         const stratosCount = initTools.filter((t) =>
           t.startsWith("mcp__stratos__"),
         ).length;
-        expect(stratosCount).toBe(21);
+        expect(stratosCount).toBe(23);
 
         const stratos = initMcpServers.find((s) => s.name === "stratos");
         expect(stratos?.status).toBe("connected");

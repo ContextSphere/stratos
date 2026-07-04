@@ -107,6 +107,7 @@ vi.mock("../settings/settings.store", () => ({
   loadSettings: vi.fn().mockReturnValue({}),
   setProviderSettings: vi.fn(),
   getOpencodeProviderKeys: vi.fn().mockReturnValue({}),
+  isManagerEnabled: vi.fn().mockReturnValue(false),
 }));
 
 beforeEach(() => {

@@ -29,6 +29,7 @@ vi.mock("@stratosapp/core", async (importOriginal) => {
 vi.mock("../settings/settings.store", () => ({
   loadSettings: vi.fn().mockReturnValue({}),
   getOpencodeProviderKeys: vi.fn().mockReturnValue({}),
+  isManagerEnabled: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("../mcp/handlers", () => ({

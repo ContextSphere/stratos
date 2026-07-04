@@ -184,6 +184,7 @@ export const IPC_CHANNELS = {
   MANAGER_SWITCH_PROVIDER: "manager:switch-provider",
   MANAGER_SCHEDULE_RUN_RECORDED: "manager:schedule-run-recorded",
   MANAGER_SCHEDULE_RUNS: "manager:schedule-runs",
+  MANAGER_IS_ENABLED: "manager:is-enabled",
 
   // WhatsApp gateway
   WHATSAPP_GET_STATE: "whatsapp:get-state",

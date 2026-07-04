@@ -95,6 +95,7 @@ import {
   registerSettingsIpc,
   unregisterSettingsIpc,
 } from "./settings/settings.ipc";
+import { isManagerEnabled } from "./settings/settings.store";
 import {
   registerSkillsIpc,
   unregisterSkillsIpc,
@@ -363,22 +364,32 @@ if (!gotLock) {
       wakeupManager?.cancelForThread(threadId);
     });
 
-    // Manager Agent
-    managerSession = ManagerSession.initialize(
-      agentManager,
-      storage,
-      mainWindow,
-    );
-    registerManagerIpc(managerSession);
-    agentManager.setManagerMcpStatusProvider(() =>
-      managerSession!.getMcpServerStatus(),
-    );
+    // Manager Agent (opt-in — off by default). When disabled, still expose the
+    // is-enabled IPC handler so the renderer can hide manager UI and skip its
+    // status IPC calls. Enabling requires an app restart because AgentManager
+    // wires the manager MCP handlers into the socket server at construction.
+    ipcMain.handle(IPC_CHANNELS.MANAGER_IS_ENABLED, () => isManagerEnabled());
+    if (isManagerEnabled()) {
+      managerSession = ManagerSession.initialize(
+        agentManager,
+        storage,
+        mainWindow,
+      );
+      registerManagerIpc(managerSession);
+      agentManager.setManagerMcpStatusProvider(() =>
+        managerSession!.getMcpServerStatus(),
+      );
 
-    // Cross-wire scheduler ↔ manager. SchedulerManager needs ManagerSession to
-    // forward run notifications and to dispatch routeToManager schedules. The
-    // wiring is post-construction since ManagerSession is a singleton
-    // initialized after SchedulerManager.
-    schedulerManager.setManagerSession(managerSession);
+      // Cross-wire scheduler ↔ manager. SchedulerManager needs ManagerSession to
+      // forward run notifications and to dispatch routeToManager schedules. The
+      // wiring is post-construction since ManagerSession is a singleton
+      // initialized after SchedulerManager.
+      schedulerManager.setManagerSession(managerSession);
+    } else {
+      console.log(
+        "[stratos] Manager Agent disabled (enable via Settings → Manager Agent)",
+      );
+    }
 
     // Wire app-state collector for crash-capture telemetry. Each periodic
     // memory log line + each threshold heap dump records this snapshot so

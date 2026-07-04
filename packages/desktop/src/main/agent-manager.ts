@@ -42,6 +42,7 @@ import {
   getOllamaConfig,
   setOllamaConfig,
   clearOllamaConfig,
+  isManagerEnabled,
 } from "./settings/settings.store";
 import type { OllamaConfig, OllamaModelInfo } from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
@@ -422,6 +423,7 @@ export class AgentManager {
       agentManager: this,
       window: this.window,
       sendToRenderer: (channel, data) => this.sendToRenderer(channel, data),
+      includeManager: isManagerEnabled(),
     });
     this.mcpSocketServer = startStratosMcpSocketServer({
       socketPath: this.mcpSocketPath,
@@ -1218,6 +1220,7 @@ export class AgentManager {
                 window: this.window,
                 sendToRenderer: (channel, data) =>
                   this.sendToRenderer(channel, data),
+                includeManager: isManagerEnabled(),
               })
             : undefined,
       });
@@ -1241,7 +1244,7 @@ export class AgentManager {
                   `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
                   ``,
                   `# Stratos MCP`,
-                  `You have access to the \`stratos\` MCP server, which exposes Stratos-specific tools for schedules, the side preview pane, and session management.`,
+                  `You have access to the \`stratos\` MCP server, which exposes Stratos-specific tools for schedules${isManagerEnabled() ? ", the side preview pane, and session management" : " and the side preview pane"}.`,
                   ``,
                   `## Scheduled prompts`,
                   `- \`schedule_create\` — create a recurring or one-shot scheduled prompt (call \`schedule_folders\` first to get a valid folder)`,
@@ -2077,6 +2080,7 @@ export class AgentManager {
                 window: this.window,
                 sendToRenderer: (channel, data) =>
                   this.sendToRenderer(channel, data),
+                includeManager: isManagerEnabled(),
               })
             : undefined,
       });
