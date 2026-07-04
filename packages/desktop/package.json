@@ -1,6 +1,6 @@
 {
   "name": "@stratosapp/desktop",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "productName": "Stratos",
   "description": "Stratos — Open Source AI Agent Desktop",
