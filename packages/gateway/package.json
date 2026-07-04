@@ -1,6 +1,7 @@
 {
   "name": "@stratosapp/gateway",
   "version": "0.0.1",
+  "private": true,
   "description": "Stratos messaging gateways — in-process WhatsApp + Telegram bridges for the Manager Agent",
   "license": "Apache-2.0",
   "type": "commonjs",

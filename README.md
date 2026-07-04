@@ -9,8 +9,6 @@
 <p align="center">
   <a href="https://github.com/ContextSphere/stratos/actions/workflows/ci.yml"><img src="https://github.com/ContextSphere/stratos/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/ContextSphere/stratos/releases/latest"><img src="https://img.shields.io/github/v/release/ContextSphere/stratos" alt="Release" /></a>
-  <a href="https://www.npmjs.com/package/@stratosapp/core"><img src="https://img.shields.io/npm/v/@stratosapp/core?label=%40stratosapp%2Fcore" alt="npm @stratosapp/core" /></a>
-  <a href="https://www.npmjs.com/package/@stratosapp/ui"><img src="https://img.shields.io/npm/v/@stratosapp/ui?label=%40stratosapp%2Fui" alt="npm @stratosapp/ui" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" /></a>
 </p>
 
