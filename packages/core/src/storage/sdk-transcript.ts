@@ -1,4 +1,5 @@
 import { readFile } from "fs/promises";
+import { existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import {
@@ -238,6 +239,29 @@ function buildJsonlPath(sessionId: string, cwd: string): string {
     sanitizePath(cwd),
     `${sessionId}.jsonl`,
   );
+}
+
+/**
+ * Returns true when the SDK's JSONL file for a session no longer exists —
+ * i.e. Claude Code has pruned the transcript. The signal is deliberately
+ * conservative: any ambiguity (cwd unknown and SDK scan fails) returns
+ * false so we never accidentally delete a live thread.
+ *
+ * When `cwd` is provided we check the deterministic path directly. Without
+ * it we fall back to the SDK's `getSessionInfo` scan, which returns
+ * `undefined` only when the session file cannot be found in any project.
+ */
+export async function isSdkSessionMissing(
+  sessionId: string,
+  cwd?: string,
+): Promise<boolean> {
+  if (cwd) return !existsSync(buildJsonlPath(sessionId, cwd));
+  try {
+    const info = await getSessionInfo(sessionId);
+    return info === undefined;
+  } catch {
+    return false;
+  }
 }
 
 // The Claude SDK writes a `{"type":"system","subtype":"compact_boundary",...}` entry
