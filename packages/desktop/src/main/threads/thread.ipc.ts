@@ -10,6 +10,7 @@ import {
   FileStorageAdapter,
   readTraceEntries,
   clearTraceFile,
+  isSdkSessionMissing,
 } from "@stratosapp/core";
 import type {
   StoredMessage,
@@ -291,40 +292,71 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
     },
   );
 
+  async function performThreadDelete(threadId: string): Promise<boolean> {
+    const thread = await storage.getThread(threadId);
+    if (thread?.worktree) {
+      try {
+        await execFileAsync(
+          "git",
+          ["worktree", "remove", thread.worktree.path, "--force"],
+          {
+            cwd: thread.worktree.sourceRepoPath,
+            encoding: "utf-8",
+            timeout: 10000,
+          },
+        );
+      } catch {
+        // Worktree may already be removed
+      }
+    }
+
+    clearSessionFn?.(threadId);
+    onThreadDeletedFn?.(threadId);
+    return storage.deleteThread(threadId);
+  }
+
+  function broadcastThreadsChanged(): void {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC_CHANNELS.THREADS_CHANGED);
+      }
+    }
+  }
+
   ipcMain.handle(
     IPC_CHANNELS.THREADS_DELETE,
     async (_event, threadId: string) => {
-      // Clean up worktree if one exists
-      const thread = await storage.getThread(threadId);
-      if (thread?.worktree) {
-        try {
-          await execFileAsync(
-            "git",
-            ["worktree", "remove", thread.worktree.path, "--force"],
-            {
-              cwd: thread.worktree.sourceRepoPath,
-              encoding: "utf-8",
-              timeout: 10000,
-            },
-          );
-        } catch {
-          // Worktree may already be removed
-        }
-      }
-
-      clearSessionFn?.(threadId);
-      onThreadDeletedFn?.(threadId);
-      return storage.deleteThread(threadId);
+      return performThreadDelete(threadId);
     },
   );
 
   ipcMain.handle(
     IPC_CHANNELS.THREADS_LOAD_MESSAGES,
     async (_event, threadId: string) => {
+      // Auto-cleanup: if this is a claude-code thread whose SDK JSONL has
+      // been pruned by Claude Code, delete the thread. Skip the check for
+      // running threads to avoid a race with in-flight SDK writes.
+      const thread = storage.getThread(threadId);
+      const runningIds = getRunningIdsFn?.() ?? [];
+      if (
+        thread?.provider === "claude-code" &&
+        thread.sessionId &&
+        !runningIds.includes(threadId)
+      ) {
+        const missing = await isSdkSessionMissing(
+          thread.sessionId,
+          thread.cwd,
+        );
+        if (missing) {
+          await performThreadDelete(threadId);
+          broadcastThreadsChanged();
+          return [];
+        }
+      }
+
       try {
         return await storage.loadMessages(threadId);
       } catch (err) {
-        const thread = storage.getThread(threadId);
         emitDiagnostic(
           "Failed to load thread messages",
           err instanceof Error ? err.message : String(err),

@@ -19,6 +19,16 @@ const mockStorage = {
   updateFolder: vi.fn(),
 };
 
+const mockBroadcasts: string[] = [];
+const mockWindow = {
+  isDestroyed: () => false,
+  webContents: {
+    send: vi.fn((channel: string) => {
+      mockBroadcasts.push(channel);
+    }),
+  },
+};
+
 vi.mock("electron", () => ({
   app: { isPackaged: false },
   ipcMain: {
@@ -27,14 +37,19 @@ vi.mock("electron", () => ({
     }),
     removeHandler: vi.fn(),
   },
+  BrowserWindow: {
+    getAllWindows: () => [mockWindow],
+  },
 }));
 
+const isSdkSessionMissingMock = vi.fn().mockResolvedValue(false);
 vi.mock("@stratosapp/core", () => ({
   FileStorageAdapter: vi.fn(function MockFileStorageAdapter() {
     return mockStorage;
   }),
   readTraceEntries: vi.fn(),
   clearTraceFile: vi.fn(),
+  isSdkSessionMissing: isSdkSessionMissingMock,
 }));
 
 describe("thread IPC session reset behavior", () => {
@@ -99,6 +114,86 @@ describe("thread IPC session reset behavior", () => {
     );
     expect(mockStorage.updateThread).toHaveBeenCalledWith("thread-1", {
       cwd: "/tmp/other",
+    });
+  });
+
+  describe("THREADS_LOAD_MESSAGES auto-cleanup", () => {
+    beforeEach(() => {
+      isSdkSessionMissingMock.mockReset().mockResolvedValue(false);
+      mockBroadcasts.length = 0;
+    });
+
+    it("deletes a claude-code thread when the SDK JSONL is missing", async () => {
+      mockStorage.getThread.mockReturnValue({
+        id: "thread-1",
+        provider: "claude-code",
+        sessionId: "sess-abc",
+        cwd: "/tmp/proj",
+      });
+      isSdkSessionMissingMock.mockResolvedValueOnce(true);
+
+      const handler = handleMocks.get(IPC_CHANNELS.THREADS_LOAD_MESSAGES);
+      const result = await handler?.({}, "thread-1");
+
+      expect(isSdkSessionMissingMock).toHaveBeenCalledWith(
+        "sess-abc",
+        "/tmp/proj",
+      );
+      expect(clearSession).toHaveBeenCalledWith("thread-1");
+      expect(mockStorage.deleteThread).toHaveBeenCalledWith("thread-1");
+      expect(mockBroadcasts).toContain(IPC_CHANNELS.THREADS_CHANGED);
+      expect(mockStorage.loadMessages).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it("loads normally when the SDK JSONL exists", async () => {
+      mockStorage.getThread.mockReturnValue({
+        id: "thread-1",
+        provider: "claude-code",
+        sessionId: "sess-abc",
+        cwd: "/tmp/proj",
+      });
+      mockStorage.loadMessages.mockResolvedValueOnce([
+        { id: "m1", role: "user", content: "hi", timestamp: 1 },
+      ]);
+
+      const handler = handleMocks.get(IPC_CHANNELS.THREADS_LOAD_MESSAGES);
+      const result = await handler?.({}, "thread-1");
+
+      expect(mockStorage.deleteThread).not.toHaveBeenCalled();
+      expect(mockStorage.loadMessages).toHaveBeenCalledWith("thread-1");
+      expect(result).toHaveLength(1);
+    });
+
+    it("skips the check for non-claude-code threads", async () => {
+      mockStorage.getThread.mockReturnValue({
+        id: "thread-1",
+        provider: "codex",
+        sessionId: "sess-abc",
+        cwd: "/tmp/proj",
+      });
+      mockStorage.loadMessages.mockResolvedValueOnce([]);
+
+      const handler = handleMocks.get(IPC_CHANNELS.THREADS_LOAD_MESSAGES);
+      await handler?.({}, "thread-1");
+
+      expect(isSdkSessionMissingMock).not.toHaveBeenCalled();
+      expect(mockStorage.loadMessages).toHaveBeenCalledWith("thread-1");
+    });
+
+    it("skips the check for threads with no sessionId", async () => {
+      mockStorage.getThread.mockReturnValue({
+        id: "thread-1",
+        provider: "claude-code",
+        sessionId: undefined,
+        cwd: "/tmp/proj",
+      });
+      mockStorage.loadMessages.mockResolvedValueOnce([]);
+
+      const handler = handleMocks.get(IPC_CHANNELS.THREADS_LOAD_MESSAGES);
+      await handler?.({}, "thread-1");
+
+      expect(isSdkSessionMissingMock).not.toHaveBeenCalled();
     });
   });
 

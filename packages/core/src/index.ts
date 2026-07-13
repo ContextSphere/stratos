@@ -58,6 +58,7 @@ export { FileStorageAdapter } from "./storage/file-adapter";
 export {
   parseSessionCompleteNotification,
   parseTaskNotification,
+  isSdkSessionMissing,
 } from "./storage/sdk-transcript";
 export type { TraceEntry } from "./storage/trace.store";
 export {
