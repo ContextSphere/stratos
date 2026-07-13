@@ -67,8 +67,89 @@ function emitDiagnostic(
 }
 
 export function registerThreadIpc(storage = new FileStorageAdapter()): void {
+  // Track threads whose slow worktree cleanup is already queued so we don't
+  // pile up duplicate `git worktree remove` calls when THREADS_LIST is
+  // called repeatedly before the deferred cleanup lands.
+  const worktreeCleanupPending = new Set<string>();
+
+  async function reapStaleClaudeCodeThreads(
+    threads: Array<ReturnType<typeof storage.listThreads>[number]>,
+  ): Promise<{
+    kept: typeof threads;
+    stale: typeof threads;
+  }> {
+    const runningIds = new Set(getRunningIdsFn?.() ?? []);
+    // Parallel existsSync-backed check. `isSdkSessionMissing` is synchronous
+    // when cwd is provided (the common case), so this fans out cheaply.
+    const staleFlags = await Promise.all(
+      threads.map((t) => {
+        if (
+          t.provider !== "claude-code" ||
+          !t.sessionId ||
+          runningIds.has(t.id)
+        ) {
+          return Promise.resolve(false);
+        }
+        return isSdkSessionMissing(t.sessionId, t.cwd);
+      }),
+    );
+    const kept: typeof threads = [];
+    const stale: typeof threads = [];
+    for (let i = 0; i < threads.length; i++) {
+      if (staleFlags[i]) stale.push(threads[i]);
+      else kept.push(threads[i]);
+    }
+    return { kept, stale };
+  }
+
   ipcMain.handle(IPC_CHANNELS.THREADS_LIST, async () => {
-    return storage.listThreads();
+    const all = storage.listThreads();
+    const { kept, stale } = await reapStaleClaudeCodeThreads(all);
+    if (stale.length === 0) return kept;
+
+    // Fast synchronous cleanup so subsequent LIST calls see the reaped
+    // threads gone from storage. This also drops any active session and
+    // fires the delete hook (loop-wakeup timers etc.) immediately.
+    for (const t of stale) {
+      clearSessionFn?.(t.id);
+      onThreadDeletedFn?.(t.id);
+      storage.deleteThread(t.id);
+    }
+    console.log(
+      `[thread-reaper] deleted ${stale.length} stale claude-code thread(s): ${stale
+        .map((t) => t.id)
+        .join(", ")}`,
+    );
+
+    // Defer git worktree removal — it can take multiple seconds per worktree
+    // and shouldn't block the sidebar render.
+    const worktreesToClean = stale.filter(
+      (t) => t.worktree && !worktreeCleanupPending.has(t.id),
+    );
+    if (worktreesToClean.length > 0) {
+      for (const t of worktreesToClean) worktreeCleanupPending.add(t.id);
+      setImmediate(async () => {
+        for (const t of worktreesToClean) {
+          try {
+            await execFileAsync(
+              "git",
+              ["worktree", "remove", t.worktree!.path, "--force"],
+              {
+                cwd: t.worktree!.sourceRepoPath,
+                encoding: "utf-8",
+                timeout: 10000,
+              },
+            );
+          } catch {
+            // Worktree may already be removed
+          } finally {
+            worktreeCleanupPending.delete(t.id);
+          }
+        }
+      });
+    }
+
+    return kept;
   });
 
   ipcMain.handle(IPC_CHANNELS.THREADS_GET_ACTIVE, async () => {
