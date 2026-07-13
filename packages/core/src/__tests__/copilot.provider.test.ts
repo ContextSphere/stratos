@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   CopilotProvider,
+  imagesToAttachments,
   normalizeCopilotToolName,
 } from "../providers/copilot.provider";
 
@@ -84,5 +85,49 @@ describe("normalizeCopilotToolName", () => {
     expect(normalizeCopilotToolName("READ")).toBe("Read");
     expect(normalizeCopilotToolName("Web-Fetch")).toBe("WebFetch");
     expect(normalizeCopilotToolName("str-replace")).toBe("Edit");
+  });
+});
+
+describe("imagesToAttachments", () => {
+  it("returns undefined for empty or missing inputs", () => {
+    expect(imagesToAttachments(undefined)).toBeUndefined();
+    expect(imagesToAttachments([])).toBeUndefined();
+  });
+
+  it("strips the data-url prefix and preserves the base64 payload", () => {
+    const data = "iVBORw0KGgo=";
+    const out = imagesToAttachments([
+      { dataUrl: `data:image/png;base64,${data}`, mimeType: "image/png" },
+    ]);
+    expect(out).toEqual([{ type: "blob", mimeType: "image/png", data }]);
+  });
+
+  it("passes large images through without dropping them", () => {
+    // Simulate a JPEG larger than the old 1 MB cap that used to silently drop
+    // attachments. Users regularly attach phone photos in that size range.
+    const bigData = "A".repeat(3_000_000);
+    const out = imagesToAttachments([
+      {
+        dataUrl: `data:image/jpeg;base64,${bigData}`,
+        mimeType: "image/jpeg",
+      },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out?.[0]).toMatchObject({
+      type: "blob",
+      mimeType: "image/jpeg",
+      data: bigData,
+    });
+  });
+
+  it("preserves the order of multiple attachments", () => {
+    const out = imagesToAttachments([
+      { dataUrl: "data:image/png;base64,AAA", mimeType: "image/png" },
+      { dataUrl: "data:image/jpeg;base64,BBB", mimeType: "image/jpeg" },
+    ]);
+    expect(out).toEqual([
+      { type: "blob", mimeType: "image/png", data: "AAA" },
+      { type: "blob", mimeType: "image/jpeg", data: "BBB" },
+    ]);
   });
 });

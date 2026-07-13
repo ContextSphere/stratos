@@ -150,7 +150,6 @@ function getSdk(): typeof import("@github/copilot-sdk") {
 
 // ─── Streaming caps (mirror the Claude provider's main-process safety nets) ──
 
-const STREAM_IMAGE_DATA_CAP = 512_000;
 const STREAM_TOOL_OUTPUT_CAP = 256_000;
 
 function capStreamingToolOutput(output: string): string {
@@ -297,14 +296,13 @@ function translateCustomAgents(
 
 // ─── Image attachment translation ────────────────────────────────────────────
 
-function imagesToAttachments(
+export function imagesToAttachments(
   images: SendMessageParams["images"] | undefined,
 ): MessageOptions["attachments"] | undefined {
   if (!images || images.length === 0) return undefined;
   const out: NonNullable<MessageOptions["attachments"]> = [];
   for (const img of images) {
     const data = img.dataUrl.replace(/^data:[^;]+;base64,/, "");
-    if (data.length > STREAM_IMAGE_DATA_CAP * 2) continue; // skip outliers
     out.push({ type: "blob", mimeType: img.mimeType, data });
   }
   return out.length > 0 ? out : undefined;
@@ -1308,13 +1306,12 @@ export class CopilotProvider implements AgentProvider {
     const unsubscribe = () => {};
 
     // Drive the send (don't await; events flow asynchronously into the queue).
+    const attachments = imagesToAttachments(params.images);
     const messageOptions: MessageOptions = {
       prompt: params.prompt,
       mode: "immediate",
       agentMode: stratosModeToCopilotAgentMode(mode),
-      ...(imagesToAttachments(params.images)
-        ? { attachments: imagesToAttachments(params.images) }
-        : {}),
+      ...(attachments ? { attachments } : {}),
     };
 
     const sendPromise = session.send(messageOptions).catch((err) => {
