@@ -197,6 +197,90 @@ describe("thread IPC session reset behavior", () => {
     });
   });
 
+  describe("THREADS_LIST reaping", () => {
+    beforeEach(() => {
+      isSdkSessionMissingMock.mockReset().mockResolvedValue(false);
+      mockBroadcasts.length = 0;
+    });
+
+    it("filters out and deletes stale claude-code threads", async () => {
+      const alive = {
+        id: "alive",
+        provider: "claude-code" as const,
+        sessionId: "s-alive",
+        cwd: "/tmp/alive",
+      };
+      const stale = {
+        id: "stale",
+        provider: "claude-code" as const,
+        sessionId: "s-stale",
+        cwd: "/tmp/stale",
+      };
+      mockStorage.listThreads.mockReturnValue([alive, stale]);
+      // Second call returns "stale" as missing
+      isSdkSessionMissingMock.mockImplementation(async (sid: string) =>
+        sid === "s-stale",
+      );
+
+      const handler = handleMocks.get(IPC_CHANNELS.THREADS_LIST);
+      const result = (await handler?.({})) as typeof alive[];
+
+      expect(result.map((t) => t.id)).toEqual(["alive"]);
+      expect(clearSession).toHaveBeenCalledWith("stale");
+      expect(clearSession).not.toHaveBeenCalledWith("alive");
+      expect(mockStorage.deleteThread).toHaveBeenCalledWith("stale");
+      expect(mockStorage.deleteThread).not.toHaveBeenCalledWith("alive");
+    });
+
+    it("returns the full list untouched when no thread is stale", async () => {
+      mockStorage.listThreads.mockReturnValue([
+        {
+          id: "t1",
+          provider: "claude-code",
+          sessionId: "s1",
+          cwd: "/tmp/1",
+        },
+        {
+          id: "t2",
+          provider: "codex",
+          sessionId: "s2",
+          cwd: "/tmp/2",
+        },
+      ]);
+      isSdkSessionMissingMock.mockResolvedValue(false);
+
+      const handler = handleMocks.get(IPC_CHANNELS.THREADS_LIST);
+      const result = (await handler?.({})) as { id: string }[];
+
+      expect(result.map((t) => t.id)).toEqual(["t1", "t2"]);
+      expect(mockStorage.deleteThread).not.toHaveBeenCalled();
+    });
+
+    it("does not touch non-claude-code threads or threads without sessionId", async () => {
+      mockStorage.listThreads.mockReturnValue([
+        {
+          id: "codex-thread",
+          provider: "codex",
+          sessionId: "s-codex",
+          cwd: "/tmp/codex",
+        },
+        {
+          id: "no-session",
+          provider: "claude-code",
+          sessionId: undefined,
+          cwd: "/tmp/nosess",
+        },
+      ]);
+
+      const handler = handleMocks.get(IPC_CHANNELS.THREADS_LIST);
+      const result = (await handler?.({})) as { id: string }[];
+
+      expect(result.map((t) => t.id)).toEqual(["codex-thread", "no-session"]);
+      expect(isSdkSessionMissingMock).not.toHaveBeenCalled();
+      expect(mockStorage.deleteThread).not.toHaveBeenCalled();
+    });
+  });
+
   describe("THREADS_CREATE provider settings pre-population", () => {
     // Each test resets modules so the vi.doMock for settings.store takes effect
     // on the fresh thread.ipc import. The outer beforeEach only does clearAllMocks,
