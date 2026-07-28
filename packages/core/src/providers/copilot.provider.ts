@@ -399,6 +399,11 @@ interface BridgeContext {
   finalModel: string | undefined;
   finalCost: number | undefined;
   contextWindow: number | null;
+  // Streaming guards — when a delta stream has already delivered text/reasoning
+  // for the current message, the terminal assistant.message / assistant.reasoning
+  // event must NOT re-yield the same content or the renderer will concatenate it.
+  textWasStreamed: boolean;
+  thinkingWasStreamed: boolean;
   // Per-tool-call accounting
   pendingToolNames: Map<string, string>; // toolCallId → toolName (after normalize)
   // Sub-agent task tracking — surface via task_notification + nested tool_use parentToolUseId
@@ -411,7 +416,7 @@ interface BridgeContext {
   resultEmitted: boolean;
 }
 
-function makeBridgeContext(): BridgeContext {
+export function makeBridgeContext(): BridgeContext {
   return {
     sessionId: undefined,
     cachedTools: [],
@@ -423,6 +428,8 @@ function makeBridgeContext(): BridgeContext {
     finalModel: undefined,
     finalCost: undefined,
     contextWindow: null,
+    textWasStreamed: false,
+    thinkingWasStreamed: false,
     pendingToolNames: new Map(),
     subagentTaskByCallId: new Map(),
     agentIdToParentToolCallId: new Map(),
@@ -476,7 +483,7 @@ function emitInitIfReady(ctx: BridgeContext): AgentMessage | null {
   };
 }
 
-function* mapEvent(
+export function* mapEvent(
   ev: SessionEvent,
   ctx: BridgeContext,
 ): Generator<AgentMessage> {
@@ -543,13 +550,17 @@ function* mapEvent(
     }
 
     case "assistant.message_start":
-      // Marks streaming start — no AgentMessage; deltas will arrive next.
+      // Reset per-message streaming guards so the next message_delta stream is
+      // tracked independently from any previous one on the same session.
+      ctx.textWasStreamed = false;
+      ctx.thinkingWasStreamed = false;
       return;
 
     case "assistant.message_delta": {
       const d: any = ev.data ?? {};
       const content = typeof d.deltaContent === "string" ? d.deltaContent : "";
       if (!content) return;
+      ctx.textWasStreamed = true;
       yield { type: "text", content, isStreaming: true };
       return;
     }
@@ -566,7 +577,10 @@ function* mapEvent(
         };
       }
       if (d.model && !ctx.finalModel) ctx.finalModel = d.model;
-      if (content) {
+      // Only surface the terminal message as `text` when streaming deltas did
+      // not already deliver it — otherwise the renderer concatenates the full
+      // message onto the streamed content, doubling the reply.
+      if (content && !ctx.textWasStreamed) {
         yield { type: "text", content, isStreaming: false };
       }
       // Inline tool_requests are also surfaced via `tool.execution_start`
@@ -578,6 +592,7 @@ function* mapEvent(
       const d: any = ev.data ?? {};
       const content = typeof d.deltaContent === "string" ? d.deltaContent : "";
       if (!content) return;
+      ctx.thinkingWasStreamed = true;
       yield { type: "thinking", content, isStreaming: true };
       return;
     }
@@ -586,6 +601,7 @@ function* mapEvent(
       const d: any = ev.data ?? {};
       const content = typeof d.content === "string" ? d.content : "";
       if (!content) return;
+      if (ctx.thinkingWasStreamed) return;
       yield { type: "thinking", content, isStreaming: false };
       return;
     }
