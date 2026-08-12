@@ -41,25 +41,32 @@ export function useTodoData(
 
     const threadChanged = lastSeenThreadIdRef.current !== activeThreadId;
     const prevLastId = lastSeenMessageIdRef.current;
-    const messageIds = new Set(messages.map((m) => m.id));
+    // Avoid materialising a Set of every message id on each tick; a linear
+    // scan short-circuits and allocates nothing.
+    const hasPrevLastId =
+      prevLastId !== null && messages.some((m) => m.id === prevLastId);
     const timelineContinues =
-      !isFirstRun &&
-      !threadChanged &&
-      prevLastId !== null &&
-      messageIds.has(prevLastId);
+      !isFirstRun && !threadChanged && prevLastId !== null && hasPrevLastId;
 
     lastSeenThreadIdRef.current = activeThreadId;
     lastSeenMessageIdRef.current =
       messages.length > 0 ? messages[messages.length - 1].id : null;
 
-    const lastTodoMessage = [...messages]
-      .reverse()
-      .find(
-        (m) =>
-          m.todoData &&
-          Array.isArray(m.todoData.todos) &&
-          m.todoData.todos.length > 0,
-      );
+    // Walk backwards in place — `[...messages].reverse()` copied the entire
+    // transcript (3k+ entries) on every streaming tick just to find the last
+    // todo-bearing message.
+    let lastTodoMessage: (typeof messages)[number] | undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (
+        m.todoData &&
+        Array.isArray(m.todoData.todos) &&
+        m.todoData.todos.length > 0
+      ) {
+        lastTodoMessage = m;
+        break;
+      }
+    }
 
     if (!lastTodoMessage?.todoData) {
       setLatestTodoData(null);

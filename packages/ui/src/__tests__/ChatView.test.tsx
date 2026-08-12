@@ -109,3 +109,88 @@ describe("ChatView typing indicator auto-scroll", () => {
     expect(screen.getByText("Thinking")).toBeInTheDocument();
   });
 });
+
+describe("ChatView message windowing", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  const makeMessages = (n: number): ChatMessage[] =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `m${i}`,
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `message ${i}`,
+      timestamp: i,
+    }));
+
+  it("renders every message when the transcript is small", () => {
+    render(<ChatView messages={makeMessages(10)} isStreaming={false} />);
+    expect(screen.getByText("message 0")).toBeInTheDocument();
+    expect(screen.getByText("message 9")).toBeInTheDocument();
+    expect(
+      screen.queryByTitle("Render older messages"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders only the most recent window for a long transcript", () => {
+    const { container } = render(
+      <ChatView messages={makeMessages(500)} isStreaming={false} />,
+    );
+    // Oldest messages are not mounted; newest are.
+    expect(screen.queryByText("message 0")).not.toBeInTheDocument();
+    expect(screen.getByText("message 499")).toBeInTheDocument();
+    // Far fewer DOM nodes than the 500 messages supplied.
+    const rendered = container.querySelectorAll("[data-message-id]");
+    expect(rendered.length).toBeLessThan(100);
+    expect(rendered.length).toBeGreaterThan(0);
+  });
+
+  it("reveals older messages when the load-earlier control is clicked", () => {
+    const { container } = render(
+      <ChatView messages={makeMessages(500)} isStreaming={false} />,
+    );
+    const before = container.querySelectorAll("[data-message-id]").length;
+
+    const btn = screen.getByTitle("Render older messages");
+    act(() => {
+      btn.click();
+    });
+
+    const after = container.querySelectorAll("[data-message-id]").length;
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it("marks the true last message as streaming, not the last of the window", () => {
+    const msgs = makeMessages(500);
+    render(<ChatView messages={msgs} isStreaming={true} />);
+    // The newest message is rendered and the typing indicator is present,
+    // meaning isStreaming was resolved against the real transcript tail.
+    expect(screen.getByText("message 499")).toBeInTheDocument();
+    expect(screen.getByText("Thinking")).toBeInTheDocument();
+  });
+
+  it("resets the window when the transcript is replaced (thread switch)", () => {
+    const { container, rerender } = render(
+      <ChatView messages={makeMessages(500)} isStreaming={false} />,
+    );
+    act(() => {
+      screen.getByTitle("Render older messages").click();
+    });
+    const expanded = container.querySelectorAll("[data-message-id]").length;
+
+    // Switch to a different transcript (different first message id).
+    const other: ChatMessage[] = Array.from({ length: 500 }, (_, i) => ({
+      id: `x${i}`,
+      role: "user",
+      content: `other ${i}`,
+      timestamp: i,
+    }));
+    act(() => {
+      rerender(<ChatView messages={other} isStreaming={false} />);
+    });
+
+    const afterSwitch = container.querySelectorAll("[data-message-id]").length;
+    expect(afterSwitch).toBeLessThan(expanded);
+    expect(screen.getByText("other 499")).toBeInTheDocument();
+  });
+});

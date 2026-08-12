@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -221,7 +221,7 @@ export function buildMarkdownComponents(onLinkClick?: (url: string) => void) {
   };
 }
 
-export function MarkdownContent({
+function MarkdownContentImpl({
   content,
   onLinkClick,
 }: {
@@ -241,3 +241,11 @@ export function MarkdownContent({
     </ReactMarkdown>
   );
 }
+
+/**
+ * Memoized — this is the single most expensive component in the app. Parsing
+ * markdown through remark/rehype plus Prism highlighting costs ~0.6 ms per
+ * message, so re-rendering an entire transcript cost ~305 ms per streaming
+ * tick against a 50 ms budget.
+ */
+export const MarkdownContent = memo(MarkdownContentImpl);

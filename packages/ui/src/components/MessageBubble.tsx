@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, memo } from "react";
 import { ToolCallCard } from "./ToolCallCard";
 import { TaskCard } from "./TaskCard";
 import { QuestionSequence } from "./QuestionSequence";
@@ -169,7 +169,7 @@ function highlightMentions(content: string): string {
   return content.replace(/@(\w[\w\s]*?)(?=\s|$|[.,!?;:])/g, "**@$1**");
 }
 
-export function MessageBubble({
+function MessageBubbleImpl({
   provider = "claude-code",
   message,
   onLinkClick,
@@ -555,3 +555,15 @@ export function MessageBubble({
     </div>
   );
 }
+
+/**
+ * Memoized so a streaming tick only re-renders the message that actually
+ * changed. Without this, every `setMessages` (~20×/s) re-parsed the markdown
+ * of every message in the transcript — ~305 ms per tick on a 3.3k-message
+ * thread, which saturated the renderer and caused OOM crashes.
+ *
+ * `message` objects are replaced immutably by the reducer in useChat, so a
+ * reference check is sufficient. The callbacks must be stable (useCallback)
+ * at the call site for this to be effective.
+ */
+export const MessageBubble = memo(MessageBubbleImpl);

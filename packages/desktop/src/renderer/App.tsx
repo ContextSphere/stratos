@@ -1233,7 +1233,7 @@ function AppInner(): React.ReactElement {
                     messages={messages}
                     isStreaming={isStreaming}
                     onLinkClick={handleLinkClick}
-                    onSendMessage={(prompt) => handleSend(prompt)}
+                    onSendMessage={handleSend}
                     onQuestionAnswer={respondQuestion}
                     onPlanReviewDecision={respondPlanReview}
                     onViewPlan={openMarkdown}

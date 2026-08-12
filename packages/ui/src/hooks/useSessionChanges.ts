@@ -44,6 +44,23 @@ function toolCallStats(tc: ToolCall): { added: number; removed: number } {
   return { added: 0, removed: 0 };
 }
 
+/**
+ * Diff stats are pure with respect to a ToolCall object, and useChat replaces
+ * tool calls immutably (`toolCalls.map(...)`) rather than mutating them. Caching
+ * on object identity means each completed tool call is measured exactly once
+ * instead of on every streaming tick — this hook previously re-split every
+ * old/new string across ~2k tool calls ~20×/second.
+ */
+const statsCache = new WeakMap<ToolCall, { added: number; removed: number }>();
+
+function cachedToolCallStats(tc: ToolCall): { added: number; removed: number } {
+  const hit = statsCache.get(tc);
+  if (hit) return hit;
+  const computed = toolCallStats(tc);
+  statsCache.set(tc, computed);
+  return computed;
+}
+
 export interface SessionFileChange {
   filePath: string;
   toolCalls: ToolCall[];
@@ -90,7 +107,7 @@ export function useSessionChanges(messages: ChatMessage[]): SessionChanges {
 
       const { added, removed } =
         latestToolCall.status === "completed"
-          ? toolCallStats(latestToolCall)
+          ? cachedToolCallStats(latestToolCall)
           : { added: 0, removed: 0 };
 
       totalAdded += added;

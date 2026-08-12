@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, memo } from "react";
 import type { ToolCall } from "../types";
 import { MemoryOperationCard } from "./MemoryOperationCard";
 import { MonitorCard } from "./MonitorCard";
@@ -77,7 +77,7 @@ function SkillCard({ toolCall }: Props): React.ReactElement {
   );
 }
 
-export function ToolCallCard({
+function ToolCallCardImpl({
   toolCall,
   isHistorical = false,
   onViewFile,
@@ -167,3 +167,7 @@ export function ToolCallCard({
     </div>
   );
 }
+
+/** Memoized — a transcript can hold thousands of tool calls, and only the
+ *  in-flight one changes during streaming. */
+export const ToolCallCard = memo(ToolCallCardImpl);
