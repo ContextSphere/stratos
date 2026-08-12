@@ -88,8 +88,12 @@ export interface CrashCaptureOptions {
    *  internally so it fires at most once every 60 s. */
   onRssPressure?: () => void;
   /** Maximum number of heap-snapshot/state file pairs to retain in the dumps
-   *  directory. Older pairs are deleted after each new dump. Default: 30. */
+   *  directory. Older pairs are deleted after each new dump. Default: 6. */
   maxRetainedDumps?: number;
+  /** Maximum total bytes the dumps directory may occupy. Enforced after the
+   *  count-based prune, newest-first. A single snapshot can exceed 100 MB, so
+   *  a count-only policy still allowed multi-GB growth. Default: 2 GB. */
+  maxDumpBytes?: number;
   /** Override start-of-run timestamp (for tests). */
   now?: () => number;
 }
@@ -181,7 +185,8 @@ export function startCrashCapture(
   const rssEmergencyMB = opts.rssEmergencyMB ?? 4096;
   const RSS_EMERGENCY_DEBOUNCE_MS = 10_000;
   let lastRssPressureFiredAt = 0;
-  const maxRetainedDumps = opts.maxRetainedDumps ?? 30;
+  const maxRetainedDumps = opts.maxRetainedDumps ?? 6;
+  const maxDumpBytes = opts.maxDumpBytes ?? 2 * 1024 * 1024 * 1024;
 
   // ── Detect prior crash ─────────────────────────────────────────────────
   try {
@@ -334,25 +339,46 @@ export function startCrashCapture(
         .map((name) => {
           const full = join(dumpsDir, name);
           let mtimeMs = 0;
+          let size = 0;
           try {
-            mtimeMs = statSync(full).mtimeMs;
+            const st = statSync(full);
+            mtimeMs = st.mtimeMs;
+            size = st.size;
           } catch {}
-          return { name, full, mtimeMs };
+          return { name, full, mtimeMs, size };
         })
         .sort((a, b) => b.mtimeMs - a.mtimeMs);
       // Group as "pair" — one snapshot + state can survive together.
       // The simplest, robust policy: keep the newest 2*max files (snapshot
       // + state pair counts as 2), drop the rest.
       const keep = maxRetainedDumps * 2;
-      if (entries.length <= keep) return;
+      const survivors = entries.slice(0, keep);
+      let pruned = 0;
       for (const e of entries.slice(keep)) {
         try {
           unlinkSync(e.full);
+          pruned++;
         } catch {}
       }
-      console.log(
-        `[crash-capture] pruned ${entries.length - keep} old dump file(s); kept ${keep}`,
-      );
+
+      // Size budget: a single snapshot can be >100 MB, so the count cap alone
+      // still permitted multi-GB growth. Walk newest-first and drop anything
+      // past the byte budget.
+      let running = 0;
+      for (const e of survivors) {
+        running += e.size;
+        if (running > maxDumpBytes) {
+          try {
+            unlinkSync(e.full);
+            pruned++;
+            running -= e.size;
+          } catch {}
+        }
+      }
+
+      if (pruned > 0) {
+        console.log(`[crash-capture] pruned ${pruned} old dump file(s)`);
+      }
     } catch {
       // best-effort
     }

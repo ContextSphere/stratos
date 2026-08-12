@@ -48,6 +48,14 @@ interface Props {
 /** Pixel threshold: user is considered "at the bottom" if within this distance */
 const SCROLL_THRESHOLD = 80;
 
+/** How many messages to render initially. Long transcripts (3k+ messages) made
+ *  every streaming tick re-render the whole DOM tree, costing ~305 ms against a
+ *  50 ms budget. Rendering a recent window keeps that cost constant. */
+const INITIAL_WINDOW = 60;
+
+/** How many additional messages to reveal per "load earlier" click. */
+const WINDOW_STEP = 100;
+
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   {
     provider = "claude-code",
@@ -71,6 +79,39 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const isNearBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const anchorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Windowing ──────────────────────────────────────────────────────────
+  // Only the most recent `windowSize` messages are mounted. Older ones are
+  // revealed on demand, or automatically when something scrolls to them.
+  const [windowSize, setWindowSize] = useState(INITIAL_WINDOW);
+  const pendingScrollIdRef = useRef<string | null>(null);
+
+  // Reset the window when the transcript is replaced (thread switch or
+  // history reload) so a new thread doesn't inherit an expanded window.
+  const firstMessageId = messages.length > 0 ? messages[0].id : null;
+  const prevFirstIdRef = useRef(firstMessageId);
+  const prevLengthRef = useRef(messages.length);
+  if (
+    prevFirstIdRef.current !== firstMessageId ||
+    messages.length < prevLengthRef.current
+  ) {
+    prevFirstIdRef.current = firstMessageId;
+    prevLengthRef.current = messages.length;
+    if (windowSize !== INITIAL_WINDOW) setWindowSize(INITIAL_WINDOW);
+  } else {
+    prevLengthRef.current = messages.length;
+  }
+
+  const hiddenCount = Math.max(0, messages.length - windowSize);
+  const visibleMessages =
+    hiddenCount > 0 ? messages.slice(hiddenCount) : messages;
+  const lastMessageId =
+    messages.length > 0 ? messages[messages.length - 1].id : null;
+
+  const showEarlier = useCallback(() => {
+    setWindowSize((n) => n + WINDOW_STEP);
+  }, []);
+
   // Keep latest callback in a ref to avoid stale closures in debounced handler
   const onAnchorChangeRef = useRef(onAnchorChange);
   useEffect(() => {
@@ -99,7 +140,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         const target = el.querySelector(`[data-message-id="${messageId}"]`);
         if (target) {
           target.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
         }
+        // Target is outside the rendered window — expand far enough to include
+        // it, then scroll once it has mounted (see the effect below).
+        const idx = messages.findIndex((m) => m.id === messageId);
+        if (idx === -1) return;
+        pendingScrollIdRef.current = messageId;
+        setWindowSize(messages.length - idx + 10);
       },
       scrollToBottom() {
         const el = scrollRef.current;
@@ -109,8 +157,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setShowScrollButton(false);
       },
     }),
-    [],
+    [messages],
   );
+
+  // Complete a scroll that had to wait for the window to expand.
+  useEffect(() => {
+    const id = pendingScrollIdRef.current;
+    if (!id) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const target = el.querySelector(`[data-message-id="${id}"]`);
+    if (target) {
+      pendingScrollIdRef.current = null;
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [windowSize]);
 
   /** Find and report the top-visible message after scrolling stops */
   const detectAnchor = useCallback(() => {
@@ -207,7 +268,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       className="flex-1 overflow-y-auto px-4 py-2 relative"
     >
       <div className="space-y-4">
-        {messages.map((msg, idx) => (
+        {hiddenCount > 0 && (
+          <div className="flex justify-center py-2">
+            <button
+              onClick={showEarlier}
+              className="px-3 py-1.5 rounded-full bg-[var(--bg-overlay)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] text-xs border border-[var(--border-mid)] transition-colors"
+              title="Render older messages"
+            >
+              Load {Math.min(hiddenCount, WINDOW_STEP)} earlier message
+              {Math.min(hiddenCount, WINDOW_STEP) === 1 ? "" : "s"} (
+              {hiddenCount} hidden)
+            </button>
+          </div>
+        )}
+        {visibleMessages.map((msg) => (
           <MessageBubble
             key={msg.id}
             provider={provider}
@@ -219,7 +293,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onViewPlan={onViewPlan}
             onUpdateTaskExpanded={onUpdateTaskExpanded}
             onViewFile={onViewFile}
-            isStreaming={isStreaming && idx === messages.length - 1}
+            isStreaming={isStreaming && msg.id === lastMessageId}
           />
         ))}
         {isStreaming && (
