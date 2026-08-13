@@ -1039,21 +1039,14 @@ export class CopilotProvider implements AgentProvider {
 
   private async getClient(cwd: string): Promise<CopilotClientType> {
     const sdk = getSdk();
-    // If the cwd has changed (rare in practice), tear down and rebuild.
-    if (
-      CopilotProvider.sharedClient &&
-      CopilotProvider.sharedClientCwd === cwd
-    ) {
-      return CopilotProvider.sharedClient;
-    }
+    // The shared client hosts multiple concurrent sessions across threads.
+    // Its constructor `workingDirectory` only sets the spawned runtime's cwd;
+    // per-session working directories come from SessionConfig.workingDirectory,
+    // so we must NOT tear the client down when a new thread has a different
+    // cwd — that would close every active session (killing any in-flight
+    // stream on other threads). Reuse the client if it already exists.
     if (CopilotProvider.sharedClient) {
-      try {
-        await CopilotProvider.sharedClient.stop();
-      } catch {
-        /* best-effort */
-      }
-      CopilotProvider.sharedClient = undefined;
-      CopilotProvider.sharedClientCwd = undefined;
+      return CopilotProvider.sharedClient;
     }
     const cliPath = resolveCopilotCliPath(this.config.cliPath);
     const client = new sdk.CopilotClient({
