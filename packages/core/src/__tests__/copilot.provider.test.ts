@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   CopilotProvider,
   imagesToAttachments,
@@ -29,6 +29,87 @@ describe("CopilotProvider", () => {
   it("interrupt is a no-op when no session has been created", async () => {
     const p = new CopilotProvider();
     await expect(p.interrupt()).resolves.toBeUndefined();
+  });
+
+  it("shares a single CopilotClient across providers with different cwds (does not stop the shared client on cwd change)", async () => {
+    // Regression: previously, when a second thread with a different cwd
+    // called getClient(), the provider would call sharedClient.stop() —
+    // which closes ALL active sessions on that client, killing any
+    // in-flight streams on other threads. The client hosts multiple
+    // concurrent sessions with per-session workingDirectory; its
+    // constructor cwd is only the spawned runtime's cwd.
+    const stopSpy = vi.fn(async () => []);
+    const startSpy = vi.fn(async () => {});
+    const listModelsSpy = vi.fn(async () => [] as any[]);
+    let ctorCalls = 0;
+
+    class FakeCopilotClient {
+      constructor(_opts: unknown) {
+        ctorCalls += 1;
+      }
+      start = startSpy;
+      stop = stopSpy;
+      listModels = listModelsSpy;
+    }
+
+    // Inject the mock SDK via the module-level require cache.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const cache = require.cache;
+    const sdkKey = Object.keys(cache).find((k) =>
+      k.includes("@github/copilot-sdk"),
+    );
+    // If the SDK isn't loaded yet, prime it and re-look.
+    let restore: (() => void) | undefined;
+    try {
+      if (!sdkKey) {
+        // Force-load once so a cache entry exists.
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          require("@github/copilot-sdk");
+        } catch {
+          /* ok if not installed in this env */
+        }
+      }
+      const key = Object.keys(cache).find((k) =>
+        k.includes("@github/copilot-sdk"),
+      );
+      if (key && cache[key]) {
+        const original = cache[key]!.exports;
+        cache[key]!.exports = {
+          ...original,
+          CopilotClient: FakeCopilotClient,
+          RuntimeConnection: {
+            forStdio: () => ({}),
+          },
+        };
+        restore = () => {
+          if (cache[key]) cache[key]!.exports = original;
+        };
+      } else {
+        // SDK not installed — nothing to test against here.
+        return;
+      }
+
+      // Reset the static shared client between test runs.
+      (CopilotProvider as any).sharedClient = undefined;
+      (CopilotProvider as any).sharedClientCwd = undefined;
+
+      const providerA = new CopilotProvider();
+      await providerA.initialize({ cwd: "/tmp/project-a" });
+      const providerB = new CopilotProvider();
+      await providerB.initialize({ cwd: "/tmp/project-b" });
+
+      // getAvailableModels() drives getClient() through the public API.
+      await providerA.getAvailableModels();
+      await providerB.getAvailableModels();
+
+      expect(ctorCalls).toBe(1);
+      expect(stopSpy).not.toHaveBeenCalled();
+    } finally {
+      restore?.();
+      (CopilotProvider as any).sharedClient = undefined;
+      (CopilotProvider as any).sharedClientCwd = undefined;
+    }
   });
 });
 
