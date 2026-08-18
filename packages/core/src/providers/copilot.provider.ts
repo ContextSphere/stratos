@@ -213,6 +213,28 @@ export function normalizeCopilotToolName(raw: string): string {
   return raw;
 }
 
+// ─── `task_complete` handling ────────────────────────────────────────────────
+//
+// Copilot ends an autopilot turn by calling the built-in `task_complete` tool
+// instead of emitting a final assistant message. Its `summary` argument *is*
+// the reply for that turn, so rendering it as a tool card leaves the thread
+// looking like the agent stopped without answering. We unwrap the summary into
+// assistant text and drop the paired tool_use / tool_result.
+
+export function isTaskCompleteTool(raw: unknown): boolean {
+  if (typeof raw !== "string") return false;
+  return raw.toLowerCase().replace(/[\s-]+/g, "_") === "task_complete";
+}
+
+export function extractTaskCompleteSummary(input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  for (const key of ["summary", "message", "content", "result"]) {
+    const v = (input as Record<string, unknown>)[key];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return "";
+}
+
 // ─── Mode mapping ────────────────────────────────────────────────────────────
 
 function stratosModeToCopilotAgentMode(
@@ -413,6 +435,12 @@ interface BridgeContext {
   >;
   // For sub-agent nested events: agentId → parent toolCallId
   agentIdToParentToolCallId: Map<string, string>;
+  // `task_complete` calls whose tool card was replaced by assistant text — the
+  // matching tool_result must be suppressed too (there is no card to fill in).
+  taskCompleteCallIds: Set<string>;
+  // Whether the current turn already surfaced a task_complete summary as text,
+  // so the `session.task_complete` fallback doesn't duplicate it.
+  taskCompleteEmitted: boolean;
   resultEmitted: boolean;
 }
 
@@ -433,6 +461,8 @@ export function makeBridgeContext(): BridgeContext {
     pendingToolNames: new Map(),
     subagentTaskByCallId: new Map(),
     agentIdToParentToolCallId: new Map(),
+    taskCompleteCallIds: new Set(),
+    taskCompleteEmitted: false,
     resultEmitted: false,
   };
 }
@@ -481,6 +511,20 @@ function emitInitIfReady(ctx: BridgeContext): AgentMessage | null {
     slashCommands: ctx.cachedCommands,
     mcpServers: ctx.cachedMcpServers,
   };
+}
+
+/**
+ * Surface a `task_complete` summary as the assistant's reply for the turn.
+ * Also feeds `ctx.finalText` so the `result` synthesized on `session.idle`
+ * carries the summary (used by the manager agent to build its reply text).
+ */
+function* emitTaskCompleteSummary(
+  ctx: BridgeContext,
+  summary: string,
+): Generator<AgentMessage> {
+  ctx.taskCompleteEmitted = true;
+  ctx.finalText = summary;
+  yield { type: "text", content: summary, isStreaming: false };
 }
 
 export function* mapEvent(
@@ -653,6 +697,20 @@ export function* mapEvent(
       // We may have already yielded tool_use via assistant.message.toolRequests;
       // suppress duplicates by checking pendingToolNames.
       if (ctx.pendingToolNames.has(d.toolCallId)) return;
+      // `task_complete` carries the agent's final answer in its `summary`
+      // argument. Render it as assistant text rather than a tool card so the
+      // turn ends with a visible reply. Sub-agent calls (ev.agentId set) keep
+      // the tool card — their summaries belong to the nested task, not the
+      // main thread. A call with no usable summary also keeps its card so a
+      // malformed/failed call stays visible.
+      if (isTaskCompleteTool(rawName) && !ev.agentId) {
+        const summary = extractTaskCompleteSummary(d.arguments);
+        if (summary) {
+          ctx.taskCompleteCallIds.add(d.toolCallId);
+          yield* emitTaskCompleteSummary(ctx, summary);
+          return;
+        }
+      }
       ctx.pendingToolNames.set(d.toolCallId, toolName);
       const parent = ev.agentId
         ? ctx.agentIdToParentToolCallId.get(ev.agentId)
@@ -684,6 +742,19 @@ export function* mapEvent(
     case "tool.execution_complete": {
       const d: any = ev.data ?? {};
       const toolCallId: string = d.toolCallId;
+      // A `task_complete` whose summary was rendered as text has no tool card
+      // to resolve — drop the result, but surface a genuine failure so the
+      // turn doesn't end on a summary that was never accepted.
+      if (ctx.taskCompleteCallIds.has(toolCallId)) {
+        ctx.taskCompleteCallIds.delete(toolCallId);
+        if (d.success === false) {
+          yield {
+            type: "error",
+            message: d.error?.message ?? "task_complete failed",
+          };
+        }
+        return;
+      }
       const toolName = ctx.pendingToolNames.get(toolCallId) ?? "UnknownTool";
       ctx.pendingToolNames.delete(toolCallId);
       // Compose output: prefer detailedContent for UI, fall back to content.
@@ -858,7 +929,18 @@ export function* mapEvent(
       return;
     }
 
-    case "session.task_complete":
+    case "session.task_complete": {
+      // Fallback path: the summary also arrives on this session-level event.
+      // Emit it only when the tool-call path didn't already (e.g. the CLI
+      // reported completion without a matching tool.execution_start).
+      const d: any = ev.data ?? {};
+      if (ctx.taskCompleteEmitted || ev.agentId || d.success === false) return;
+      const summary = typeof d.summary === "string" ? d.summary.trim() : "";
+      if (!summary) return;
+      yield* emitTaskCompleteSummary(ctx, summary);
+      return;
+    }
+
     case "abort":
       return;
 
@@ -880,6 +962,7 @@ export function* mapEvent(
       ctx.finalText = "";
       ctx.finalUsage = null;
       ctx.finalCost = undefined;
+      ctx.taskCompleteEmitted = false;
       return;
     }
 

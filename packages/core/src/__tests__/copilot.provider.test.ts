@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   CopilotProvider,
+  extractTaskCompleteSummary,
   imagesToAttachments,
+  isTaskCompleteTool,
   makeBridgeContext,
   mapEvent,
   normalizeCopilotToolName,
@@ -292,5 +294,160 @@ describe("copilot mapEvent — streaming vs terminal message", () => {
     // First message streamed → terminal suppressed. Second message did not
     // stream → terminal must be emitted.
     expect(textPieces).toEqual(["First", "Second"]);
+  });
+});
+
+describe("copilot mapEvent — task_complete", () => {
+  const startEv = (
+    summary: unknown,
+    toolCallId = "call_1",
+    extra: Record<string, unknown> = {},
+  ) => ({
+    type: "tool.execution_start",
+    data: {
+      toolCallId,
+      toolName: "task_complete",
+      arguments: summary === undefined ? {} : { summary },
+    },
+    ...extra,
+  });
+
+  it("renders the summary as assistant text instead of a tool card", () => {
+    const messages = runBridge([
+      startEv("All done — I fixed the bug."),
+      {
+        type: "session.task_complete",
+        data: { summary: "All done — I fixed the bug.", success: true },
+      },
+      {
+        type: "tool.execution_complete",
+        data: {
+          toolCallId: "call_1",
+          success: true,
+          result: { content: "✓ Task completed: All done — I fixed the bug." },
+        },
+      },
+      { type: "session.idle" },
+    ]);
+
+    expect(messages.filter((m) => m.type === "tool_use")).toHaveLength(0);
+    expect(messages.filter((m) => m.type === "tool_result")).toHaveLength(0);
+
+    const textPieces = messages
+      .filter((m) => m.type === "text")
+      .map((m) => (m as { content: string }).content);
+    expect(textPieces).toEqual(["All done — I fixed the bug."]);
+
+    // The synthesized `result` must carry the summary as the turn's reply.
+    const result = messages.find((m) => m.type === "result") as
+      | { content: string }
+      | undefined;
+    expect(result?.content).toBe("All done — I fixed the bug.");
+  });
+
+  it("does not duplicate the summary when session.task_complete repeats it", () => {
+    const messages = runBridge([
+      startEv("Summary text"),
+      { type: "session.task_complete", data: { summary: "Summary text" } },
+    ]);
+    expect(messages.filter((m) => m.type === "text")).toHaveLength(1);
+  });
+
+  it("falls back to session.task_complete when no tool call was observed", () => {
+    const messages = runBridge([
+      { type: "session.task_complete", data: { summary: "Only on the event" } },
+    ]);
+    const textPieces = messages
+      .filter((m) => m.type === "text")
+      .map((m) => (m as { content: string }).content);
+    expect(textPieces).toEqual(["Only on the event"]);
+  });
+
+  it("emits a fresh summary on each turn (per-turn flag resets on idle)", () => {
+    const messages = runBridge([
+      startEv("First turn", "call_1"),
+      { type: "session.idle" },
+      { type: "session.task_complete", data: { summary: "Second turn" } },
+    ]);
+    const textPieces = messages
+      .filter((m) => m.type === "text")
+      .map((m) => (m as { content: string }).content);
+    expect(textPieces).toEqual(["First turn", "Second turn"]);
+  });
+
+  it("keeps the tool card when the call carries no usable summary", () => {
+    const messages = runBridge([
+      startEv(undefined),
+      {
+        type: "tool.execution_complete",
+        data: {
+          toolCallId: "call_1",
+          success: false,
+          error: { message: "summary is required" },
+        },
+      },
+    ]);
+    expect(messages.filter((m) => m.type === "text")).toHaveLength(0);
+    const toolUse = messages.find((m) => m.type === "tool_use") as
+      | { toolName: string }
+      | undefined;
+    expect(toolUse?.toolName).toBe("task_complete");
+    expect(messages.filter((m) => m.type === "tool_result")).toHaveLength(1);
+  });
+
+  it("keeps the tool card for sub-agent task_complete calls", () => {
+    const messages = runBridge([
+      startEv("Sub-agent done", "call_sub", { agentId: "agent-7" }),
+    ]);
+    expect(messages.filter((m) => m.type === "text")).toHaveLength(0);
+    expect(messages.filter((m) => m.type === "tool_use")).toHaveLength(1);
+  });
+
+  it("surfaces an error when a rendered task_complete call ends up failing", () => {
+    const messages = runBridge([
+      startEv("Rendered summary"),
+      {
+        type: "tool.execution_complete",
+        data: {
+          toolCallId: "call_1",
+          success: false,
+          error: { message: "rejected by policy" },
+        },
+      },
+    ]);
+    const err = messages.find((m) => m.type === "error") as
+      | { message: string }
+      | undefined;
+    expect(err?.message).toBe("rejected by policy");
+    expect(messages.filter((m) => m.type === "tool_result")).toHaveLength(0);
+  });
+
+  it("ignores a failed session.task_complete event", () => {
+    const messages = runBridge([
+      {
+        type: "session.task_complete",
+        data: { summary: "not accepted", success: false },
+      },
+    ]);
+    expect(messages.filter((m) => m.type === "text")).toHaveLength(0);
+  });
+});
+
+describe("isTaskCompleteTool / extractTaskCompleteSummary", () => {
+  it("matches the task_complete tool across naming variants", () => {
+    expect(isTaskCompleteTool("task_complete")).toBe(true);
+    expect(isTaskCompleteTool("Task-Complete")).toBe(true);
+    expect(isTaskCompleteTool("task complete")).toBe(true);
+    expect(isTaskCompleteTool("task_completed")).toBe(false);
+    expect(isTaskCompleteTool(undefined)).toBe(false);
+  });
+
+  it("extracts the first non-empty string field", () => {
+    expect(extractTaskCompleteSummary({ summary: " done " })).toBe("done");
+    expect(extractTaskCompleteSummary({ summary: "  ", message: "m" })).toBe(
+      "m",
+    );
+    expect(extractTaskCompleteSummary({})).toBe("");
+    expect(extractTaskCompleteSummary(null)).toBe("");
   });
 });
