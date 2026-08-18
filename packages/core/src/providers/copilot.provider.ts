@@ -173,6 +173,7 @@ const COPILOT_TOOL_NAME_MAP: Record<string, string> = {
   view: "Read",
   open_file: "Read",
   write: "Write",
+  create: "Write",
   create_file: "Write",
   edit: "Edit",
   str_replace: "Edit",
@@ -211,6 +212,106 @@ export function normalizeCopilotToolName(raw: string): string {
   if (COPILOT_TOOL_NAME_MAP[key]) return COPILOT_TOOL_NAME_MAP[key];
   // MCP server tools arrive as "server:tool" or already capitalized — preserve.
   return raw;
+}
+
+export function normalizeCopilotToolInput(
+  toolName: string,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  if (toolName === "Edit") {
+    return {
+      ...input,
+      ...(typeof input.old_string !== "string" &&
+      typeof input.old_str === "string"
+        ? { old_string: input.old_str }
+        : {}),
+      ...(typeof input.new_string !== "string" &&
+      typeof input.new_str === "string"
+        ? { new_string: input.new_str }
+        : {}),
+    };
+  }
+
+  if (
+    toolName === "Write" &&
+    typeof input.content !== "string" &&
+    typeof input.file_text === "string"
+  ) {
+    return { ...input, content: input.file_text };
+  }
+
+  return input;
+}
+
+interface NormalizedCopilotToolUse {
+  toolName: "Write" | "Edit" | "Delete";
+  input: Record<string, unknown>;
+}
+
+export function extractCopilotPatchChanges(
+  patch: unknown,
+): NormalizedCopilotToolUse[] {
+  if (typeof patch !== "string") return [];
+
+  const lines = patch.split(/\r?\n/);
+  const changes: NormalizedCopilotToolUse[] = [];
+  const fileHeader = /^\*\*\* (Add|Update|Delete) File: (.+)$/;
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(fileHeader);
+    if (!match) continue;
+
+    const operation = match[1];
+    let filePath = match[2];
+    const body: string[] = [];
+    for (i += 1; i < lines.length; i++) {
+      if (fileHeader.test(lines[i]) || lines[i] === "*** End Patch") {
+        i -= 1;
+        break;
+      }
+      const moveMatch = lines[i].match(/^\*\*\* Move to: (.+)$/);
+      if (moveMatch) {
+        filePath = moveMatch[1];
+      } else {
+        body.push(lines[i]);
+      }
+    }
+
+    if (operation === "Add") {
+      changes.push({
+        toolName: "Write",
+        input: {
+          file_path: filePath,
+          content: body
+            .filter((line) => line.startsWith("+"))
+            .map((line) => line.slice(1))
+            .join("\n"),
+        },
+      });
+    } else if (operation === "Delete") {
+      changes.push({
+        toolName: "Delete",
+        input: { file_path: filePath },
+      });
+    } else {
+      changes.push({
+        toolName: "Edit",
+        input: {
+          file_path: filePath,
+          old_string: body
+            .filter((line) => line.startsWith("-"))
+            .map((line) => line.slice(1))
+            .join("\n"),
+          new_string: body
+            .filter((line) => line.startsWith("+"))
+            .map((line) => line.slice(1))
+            .join("\n"),
+        },
+      });
+    }
+  }
+
+  return changes;
 }
 
 // ─── `task_complete` handling ────────────────────────────────────────────────
@@ -428,6 +529,7 @@ interface BridgeContext {
   thinkingWasStreamed: boolean;
   // Per-tool-call accounting
   pendingToolNames: Map<string, string>; // toolCallId → toolName (after normalize)
+  pendingToolCallIds: Map<string, string[]>; // original toolCallId → emitted toolCallIds
   // Sub-agent task tracking — surface via task_notification + nested tool_use parentToolUseId
   subagentTaskByCallId: Map<
     string,
@@ -459,6 +561,7 @@ export function makeBridgeContext(): BridgeContext {
     textWasStreamed: false,
     thinkingWasStreamed: false,
     pendingToolNames: new Map(),
+    pendingToolCallIds: new Map(),
     subagentTaskByCallId: new Map(),
     agentIdToParentToolCallId: new Map(),
     taskCompleteCallIds: new Set(),
@@ -712,13 +815,44 @@ export function* mapEvent(
         }
       }
       ctx.pendingToolNames.set(d.toolCallId, toolName);
+      const patchChanges =
+        rawName === "apply_patch"
+          ? extractCopilotPatchChanges(d.arguments)
+          : [];
+      const input = normalizeCopilotToolInput(
+        toolName,
+        d.arguments &&
+          typeof d.arguments === "object" &&
+          !Array.isArray(d.arguments)
+          ? (d.arguments as Record<string, unknown>)
+          : typeof d.arguments === "string"
+            ? { input: d.arguments }
+            : {},
+      );
       const parent = ev.agentId
         ? ctx.agentIdToParentToolCallId.get(ev.agentId)
         : undefined;
+      if (patchChanges.length > 0) {
+        const emittedCallIds = patchChanges.map((_, index) =>
+          index === 0 ? d.toolCallId : `${d.toolCallId}:${index}`,
+        );
+        ctx.pendingToolNames.set(d.toolCallId, patchChanges[0].toolName);
+        ctx.pendingToolCallIds.set(d.toolCallId, emittedCallIds);
+        for (let i = 0; i < patchChanges.length; i++) {
+          yield {
+            type: "tool_use",
+            toolName: patchChanges[i].toolName,
+            input: patchChanges[i].input,
+            toolCallId: emittedCallIds[i],
+            ...(parent ? { parentToolUseId: parent } : {}),
+          };
+        }
+        return;
+      }
       yield {
         type: "tool_use",
         toolName,
-        input: (d.arguments ?? {}) as Record<string, unknown>,
+        input,
         toolCallId: d.toolCallId,
         ...(parent ? { parentToolUseId: parent } : {}),
       };
@@ -757,6 +891,10 @@ export function* mapEvent(
       }
       const toolName = ctx.pendingToolNames.get(toolCallId) ?? "UnknownTool";
       ctx.pendingToolNames.delete(toolCallId);
+      const emittedCallIds = ctx.pendingToolCallIds.get(toolCallId) ?? [
+        toolCallId,
+      ];
+      ctx.pendingToolCallIds.delete(toolCallId);
       // Compose output: prefer detailedContent for UI, fall back to content.
       let output = "";
       if (d.result?.detailedContent) output = d.result.detailedContent;
@@ -765,7 +903,9 @@ export function* mapEvent(
       output = capStreamingToolOutput(output);
       // If the tool was TodoWrite, the todo_update was emitted at start; the
       // tool_result is still useful to mark the call as resolved.
-      yield { type: "tool_result", toolCallId, output };
+      for (const emittedCallId of emittedCallIds) {
+        yield { type: "tool_result", toolCallId: emittedCallId, output };
+      }
       // Resolve a pending sub-agent task on its completion tool call.
       const task = ctx.subagentTaskByCallId.get(toolCallId);
       if (task) {
