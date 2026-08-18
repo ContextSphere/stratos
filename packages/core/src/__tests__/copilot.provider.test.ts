@@ -1,11 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   CopilotProvider,
+  extractCopilotPatchChanges,
   extractTaskCompleteSummary,
   imagesToAttachments,
   isTaskCompleteTool,
   makeBridgeContext,
   mapEvent,
+  normalizeCopilotToolInput,
   normalizeCopilotToolName,
 } from "../providers/copilot.provider";
 import type { AgentMessage } from "../providers/types";
@@ -122,6 +124,7 @@ describe("normalizeCopilotToolName", () => {
     ["view", "Read"],
     ["open_file", "Read"],
     ["write", "Write"],
+    ["create", "Write"],
     ["create_file", "Write"],
     ["edit", "Edit"],
     ["str_replace", "Edit"],
@@ -171,6 +174,107 @@ describe("normalizeCopilotToolName", () => {
     expect(normalizeCopilotToolName("READ")).toBe("Read");
     expect(normalizeCopilotToolName("Web-Fetch")).toBe("WebFetch");
     expect(normalizeCopilotToolName("str-replace")).toBe("Edit");
+  });
+});
+
+describe("normalizeCopilotToolInput", () => {
+  it("maps Copilot edit arguments to the canonical diff fields", () => {
+    expect(
+      normalizeCopilotToolInput("Edit", {
+        path: "/app/example.ts",
+        old_str: "const before = true;",
+        new_str: "const after = true;",
+      }),
+    ).toEqual({
+      path: "/app/example.ts",
+      old_str: "const before = true;",
+      new_str: "const after = true;",
+      old_string: "const before = true;",
+      new_string: "const after = true;",
+    });
+  });
+
+  it("maps Copilot create content to the canonical Write field", () => {
+    expect(
+      normalizeCopilotToolInput("Write", {
+        path: "/app/new.ts",
+        file_text: "export const created = true;",
+      }),
+    ).toEqual({
+      path: "/app/new.ts",
+      file_text: "export const created = true;",
+      content: "export const created = true;",
+    });
+  });
+
+  it("does not overwrite canonical fields", () => {
+    expect(
+      normalizeCopilotToolInput("Edit", {
+        old_str: "copilot old",
+        new_str: "copilot new",
+        old_string: "canonical old",
+        new_string: "canonical new",
+      }),
+    ).toMatchObject({
+      old_string: "canonical old",
+      new_string: "canonical new",
+    });
+  });
+});
+
+describe("extractCopilotPatchChanges", () => {
+  it("extracts update content for the diff viewer", () => {
+    expect(
+      extractCopilotPatchChanges(`*** Begin Patch
+*** Update File: src/example.ts
+@@
+-const before = true;
++const after = true;
+*** End Patch`),
+    ).toEqual([
+      {
+        toolName: "Edit",
+        input: {
+          file_path: "src/example.ts",
+          old_string: "const before = true;",
+          new_string: "const after = true;",
+        },
+      },
+    ]);
+  });
+
+  it("extracts every file operation from a multi-file patch", () => {
+    expect(
+      extractCopilotPatchChanges(`*** Begin Patch
+*** Add File: src/new.ts
++export const created = true;
+*** Update File: src/old.ts
+@@
+-old
++new
+*** Delete File: src/deleted.ts
+*** End Patch`),
+    ).toEqual([
+      {
+        toolName: "Write",
+        input: {
+          file_path: "src/new.ts",
+          content: "export const created = true;",
+        },
+      },
+      {
+        toolName: "Edit",
+        input: {
+          file_path: "src/old.ts",
+          old_string: "old",
+          new_string: "new",
+        },
+      },
+      {
+        toolName: "Delete",
+        input: { file_path: "src/deleted.ts" },
+      },
+    ]);
   });
 });
 
@@ -232,6 +336,110 @@ function runBridge(
   }
   return out;
 }
+
+describe("copilot mapEvent — file changes", () => {
+  it("emits canonical edit content for the changes sidebar", () => {
+    const [message] = runBridge([
+      {
+        type: "tool.execution_start",
+        data: {
+          toolCallId: "edit_1",
+          toolName: "edit",
+          arguments: {
+            path: "/app/example.ts",
+            old_str: "const before = true;",
+            new_str: "const after = true;",
+          },
+        },
+      },
+    ]);
+
+    expect(message).toMatchObject({
+      type: "tool_use",
+      toolName: "Edit",
+      input: {
+        path: "/app/example.ts",
+        old_string: "const before = true;",
+        new_string: "const after = true;",
+      },
+    });
+  });
+
+  it("emits Copilot create calls as canonical Write changes", () => {
+    const [message] = runBridge([
+      {
+        type: "tool.execution_start",
+        data: {
+          toolCallId: "create_1",
+          toolName: "create",
+          arguments: {
+            path: "/app/new.ts",
+            file_text: "export const created = true;",
+          },
+        },
+      },
+    ]);
+
+    expect(message).toMatchObject({
+      type: "tool_use",
+      toolName: "Write",
+      input: {
+        path: "/app/new.ts",
+        content: "export const created = true;",
+      },
+    });
+  });
+
+  it("emits freeform apply_patch calls as resolvable file changes", () => {
+    const messages = runBridge([
+      {
+        type: "tool.execution_start",
+        data: {
+          toolCallId: "patch_1",
+          toolName: "apply_patch",
+          arguments: `*** Begin Patch
+*** Update File: src/one.ts
+@@
+-before
++after
+*** Add File: src/two.ts
++created
+*** End Patch`,
+        },
+      },
+      {
+        type: "tool.execution_complete",
+        data: {
+          toolCallId: "patch_1",
+          success: true,
+          result: { detailedContent: "diff output" },
+        },
+      },
+    ]);
+
+    expect(messages.filter((message) => message.type === "tool_use")).toEqual([
+      expect.objectContaining({
+        toolName: "Edit",
+        toolCallId: "patch_1",
+        input: {
+          file_path: "src/one.ts",
+          old_string: "before",
+          new_string: "after",
+        },
+      }),
+      expect.objectContaining({
+        toolName: "Write",
+        toolCallId: "patch_1:1",
+        input: { file_path: "src/two.ts", content: "created" },
+      }),
+    ]);
+    expect(
+      messages
+        .filter((message) => message.type === "tool_result")
+        .map((message) => message.toolCallId),
+    ).toEqual(["patch_1", "patch_1:1"]);
+  });
+});
 
 describe("copilot mapEvent — streaming vs terminal message", () => {
   it("does not re-emit text from assistant.message when deltas already streamed it (regression: duplicated responses)", () => {
