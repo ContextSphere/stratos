@@ -19,6 +19,7 @@ const baseProps = {
   onRemoveFolder: vi.fn(),
   onToggleFolderCollapsed: vi.fn(),
   onDeleteThread: vi.fn(),
+  onRenameThread: vi.fn(),
   runningThreadIds: [] as string[],
   threadNotifications: new Map<string, string>(),
 };
@@ -145,5 +146,80 @@ describe("ThreadList", () => {
       />,
     );
     expect(screen.getByText("Threads")).toBeInTheDocument();
+  });
+
+  it("renames a thread when the rename button is clicked and Enter is pressed", async () => {
+    const user = userEvent.setup();
+    const folders = [makeFolder("f1", "proj", "/proj")];
+    const threads = [makeThread("a", "Alpha", "/proj")];
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={threads}
+        folders={folders}
+        activeThreadId={null}
+      />,
+    );
+    await user.click(screen.getByTitle("Rename thread"));
+    const input = screen.getByLabelText<HTMLInputElement>("Rename thread");
+    expect(input).toBeInTheDocument();
+    await user.clear(input);
+    await user.type(input, "Renamed{Enter}");
+    expect(baseProps.onRenameThread).toHaveBeenCalledWith("a", "Renamed");
+  });
+
+  it("does not select the thread when the rename button is clicked", async () => {
+    const user = userEvent.setup();
+    const folders = [makeFolder("f1", "proj", "/proj")];
+    const threads = [makeThread("a", "Alpha", "/proj")];
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={threads}
+        folders={folders}
+        activeThreadId={null}
+      />,
+    );
+    await user.click(screen.getByTitle("Rename thread"));
+    expect(baseProps.onThreadClick).not.toHaveBeenCalled();
+  });
+
+  it("cancels rename on Escape without saving", async () => {
+    const user = userEvent.setup();
+    const folders = [makeFolder("f1", "proj", "/proj")];
+    const threads = [makeThread("a", "Alpha", "/proj")];
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={threads}
+        folders={folders}
+        activeThreadId={null}
+      />,
+    );
+    await user.click(screen.getByTitle("Rename thread"));
+    const input = screen.getByLabelText<HTMLInputElement>("Rename thread");
+    await user.clear(input);
+    await user.type(input, "Renamed{Escape}");
+    expect(baseProps.onRenameThread).not.toHaveBeenCalled();
+    expect(screen.getByText("Alpha")).toBeInTheDocument();
+  });
+
+  it("does not call onRenameThread when new title is empty or unchanged", async () => {
+    const user = userEvent.setup();
+    const folders = [makeFolder("f1", "proj", "/proj")];
+    const threads = [makeThread("a", "Alpha", "/proj")];
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={threads}
+        folders={folders}
+        activeThreadId={null}
+      />,
+    );
+    await user.click(screen.getByTitle("Rename thread"));
+    const input = screen.getByLabelText<HTMLInputElement>("Rename thread");
+    await user.clear(input);
+    await user.type(input, "{Enter}");
+    expect(baseProps.onRenameThread).not.toHaveBeenCalled();
   });
 });

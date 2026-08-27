@@ -53,6 +53,7 @@ interface Props {
   onRemoveFolder: (folderId: string) => void;
   onToggleFolderCollapsed: (folderId: string, collapsed: boolean) => void;
   onDeleteThread: (threadId: string) => void;
+  onRenameThread: (threadId: string, title: string) => void;
   runningThreadIds: string[];
   threadNotifications: Map<string, string>;
   pendingPermissionThreadIds?: Set<string>;
@@ -101,29 +102,63 @@ function ThreadRow({
   status,
   hasDraft,
   confirmDelete,
+  editingThreadId,
   onThreadClick,
   onDeleteThread,
+  onRenameThread,
   setConfirmDelete,
+  setEditingThreadId,
 }: {
   thread: Thread;
   isActive: boolean;
   status: StatusPill | null;
   hasDraft: boolean;
   confirmDelete: string | null;
+  editingThreadId: string | null;
   onThreadClick: (id: string) => void;
   onDeleteThread: (id: string) => void;
+  onRenameThread: (id: string, title: string) => void;
   setConfirmDelete: (id: string | null) => void;
+  setEditingThreadId: (id: string | null) => void;
 }) {
   const isDeleting = confirmDelete === thread.id;
+  const isEditing = editingThreadId === thread.id;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    if (isEditing) {
+      cancelledRef.current = false;
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isEditing]);
+
+  const commit = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed && trimmed !== thread.title) {
+      onRenameThread(thread.id, trimmed);
+    }
+    setEditingThreadId(null);
+  };
+
+  const startEditing = () => {
+    setConfirmDelete(null);
+    setEditingThreadId(thread.id);
+  };
 
   return (
     <div
-      className={`group no-drag flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-lg cursor-pointer transition-colors text-sm ${
+      className={`group no-drag flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-lg transition-colors text-sm ${
+        isEditing ? "" : "cursor-pointer"
+      } ${
         isActive
           ? "bg-[var(--border)] text-[var(--text-primary)]"
           : "text-[var(--text-control)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]"
       }`}
-      onClick={() => onThreadClick(thread.id)}
+      onClick={() => {
+        if (!isEditing) onThreadClick(thread.id);
+      }}
     >
       {status && (
         <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -167,7 +202,31 @@ function ThreadRow({
           />
         </svg>
       )}
-      <span className="flex-1 truncate">{thread.title}</span>
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          defaultValue={thread.title}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit((e.target as HTMLInputElement).value);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              cancelledRef.current = true;
+              setEditingThreadId(null);
+            }
+          }}
+          onBlur={(e) => {
+            if (cancelledRef.current) return;
+            commit(e.target.value);
+          }}
+          aria-label="Rename thread"
+          className="flex-1 min-w-0 bg-[var(--bg-root)] border border-blue-400 rounded px-1.5 py-0 text-sm text-[var(--text-primary)] outline-none"
+        />
+      ) : (
+        <span className="flex-1 truncate">{thread.title}</span>
+      )}
       {isDeleting ? (
         <div
           className="flex items-center gap-1"
@@ -189,29 +248,53 @@ function ThreadRow({
             Cancel
           </button>
         </div>
-      ) : (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setConfirmDelete(thread.id);
-          }}
-          className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-muted)] hover:text-red-400 transition-all"
-          title="Delete thread"
-        >
-          <svg
-            className="w-3.5 h-3.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            viewBox="0 0 24 24"
+      ) : isEditing ? null : (
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              startEditing();
+            }}
+            className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            title="Rename thread"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-            />
-          </svg>
-        </button>
+            <svg
+              className="w-3.5 h-3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M15.232 5.232l3.536 3.536M9 13l6.5-6.5a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z"
+              />
+            </svg>
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmDelete(thread.id);
+            }}
+            className="p-0.5 rounded text-[var(--text-muted)] hover:text-red-400 transition-colors"
+            title="Delete thread"
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
+            </svg>
+          </button>
+        </div>
       )}
     </div>
   );
@@ -227,12 +310,14 @@ export function ThreadList({
   onRemoveFolder,
   onToggleFolderCollapsed,
   onDeleteThread,
+  onRenameThread,
   runningThreadIds,
   threadNotifications,
   pendingPermissionThreadIds,
   draftThreadIds,
 }: Props): React.ReactElement {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [menuOpenFolderId, setMenuOpenFolderId] = useState<string | null>(null);
 
   // Separate manager thread from regular threads
@@ -483,9 +568,12 @@ export function ThreadList({
                             status={status}
                             hasDraft={draftThreadIds?.has(thread.id) ?? false}
                             confirmDelete={confirmDelete}
+                            editingThreadId={editingThreadId}
                             onThreadClick={onThreadClick}
                             onDeleteThread={onDeleteThread}
+                            onRenameThread={onRenameThread}
                             setConfirmDelete={setConfirmDelete}
+                            setEditingThreadId={setEditingThreadId}
                           />
                         );
                       })

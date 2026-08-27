@@ -26,6 +26,7 @@ describe("Sidebar", () => {
     onRemoveFolder: vi.fn(),
     onToggleFolderCollapsed: vi.fn(),
     onDeleteThread: vi.fn(),
+    onRenameThread: vi.fn(),
     onToggleSidebar: vi.fn(),
     onSettingsClick: vi.fn(),
     runningThreadIds: [] as string[],

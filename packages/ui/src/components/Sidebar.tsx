@@ -11,6 +11,7 @@ interface Props {
   onRemoveFolder: (folderId: string) => void;
   onToggleFolderCollapsed: (folderId: string, collapsed: boolean) => void;
   onDeleteThread: (threadId: string) => void;
+  onRenameThread: (threadId: string, title: string) => void;
   onToggleSidebar: () => void;
   onSettingsClick: () => void;
   onSchedulesClick?: () => void;
@@ -30,6 +31,7 @@ export function Sidebar({
   onRemoveFolder,
   onToggleFolderCollapsed,
   onDeleteThread,
+  onRenameThread,
   onToggleSidebar,
   onSettingsClick,
   onSchedulesClick,
@@ -81,6 +83,7 @@ export function Sidebar({
             onRemoveFolder={onRemoveFolder}
             onToggleFolderCollapsed={onToggleFolderCollapsed}
             onDeleteThread={onDeleteThread}
+            onRenameThread={onRenameThread}
             runningThreadIds={runningThreadIds}
             threadNotifications={threadNotifications}
             pendingPermissionThreadIds={pendingPermissionThreadIds}

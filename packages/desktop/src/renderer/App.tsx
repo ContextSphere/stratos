@@ -522,6 +522,14 @@ function AppInner(): React.ReactElement {
     [deleteThread, managerThreadId],
   );
 
+  const handleRenameThread = useCallback(
+    async (id: string, title: string) => {
+      await window.api.threadsUpdate(id, { title });
+      await refreshThreads();
+    },
+    [refreshThreads],
+  );
+
   const handleSend = useCallback(
     async (
       prompt: string,
@@ -1031,6 +1039,7 @@ function AppInner(): React.ReactElement {
             }}
             onToggleFolderCollapsed={handleToggleFolderCollapsed}
             onDeleteThread={handleDeleteThread}
+            onRenameThread={handleRenameThread}
             onToggleSidebar={toggleSidebar}
             onSettingsClick={() => setShowSettingsDialog(true)}
             onSchedulesClick={() => setShowSchedulesDialog(true)}
