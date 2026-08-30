@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useEffect,
+  useMemo,
   useRef,
   useCallback,
   useState,
@@ -9,6 +10,7 @@ import {
 } from "react";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./shared/StatusIndicator";
+import { TurnRail } from "./shared/TurnRail";
 import type { ChatMessage, TodoData } from "../types";
 import type { ProviderType } from "../utils/modes";
 import type { NavAnchor } from "../types/nav";
@@ -112,6 +114,36 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setWindowSize((n) => n + WINDOW_STEP);
   }, []);
 
+  // ── Turn rail ──────────────────────────────────────────────────────────
+  // Each of the user's prompts is a "turn". The first entry is relabelled
+  // "Session start" to match the glance UI.
+  const turns = useMemo(() => {
+    const userTurns = messages
+      .filter(
+        (m) =>
+          m.role === "user" &&
+          m.content?.trim() &&
+          !m.taskNotification &&
+          !m.sessionCompleteNotification,
+      )
+      .map((m) => ({ id: m.id, label: m.content.trim() }));
+    if (
+      userTurns.length > 0 &&
+      messages[0] &&
+      userTurns[0].id === messages[0].id
+    ) {
+      userTurns[0] = { ...userTurns[0], label: "Session start" };
+      return userTurns;
+    }
+    if (messages[0]) {
+      return [{ id: messages[0].id, label: "Session start" }, ...userTurns];
+    }
+    return userTurns;
+  }, [messages]);
+
+  const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+  const hasTurnRail = turns.length >= 2;
+
   // Keep latest callback in a ref to avoid stale closures in debounced handler
   const onAnchorChangeRef = useRef(onAnchorChange);
   useEffect(() => {
@@ -130,34 +162,33 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setShowScrollButton(false);
   }, []);
 
+  const scrollToMessage = useCallback(
+    (messageId: string) => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const target = el.querySelector(`[data-message-id="${messageId}"]`);
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      // Target is outside the rendered window — expand far enough to include
+      // it, then scroll once it has mounted (see the effect below).
+      const idx = messages.findIndex((m) => m.id === messageId);
+      if (idx === -1) return;
+      pendingScrollIdRef.current = messageId;
+      setWindowSize(messages.length - idx + 10);
+    },
+    [messages],
+  );
+
   // Expose imperative API to parent (must be called unconditionally before early return)
   useImperativeHandle(
     ref,
     () => ({
-      scrollToMessage(messageId: string) {
-        const el = scrollRef.current;
-        if (!el) return;
-        const target = el.querySelector(`[data-message-id="${messageId}"]`);
-        if (target) {
-          target.scrollIntoView({ behavior: "smooth", block: "start" });
-          return;
-        }
-        // Target is outside the rendered window — expand far enough to include
-        // it, then scroll once it has mounted (see the effect below).
-        const idx = messages.findIndex((m) => m.id === messageId);
-        if (idx === -1) return;
-        pendingScrollIdRef.current = messageId;
-        setWindowSize(messages.length - idx + 10);
-      },
-      scrollToBottom() {
-        const el = scrollRef.current;
-        if (!el) return;
-        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-        isNearBottomRef.current = true;
-        setShowScrollButton(false);
-      },
+      scrollToMessage,
+      scrollToBottom,
     }),
-    [messages],
+    [scrollToMessage, scrollToBottom],
   );
 
   // Complete a scroll that had to wait for the window to expand.
@@ -180,6 +211,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const nearBottom = checkIfNearBottom(el);
     if (nearBottom) {
       onAnchorChangeRef.current?.({ type: "latest" });
+      setActiveTurnId(turns.length > 0 ? turns[turns.length - 1].id : null);
       return;
     }
 
@@ -213,8 +245,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
     if (bestId) {
       onAnchorChangeRef.current?.({ type: "message", messageId: bestId });
+      // Emphasize the latest turn at or above the current anchor.
+      const anchorIdx = messages.findIndex((m) => m.id === bestId);
+      if (anchorIdx !== -1) {
+        let current: string | null = null;
+        for (const turn of turns) {
+          const turnIdx = messages.findIndex((m) => m.id === turn.id);
+          if (turnIdx !== -1 && turnIdx <= anchorIdx) current = turn.id;
+          else break;
+        }
+        setActiveTurnId(current ?? turns[0]?.id ?? null);
+      }
     }
-  }, [checkIfNearBottom]);
+  }, [checkIfNearBottom, messages, turns]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -244,6 +287,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
   }, []);
 
+  // Default the rail's emphasis to the newest turn until the user scrolls.
+  useEffect(() => {
+    setActiveTurnId((prev) =>
+      prev && turns.some((t) => t.id === prev)
+        ? prev
+        : (turns[turns.length - 1]?.id ?? null),
+    );
+  }, [turns]);
+
   if (messages.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -262,87 +314,96 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   return (
-    <div
-      ref={scrollRef}
-      onScroll={handleScroll}
-      className="flex-1 overflow-y-auto px-4 py-2 relative"
-    >
-      <div className="space-y-4">
-        {hiddenCount > 0 && (
-          <div className="flex justify-center py-2">
-            <button
-              onClick={showEarlier}
-              className="px-3 py-1.5 rounded-full bg-[var(--bg-overlay)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] text-xs border border-[var(--border-mid)] transition-colors"
-              title="Render older messages"
-            >
-              Load {Math.min(hiddenCount, WINDOW_STEP)} earlier message
-              {Math.min(hiddenCount, WINDOW_STEP) === 1 ? "" : "s"} (
-              {hiddenCount} hidden)
-            </button>
-          </div>
-        )}
-        {visibleMessages.map((msg) => (
-          <MessageBubble
-            key={msg.id}
-            provider={provider}
-            message={msg}
-            onLinkClick={onLinkClick}
-            onSendMessage={onSendMessage}
-            onQuestionAnswer={onQuestionAnswer}
-            onPlanReviewDecision={onPlanReviewDecision}
-            onViewPlan={onViewPlan}
-            onUpdateTaskExpanded={onUpdateTaskExpanded}
-            onViewFile={onViewFile}
-            isStreaming={isStreaming && msg.id === lastMessageId}
-          />
-        ))}
-        {isStreaming && (
-          <div className="flex items-center py-2">
-            <TypingIndicator />
-          </div>
-        )}
-        {!isStreaming &&
-          completionStatus &&
-          completionStatus !== "completed" && (
-            <div
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs mt-2 ${
-                completionStatus === "interrupted"
-                  ? "bg-yellow-950/50 text-yellow-400 border border-yellow-900/50"
-                  : "bg-red-950/50 text-red-400 border border-red-900/50"
-              }`}
-            >
-              <span>
-                {completionStatus === "interrupted"
-                  ? "Session interrupted."
-                  : `Session ended with an error${completionError ? `: ${completionError}` : "."}`}
-              </span>
+    <div className="relative flex flex-1 min-h-0 flex-col">
+      <TurnRail
+        turns={turns}
+        activeTurnId={activeTurnId}
+        onSelect={scrollToMessage}
+      />
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className={`flex-1 overflow-y-auto py-2 pr-4 ${
+          hasTurnRail ? "pl-12" : "px-4"
+        }`}
+      >
+        <div className="space-y-4">
+          {hiddenCount > 0 && (
+            <div className="flex justify-center py-2">
+              <button
+                onClick={showEarlier}
+                className="px-3 py-1.5 rounded-full bg-[var(--bg-overlay)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] text-xs border border-[var(--border-mid)] transition-colors"
+                title="Render older messages"
+              >
+                Load {Math.min(hiddenCount, WINDOW_STEP)} earlier message
+                {Math.min(hiddenCount, WINDOW_STEP) === 1 ? "" : "s"} (
+                {hiddenCount} hidden)
+              </button>
             </div>
           )}
-      </div>
-      {showScrollButton && (
-        <button
-          onClick={scrollToBottom}
-          className="sticky bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs shadow-lg border border-gray-600 transition-colors"
-          title="Scroll to bottom"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M8 3v10m0 0l-4-4m4 4l4-4"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          {visibleMessages.map((msg) => (
+            <MessageBubble
+              key={msg.id}
+              provider={provider}
+              message={msg}
+              onLinkClick={onLinkClick}
+              onSendMessage={onSendMessage}
+              onQuestionAnswer={onQuestionAnswer}
+              onPlanReviewDecision={onPlanReviewDecision}
+              onViewPlan={onViewPlan}
+              onUpdateTaskExpanded={onUpdateTaskExpanded}
+              onViewFile={onViewFile}
+              isStreaming={isStreaming && msg.id === lastMessageId}
             />
-          </svg>
-          New messages
-        </button>
-      )}
+          ))}
+          {isStreaming && (
+            <div className="flex items-center py-2">
+              <TypingIndicator />
+            </div>
+          )}
+          {!isStreaming &&
+            completionStatus &&
+            completionStatus !== "completed" && (
+              <div
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs mt-2 ${
+                  completionStatus === "interrupted"
+                    ? "bg-yellow-950/50 text-yellow-400 border border-yellow-900/50"
+                    : "bg-red-950/50 text-red-400 border border-red-900/50"
+                }`}
+              >
+                <span>
+                  {completionStatus === "interrupted"
+                    ? "Session interrupted."
+                    : `Session ended with an error${completionError ? `: ${completionError}` : "."}`}
+                </span>
+              </div>
+            )}
+        </div>
+        {showScrollButton && (
+          <button
+            onClick={scrollToBottom}
+            className="sticky bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs shadow-lg border border-gray-600 transition-colors"
+            title="Scroll to bottom"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M8 3v10m0 0l-4-4m4 4l4-4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            New messages
+          </button>
+        )}
+      </div>
     </div>
   );
 });
