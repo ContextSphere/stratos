@@ -57,6 +57,36 @@ describe("ChatView empty state", () => {
     expect(screen.queryByText("Manager")).not.toBeInTheDocument();
     expect(screen.queryByText("Stratos")).not.toBeInTheDocument();
   });
+
+  it("reserves a gutter only when the transcript has multiple user turns", () => {
+    const { container, rerender } = render(
+      <ChatView
+        messages={[
+          { id: "m1", role: "user", content: "First", timestamp: 1 },
+          { id: "m2", role: "assistant", content: "Reply", timestamp: 2 },
+          { id: "m3", role: "user", content: "Second", timestamp: 3 },
+        ]}
+        isStreaming={false}
+      />,
+    );
+
+    expect(container.querySelector(".overflow-y-auto")).toHaveClass("pl-12");
+    expect(
+      screen.getByLabelText("Browse conversation turns"),
+    ).toBeInTheDocument();
+
+    rerender(
+      <ChatView
+        messages={[{ id: "m1", role: "user", content: "First", timestamp: 1 }]}
+        isStreaming={false}
+      />,
+    );
+
+    expect(container.querySelector(".overflow-y-auto")).toHaveClass("px-4");
+    expect(
+      screen.queryByLabelText("Browse conversation turns"),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("ChatView typing indicator auto-scroll", () => {
