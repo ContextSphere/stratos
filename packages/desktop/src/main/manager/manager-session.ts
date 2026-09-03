@@ -15,6 +15,7 @@ import {
   FileStorageAdapter,
   appendTraceEntry,
   appendScheduleRun,
+  DEFAULT_PROVIDER,
 } from "@stratosapp/core";
 import type {
   AgentProvider,
@@ -134,7 +135,7 @@ export class ManagerSession {
 
   private threadId: string | null = null;
   private provider: AgentProvider | null = null;
-  private currentProvider: ProviderType = "claude-code";
+  private currentProvider: ProviderType = DEFAULT_PROVIDER;
   private sessionId: string | undefined;
   private activeStream = false;
   private gatewayReplyFn: ((reply: string) => void) | null = null;

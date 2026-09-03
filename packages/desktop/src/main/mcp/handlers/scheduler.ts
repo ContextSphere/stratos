@@ -9,6 +9,7 @@ import {
   updateScheduledPrompt,
   listScheduleRuns,
   FileStorageAdapter,
+  DEFAULT_PROVIDER,
 } from "@stratosapp/core";
 import type { ScheduledPrompt } from "@stratosapp/core";
 import { type HandlerDef, defineHandler, textResult } from "./types";
@@ -66,7 +67,7 @@ export function createSchedulerHandlers(deps: SchedulerDeps): HandlerDef[] {
         provider: z
           .enum(["claude-code", "codex", "opencode", "copilot"])
           .optional()
-          .describe("Agent provider (default: claude-code)"),
+          .describe(`Agent provider (default: ${DEFAULT_PROVIDER})`),
         model: z
           .string()
           .optional()
@@ -138,7 +139,7 @@ export function createSchedulerHandlers(deps: SchedulerDeps): HandlerDef[] {
         const entry = addScheduledPrompt({
           name: args.name,
           prompt: args.prompt,
-          provider: args.provider ?? "claude-code",
+          provider: args.provider ?? DEFAULT_PROVIDER,
           folderId,
           schedule,
           enabled: true,

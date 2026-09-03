@@ -50,6 +50,7 @@ vi.mock("@stratosapp/core", () => ({
   readTraceEntries: vi.fn(),
   clearTraceFile: vi.fn(),
   isSdkSessionMissing: isSdkSessionMissingMock,
+  DEFAULT_PROVIDER: "copilot",
 }));
 
 describe("thread IPC session reset behavior", () => {
@@ -218,12 +219,12 @@ describe("thread IPC session reset behavior", () => {
       };
       mockStorage.listThreads.mockReturnValue([alive, stale]);
       // Second call returns "stale" as missing
-      isSdkSessionMissingMock.mockImplementation(async (sid: string) =>
-        sid === "s-stale",
+      isSdkSessionMissingMock.mockImplementation(
+        async (sid: string) => sid === "s-stale",
       );
 
       const handler = handleMocks.get(IPC_CHANNELS.THREADS_LIST);
-      const result = (await handler?.({})) as typeof alive[];
+      const result = (await handler?.({})) as (typeof alive)[];
 
       expect(result.map((t) => t.id)).toEqual(["alive"]);
       expect(clearSession).toHaveBeenCalledWith("stale");
@@ -397,6 +398,63 @@ describe("thread IPC session reset behavior", () => {
       expect(mockStorage.updateThread).toHaveBeenCalledWith("t1", {
         mode: "bypassPermissions",
       });
+    });
+
+    it("defaults new threads to the standard provider when none is passed", async () => {
+      vi.resetModules();
+      handleMocks.clear();
+      const getProviderSettings = vi.fn().mockReturnValue({});
+      vi.doMock("../settings/settings.store", () => ({
+        getProviderSettings,
+        setProviderSettings: vi.fn(),
+        updateSettings: vi.fn(),
+        loadSettings: vi.fn().mockReturnValue({ theme: "dark" }),
+      }));
+
+      const threadIpc = await import("../threads/thread.ipc");
+      threadIpc.registerThreadIpc(mockStorage as any);
+
+      const createHandler = handleMocks.get("chat:threads:create");
+      mockStorage.createThread.mockResolvedValue({ id: "t1" });
+      mockStorage.updateThread.mockResolvedValue(undefined);
+
+      await createHandler?.({}, "New chat", undefined, "/home/user");
+
+      expect(mockStorage.createThread).toHaveBeenCalledWith(
+        "New chat",
+        undefined,
+        "/home/user",
+        "copilot",
+      );
+      // Model/effort prefs are looked up against the resolved default provider
+      expect(getProviderSettings).toHaveBeenCalledWith("copilot");
+    });
+
+    it("honours an explicit provider over the default", async () => {
+      vi.resetModules();
+      handleMocks.clear();
+      vi.doMock("../settings/settings.store", () => ({
+        getProviderSettings: vi.fn().mockReturnValue({}),
+        setProviderSettings: vi.fn(),
+        updateSettings: vi.fn(),
+        loadSettings: vi.fn().mockReturnValue({ theme: "dark" }),
+      }));
+
+      const threadIpc = await import("../threads/thread.ipc");
+      threadIpc.registerThreadIpc(mockStorage as any);
+
+      const createHandler = handleMocks.get("chat:threads:create");
+      mockStorage.createThread.mockResolvedValue({ id: "t1" });
+      mockStorage.updateThread.mockResolvedValue(undefined);
+
+      await createHandler?.({}, "New chat", undefined, "/home/user", "codex");
+
+      expect(mockStorage.createThread).toHaveBeenCalledWith(
+        "New chat",
+        undefined,
+        "/home/user",
+        "codex",
+      );
     });
   });
 });

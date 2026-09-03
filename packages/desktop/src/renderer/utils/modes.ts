@@ -9,6 +9,9 @@ export type AgentMode =
 
 export type ProviderType = "claude-code" | "codex" | "opencode" | "copilot";
 
+/** Provider used for new sessions when the caller does not specify one. */
+export const DEFAULT_PROVIDER: ProviderType = "copilot";
+
 export function normalizeMode(
   mode: string | undefined,
   provider?: ProviderType,

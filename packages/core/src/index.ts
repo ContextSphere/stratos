@@ -23,7 +23,7 @@ export type {
   ScheduleNotifyMode,
 } from "./types/scheduled-prompt";
 export { scheduleToCron, scheduleToHuman } from "./types/scheduled-prompt";
-export { normalizeMode } from "./types/thread";
+export { normalizeMode, DEFAULT_PROVIDER } from "./types/thread";
 export type { ModeConfig } from "./types/mode";
 export { MODE_CONFIGS, AGENT_MODES } from "./types/mode";
 

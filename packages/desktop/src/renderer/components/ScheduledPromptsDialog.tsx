@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { DEFAULT_PROVIDER } from "../utils/modes";
 import type {
   ScheduledPrompt,
   ScheduleConfig,
@@ -73,6 +74,7 @@ const DAY_OPTIONS: DropdownItem[] = [
 ];
 
 const PROVIDER_OPTIONS: DropdownItem[] = [
+  { value: "copilot", label: "Copilot" },
   { value: "claude-code", label: "Claude Code" },
   { value: "codex", label: "Codex" },
   { value: "opencode", label: "Opencode" },
@@ -119,7 +121,7 @@ function defaultForm(folders: Folder[]): FormState {
   return {
     name: "",
     prompt: "",
-    provider: "claude-code",
+    provider: DEFAULT_PROVIDER,
     model: "",
     folderId: folders[0]?.id ?? "",
     scheduleType: "recurring",
