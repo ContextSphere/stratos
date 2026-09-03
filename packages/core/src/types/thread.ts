@@ -63,12 +63,22 @@ export interface ThreadWorktree {
 /** Supported provider identifiers */
 export type ProviderType = "claude-code" | "codex" | "opencode" | "copilot";
 
+/**
+ * Provider used for every new session when the caller does not specify one.
+ *
+ * Note: this is *not* the fallback for threads that lack a `provider` field.
+ * Those predate the field and were always Claude Code, so read paths keep
+ * using `thread.provider ?? "claude-code"` to render their history correctly.
+ */
+export const DEFAULT_PROVIDER: ProviderType = "copilot";
+
 export interface Thread {
   id: string;
   title: string;
   createdAt: number;
   updatedAt: number;
-  /** Provider backend for this thread (default: 'claude-code') */
+  /** Provider backend for this thread. New threads are created with
+   * DEFAULT_PROVIDER; absent means a legacy thread, which was Claude Code. */
   provider?: ProviderType;
   model?: string;
   cwd?: string;

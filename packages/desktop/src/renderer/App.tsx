@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   getAgentModes,
   normalizeMode,
+  DEFAULT_PROVIDER,
   type AgentMode,
   type ProviderType,
 } from "./utils/modes";
@@ -12,6 +13,11 @@ const KNOWN_PROVIDERS = new Set<string>([
   "opencode",
   "copilot",
 ]);
+/**
+ * Resolves a stored thread provider. Threads created before the `provider`
+ * field existed were always Claude Code, so they keep that fallback — the
+ * DEFAULT_PROVIDER only applies to newly created sessions.
+ */
 function normalizeProvider(p: string | undefined): ProviderType {
   return (p && KNOWN_PROVIDERS.has(p) ? p : "claude-code") as ProviderType;
 }
@@ -211,7 +217,12 @@ function AppInner(): React.ReactElement {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [pendingMode, setPendingMode] = useState<AgentMode>();
   const [pendingProvider, setPendingProvider] =
-    useState<ProviderType>("claude-code");
+    useState<ProviderType>(DEFAULT_PROVIDER);
+  /** Provider driving the toolbar/chat: the active thread's own provider, or
+   *  the pending selection for the not-yet-created thread. */
+  const activeProvider: ProviderType = activeThread
+    ? normalizeProvider(activeThread.provider)
+    : pendingProvider;
   const [homeDir, setHomeDir] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showBottomTerminal, setShowBottomTerminal] = useState(false);
@@ -864,8 +875,7 @@ function AppInner(): React.ReactElement {
         e.stopPropagation();
         if (isStreaming) return;
         if (isManagerActive) return;
-        const currentProvider =
-          normalizeProvider(activeThread?.provider) ?? pendingProvider;
+        const currentProvider = activeProvider;
         const currentMode = activeThread?.mode
           ? normalizeMode(activeThread.mode, currentProvider)
           : (pendingMode ?? "default");
@@ -880,8 +890,8 @@ function AppInner(): React.ReactElement {
       document.removeEventListener("keydown", handler, { capture: true });
   }, [
     activeThread,
+    activeProvider,
     pendingMode,
-    pendingProvider,
     isStreaming,
     isManagerActive,
     handleModeChange,
@@ -1235,10 +1245,7 @@ function AppInner(): React.ReactElement {
                   <ChatView
                     key={activeThreadId ?? "new"}
                     ref={chatViewRef}
-                    provider={
-                      normalizeProvider(activeThread?.provider) ??
-                      pendingProvider
-                    }
+                    provider={activeProvider}
                     messages={messages}
                     isStreaming={isStreaming}
                     onLinkClick={handleLinkClick}
@@ -1322,10 +1329,7 @@ function AppInner(): React.ReactElement {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <ProviderToggle
-                              provider={
-                                normalizeProvider(activeThread?.provider) ??
-                                pendingProvider
-                              }
+                              provider={activeProvider}
                               onProviderChange={handleProviderChange}
                               enabledProviders={enabledProviders ?? undefined}
                               disabled={
@@ -1349,14 +1353,10 @@ function AppInner(): React.ReactElement {
                               onThinkingEffortChange={
                                 handleThinkingEffortChange
                               }
-                              fetchScope={
-                                normalizeProvider(activeThread?.provider) ??
-                                pendingProvider
-                              }
+                              fetchScope={activeProvider}
                               onFetchModels={() =>
                                 settingsBridge.getAvailableModels?.(
-                                  normalizeProvider(activeThread?.provider) ??
-                                    pendingProvider,
+                                  activeProvider,
                                 ) ?? Promise.resolve([])
                               }
                               isOpen={modelPickerOpen}
@@ -1372,17 +1372,12 @@ function AppInner(): React.ReactElement {
                             )}
                             {!isManagerActive && (
                               <ModeToggle
-                                provider={
-                                  normalizeProvider(activeThread?.provider) ??
-                                  pendingProvider
-                                }
+                                provider={activeProvider}
                                 mode={
                                   activeThread?.mode
                                     ? normalizeMode(
                                         activeThread.mode,
-                                        normalizeProvider(
-                                          activeThread?.provider,
-                                        ) ?? pendingProvider,
+                                        activeProvider,
                                       )
                                     : pendingMode
                                 }

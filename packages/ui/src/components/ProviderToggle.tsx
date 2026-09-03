@@ -1,6 +1,5 @@
 import React from "react";
-
-type ProviderType = "claude-code" | "codex" | "opencode" | "copilot";
+import { DEFAULT_PROVIDER, type ProviderType } from "../utils/modes";
 
 interface ProviderToggleProps {
   provider?: ProviderType;
@@ -58,7 +57,7 @@ const PROVIDERS: {
 ];
 
 export default function ProviderToggle({
-  provider = "claude-code",
+  provider = DEFAULT_PROVIDER,
   onProviderChange,
   disabled = false,
   enabledProviders,

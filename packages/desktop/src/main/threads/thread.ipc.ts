@@ -11,6 +11,7 @@ import {
   readTraceEntries,
   clearTraceFile,
   isSdkSessionMissing,
+  DEFAULT_PROVIDER,
 } from "@stratosapp/core";
 import type {
   StoredMessage,
@@ -172,15 +173,18 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
       cwd?: string,
       provider?: string,
     ) => {
+      // Every new session defaults to the standard provider unless the caller
+      // explicitly picks another one.
+      const resolvedProvider = provider ?? DEFAULT_PROVIDER;
       // Pre-populate model and effort from last-used provider settings
-      const providerPrefs = provider ? getProviderSettings(provider) : {};
+      const providerPrefs = getProviderSettings(resolvedProvider);
       const resolvedModel = model ?? providerPrefs.lastUsedModel;
 
       const thread = await storage.createThread(
         title,
         resolvedModel,
         cwd,
-        provider,
+        resolvedProvider,
       );
 
       const isDev = !!process.defaultApp || !app.isPackaged;
@@ -424,10 +428,7 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
         thread.sessionId &&
         !runningIds.includes(threadId)
       ) {
-        const missing = await isSdkSessionMissing(
-          thread.sessionId,
-          thread.cwd,
-        );
+        const missing = await isSdkSessionMissing(thread.sessionId, thread.cwd);
         if (missing) {
           await performThreadDelete(threadId);
           broadcastThreadsChanged();
