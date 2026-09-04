@@ -172,6 +172,7 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
       model?: string,
       cwd?: string,
       provider?: string,
+      agentId?: string,
     ) => {
       // Every new session defaults to the standard provider unless the caller
       // explicitly picks another one.
@@ -195,8 +196,12 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
       if (isDev) {
         updates.mode = "bypassPermissions";
       }
+      if (agentId) {
+        updates.agentId = agentId;
+      }
       if (Object.keys(updates).length > 0) {
-        await storage.updateThread(thread.id, updates);
+        const updated = await storage.updateThread(thread.id, updates);
+        if (updated) return updated;
       }
 
       return isDev ? { ...thread, mode: "bypassPermissions" } : thread;

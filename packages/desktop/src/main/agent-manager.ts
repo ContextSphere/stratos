@@ -50,6 +50,11 @@ import {
 import type { OllamaConfig, OllamaModelInfo } from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 import { resolveClaudePathOrUndefined } from "./integrations/claude-path";
+import {
+  resolveAgentOverlay,
+  mergeSystemPromptAppend,
+  mergeAgentMcpServers,
+} from "./agents/resolve";
 import { createStratosHandlers } from "./mcp/handlers";
 import { handlersToSdkMcp } from "./mcp/sdk-adapter";
 import { startStratosMcpSocketServer } from "./mcp/socket-mcp-server";
@@ -1295,8 +1300,9 @@ export class AgentManager {
               settings.cliPath as string | undefined,
             )
           : undefined;
-      const threadCwd = thread.cwd ?? process.env.HOME!;
-      const mcpServers = buildMcpServers({
+      const { overlay: agentOverlay } = await resolveAgentOverlay(thread);
+      const threadCwd = thread.cwd ?? agentOverlay.cwd ?? process.env.HOME!;
+      const builtMcpServers = buildMcpServers({
         cwd: threadCwd,
         providerName,
         socketPath: this.mcpSocketPath,
@@ -1312,6 +1318,7 @@ export class AgentManager {
               })
             : undefined,
       });
+      const mcpServers = mergeAgentMcpServers(builtMcpServers, agentOverlay);
       await provider.initialize({
         ...(providerName === "claude-code"
           ? {
@@ -1324,29 +1331,32 @@ export class AgentManager {
               systemPrompt: {
                 type: "preset" as const,
                 preset: "claude_code" as const,
-                append: [
-                  `\n# Host Environment`,
-                  `You are running inside Stratos, an Electron desktop application (PID: ${process.pid}).`,
-                  `DO NOT kill, terminate, or signal this process or its parent Electron process.`,
-                  `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes — this would kill your own host application.`,
-                  `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
-                  ``,
-                  `# Stratos MCP`,
-                  `You have access to the \`stratos\` MCP server, which exposes Stratos-specific tools for schedules${isManagerEnabled() ? ", the side preview pane, and session management" : " and the side preview pane"}.`,
-                  ``,
-                  `## Scheduled prompts`,
-                  `- \`schedule_create\` — create a recurring or one-shot scheduled prompt (call \`schedule_folders\` first to get a valid folder)`,
-                  `- \`schedule_list\` — list all scheduled prompts with status and last-run info`,
-                  `- \`schedule_delete\` — permanently delete a schedule by ID`,
-                  `- \`schedule_enable\` / \`schedule_disable\` — toggle a schedule on/off without deleting it`,
-                  `- \`schedule_folders\` — list available folders (id, name, path)`,
-                  `Each schedule fires in a new Stratos thread. Use the folder or cwd argument to control which folder the thread appears in.`,
-                  ``,
-                  `## Preview pane`,
-                  `- \`preview_open_file(file_path, title?)\` — open any file in the side preview pane (markdown files render as formatted text, all other files open in a code editor). Always use absolute paths.`,
-                  `- \`preview_close()\` — close the preview pane.`,
-                  `Use this after creating or editing a file so the user can see the result immediately.`,
-                ].join("\n"),
+                append: mergeSystemPromptAppend(
+                  [
+                    `\n# Host Environment`,
+                    `You are running inside Stratos, an Electron desktop application (PID: ${process.pid}).`,
+                    `DO NOT kill, terminate, or signal this process or its parent Electron process.`,
+                    `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes — this would kill your own host application.`,
+                    `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
+                    ``,
+                    `# Stratos MCP`,
+                    `You have access to the \`stratos\` MCP server, which exposes Stratos-specific tools for schedules${isManagerEnabled() ? ", the side preview pane, and session management" : " and the side preview pane"}.`,
+                    ``,
+                    `## Scheduled prompts`,
+                    `- \`schedule_create\` — create a recurring or one-shot scheduled prompt (call \`schedule_folders\` first to get a valid folder)`,
+                    `- \`schedule_list\` — list all scheduled prompts with status and last-run info`,
+                    `- \`schedule_delete\` — permanently delete a schedule by ID`,
+                    `- \`schedule_enable\` / \`schedule_disable\` — toggle a schedule on/off without deleting it`,
+                    `- \`schedule_folders\` — list available folders (id, name, path)`,
+                    `Each schedule fires in a new Stratos thread. Use the folder or cwd argument to control which folder the thread appears in.`,
+                    ``,
+                    `## Preview pane`,
+                    `- \`preview_open_file(file_path, title?)\` — open any file in the side preview pane (markdown files render as formatted text, all other files open in a code editor). Always use absolute paths.`,
+                    `- \`preview_close()\` — close the preview pane.`,
+                    `Use this after creating or editing a file so the user can see the result immediately.`,
+                  ].join("\n"),
+                  agentOverlay,
+                ),
               },
             }
           : {}),
@@ -1358,9 +1368,10 @@ export class AgentManager {
               },
             }
           : {}),
-        model: thread.model,
+        model: thread.model ?? agentOverlay.model,
         cwd: threadCwd,
         mcpServers,
+        ...(agentOverlay.agents ? { agents: agentOverlay.agents } : {}),
       });
       session = { provider, sessionId: thread.sessionId };
       this.sessions.set(threadId, session);
@@ -2164,8 +2175,9 @@ export class AgentManager {
               settings.cliPath as string | undefined,
             )
           : undefined;
-      const threadCwd = thread.cwd ?? process.env.HOME!;
-      const mcpServers = buildMcpServers({
+      const { overlay: agentOverlay } = await resolveAgentOverlay(thread);
+      const threadCwd = thread.cwd ?? agentOverlay.cwd ?? process.env.HOME!;
+      const builtMcpServers = buildMcpServers({
         cwd: threadCwd,
         providerName,
         socketPath: this.mcpSocketPath,
@@ -2181,6 +2193,7 @@ export class AgentManager {
               })
             : undefined,
       });
+      const mcpServers = mergeAgentMcpServers(builtMcpServers, agentOverlay);
       await provider.initialize({
         ...(providerName === "claude-code"
           ? {
@@ -2193,19 +2206,22 @@ export class AgentManager {
               systemPrompt: {
                 type: "preset" as const,
                 preset: "claude_code" as const,
-                append: [
-                  `\n# Host Environment`,
-                  `You are running inside Stratos as a scheduled automation (PID: ${process.pid}).`,
-                  `DO NOT kill, terminate, or signal this process or its parent Electron process.`,
-                  `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes.`,
-                  `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
-                  ``,
-                  `# Stratos MCP`,
-                  `The \`stratos\` MCP server exposes:`,
-                  `- \`schedule_create\`, \`schedule_list\`, \`schedule_folders\` — manage scheduled prompts`,
-                  `- \`schedule_report\` — call this at the end of your run with a 1-3 sentence summary of what you did. Look for a [SCHEDULED TASK] context block in your prompt with the scheduleId. Your summary is forwarded to the Manager as a status update.`,
-                  `- \`preview_open_file(file_path, title?)\` / \`preview_close()\` — control the side preview pane (use absolute paths)`,
-                ].join("\n"),
+                append: mergeSystemPromptAppend(
+                  [
+                    `\n# Host Environment`,
+                    `You are running inside Stratos as a scheduled automation (PID: ${process.pid}).`,
+                    `DO NOT kill, terminate, or signal this process or its parent Electron process.`,
+                    `DO NOT run broad process kills like \`pkill -f electron\`, \`killall Electron\`, or any command that could terminate Electron processes.`,
+                    `If you need to stop a dev server or child process, target it by its specific PID or port, not by process name.`,
+                    ``,
+                    `# Stratos MCP`,
+                    `The \`stratos\` MCP server exposes:`,
+                    `- \`schedule_create\`, \`schedule_list\`, \`schedule_folders\` — manage scheduled prompts`,
+                    `- \`schedule_report\` — call this at the end of your run with a 1-3 sentence summary of what you did. Look for a [SCHEDULED TASK] context block in your prompt with the scheduleId. Your summary is forwarded to the Manager as a status update.`,
+                    `- \`preview_open_file(file_path, title?)\` / \`preview_close()\` — control the side preview pane (use absolute paths)`,
+                  ].join("\n"),
+                  agentOverlay,
+                ),
               },
             }
           : {}),
@@ -2217,9 +2233,10 @@ export class AgentManager {
               },
             }
           : {}),
-        model: thread.model,
+        model: thread.model ?? agentOverlay.model,
         cwd: threadCwd,
         mcpServers,
+        ...(agentOverlay.agents ? { agents: agentOverlay.agents } : {}),
       });
       session = { provider, sessionId: thread.sessionId };
       this.sessions.set(threadId, session);

@@ -2,14 +2,14 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import type { Thread, Folder } from "@stratosapp/core";
 import { basename } from "../utils/path";
 
-interface StatusPill {
+export interface StatusPill {
   label: string;
   colorClass: string;
   dotClass: string;
   pulse: boolean;
 }
 
-function getThreadStatus(
+export function getThreadStatus(
   threadId: string,
   isActive: boolean,
   runningThreadIds: string[],
@@ -96,7 +96,7 @@ function FolderMenu({
   );
 }
 
-function ThreadRow({
+export function ThreadRow({
   thread,
   isActive,
   status,

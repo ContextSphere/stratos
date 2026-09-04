@@ -76,4 +76,17 @@ describe("Sidebar", () => {
     await user.click(screen.getByText("Thread Two"));
     expect(defaultProps.onThreadClick).toHaveBeenCalledWith("t2");
   });
+
+  it("keeps agent-owned threads out of the Folders view", () => {
+    // The two groupings must partition the thread list, not overlap: an agent
+    // thread belongs to its agent, and showing it under a folder too was what
+    // littered Folders with a junk home-directory entry.
+    const threads = [
+      makeThread("t1", "Folder thread", "/proj"),
+      { ...makeThread("t2", "Penny thread", "/Users/me"), agentId: "penny" },
+    ];
+    render(<Sidebar {...defaultProps} threads={threads} grouping="folders" />);
+    expect(screen.getByText("Folder thread")).toBeInTheDocument();
+    expect(screen.queryByText("Penny thread")).not.toBeInTheDocument();
+  });
 });

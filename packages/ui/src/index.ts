@@ -35,8 +35,25 @@ export { ToolsPopover } from "./components/ToolsPopover";
 export { TaskPanel } from "./components/TaskPanel";
 export { PreviewPane } from "./components/PreviewPane";
 export { TerminalPane } from "./components/TerminalPane";
-export { Sidebar } from "./components/Sidebar";
-export { ThreadList } from "./components/ThreadList";
+export { Sidebar, type SidebarGrouping } from "./components/Sidebar";
+export {
+  ThreadList,
+  ThreadRow,
+  getThreadStatus,
+  type StatusPill,
+} from "./components/ThreadList";
+export { AgentGroupList } from "./components/AgentGroupList";
+export {
+  AGENT_ACCENTS,
+  DEFAULT_AGENT_ID,
+  DEFAULT_AGENT,
+  validateAgentDefinition,
+} from "./utils/agent-defaults";
+export {
+  AgentOverview,
+  type AgentFidelityInfo,
+} from "./components/AgentOverview";
+export { AgentEditor } from "./components/AgentEditor";
 
 // Preview
 export { ArtifactEditorPreview } from "./components/preview/ArtifactEditorPreview";

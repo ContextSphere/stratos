@@ -1,5 +1,9 @@
 import type { Thread, Folder } from "@stratosapp/core";
+import type { AgentDefinition } from "@stratosapp/core";
 import { ThreadList } from "./ThreadList";
+import { AgentGroupList } from "./AgentGroupList";
+
+export type SidebarGrouping = "folders" | "agents";
 
 interface Props {
   threads: Thread[];
@@ -19,6 +23,20 @@ interface Props {
   threadNotifications: Map<string, string>;
   pendingPermissionThreadIds?: Set<string>;
   draftThreadIds?: Set<string>;
+
+  // Grouping switch (Folders | Agents)
+  grouping?: SidebarGrouping;
+  onGroupingChange?: (grouping: SidebarGrouping) => void;
+
+  // Agents grouping — only needed when grouping === "agents"
+  agents?: AgentDefinition[];
+  activeAgentId?: string | null;
+  collapsedAgentIds?: Set<string>;
+  onToggleAgent?: (agentId: string, collapsed: boolean) => void;
+  onAgentClick?: (agentId: string) => void;
+  onCreateThreadForAgent?: (agentId: string) => void;
+  onCreateAgent?: () => void;
+  onDeleteAgent?: (agentId: string) => void;
 }
 
 export function Sidebar({
@@ -39,6 +57,16 @@ export function Sidebar({
   threadNotifications,
   pendingPermissionThreadIds,
   draftThreadIds,
+  grouping = "folders",
+  onGroupingChange,
+  agents = [],
+  activeAgentId = null,
+  collapsedAgentIds,
+  onToggleAgent,
+  onAgentClick,
+  onCreateThreadForAgent,
+  onCreateAgent,
+  onDeleteAgent,
 }: Props): React.ReactElement {
   return (
     <div className="flex-shrink-0 flex flex-col bg-[var(--bg-root)] overflow-hidden w-[232px] min-w-[232px] h-full">
@@ -71,24 +99,82 @@ export function Sidebar({
           </button>
         </div>
 
+        {/* Grouping switch */}
+        {onGroupingChange && (
+          <div
+            role="tablist"
+            aria-label="Sidebar grouping"
+            className="no-drag flex-shrink-0 mx-3 mb-1 flex items-center gap-0.5 rounded-lg bg-[var(--bg-surface)] p-0.5"
+          >
+            <button
+              role="tab"
+              aria-selected={grouping === "folders"}
+              onClick={() => onGroupingChange("folders")}
+              className={`flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                grouping === "folders"
+                  ? "bg-[var(--border)] text-[var(--text-primary)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Folders
+            </button>
+            <button
+              role="tab"
+              aria-selected={grouping === "agents"}
+              onClick={() => onGroupingChange("agents")}
+              className={`flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                grouping === "agents"
+                  ? "bg-[var(--border)] text-[var(--text-primary)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Agents
+            </button>
+          </div>
+        )}
+
         {/* Thread list */}
         <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] overflow-y-auto px-1 py-2">
-          <ThreadList
-            threads={threads}
-            folders={folders}
-            activeThreadId={activeThreadId}
-            onThreadClick={onThreadClick}
-            onCreateThreadInFolder={onCreateThreadInFolder}
-            onAddFolder={onAddFolder}
-            onRemoveFolder={onRemoveFolder}
-            onToggleFolderCollapsed={onToggleFolderCollapsed}
-            onDeleteThread={onDeleteThread}
-            onRenameThread={onRenameThread}
-            runningThreadIds={runningThreadIds}
-            threadNotifications={threadNotifications}
-            pendingPermissionThreadIds={pendingPermissionThreadIds}
-            draftThreadIds={draftThreadIds}
-          />
+          {grouping === "agents" ? (
+            <AgentGroupList
+              agents={agents}
+              threads={threads}
+              activeThreadId={activeThreadId}
+              activeAgentId={activeAgentId}
+              collapsedAgentIds={collapsedAgentIds ?? new Set()}
+              onToggleAgent={onToggleAgent ?? (() => {})}
+              onAgentClick={onAgentClick ?? (() => {})}
+              onThreadClick={onThreadClick}
+              onCreateThreadForAgent={onCreateThreadForAgent ?? (() => {})}
+              onCreateAgent={onCreateAgent ?? (() => {})}
+              onDeleteAgent={onDeleteAgent ?? (() => {})}
+              onDeleteThread={onDeleteThread}
+              onRenameThread={onRenameThread}
+              runningThreadIds={runningThreadIds}
+              threadNotifications={threadNotifications}
+              pendingPermissionThreadIds={pendingPermissionThreadIds}
+            />
+          ) : (
+            <ThreadList
+              // Agent-owned threads live under their agent. Excluding them here
+              // makes the two groupings a partition rather than an overlap, and
+              // leaves Folders exactly as it was before agents existed.
+              threads={threads.filter((t) => !t.agentId)}
+              folders={folders}
+              activeThreadId={activeThreadId}
+              onThreadClick={onThreadClick}
+              onCreateThreadInFolder={onCreateThreadInFolder}
+              onAddFolder={onAddFolder}
+              onRemoveFolder={onRemoveFolder}
+              onToggleFolderCollapsed={onToggleFolderCollapsed}
+              onDeleteThread={onDeleteThread}
+              onRenameThread={onRenameThread}
+              runningThreadIds={runningThreadIds}
+              threadNotifications={threadNotifications}
+              pendingPermissionThreadIds={pendingPermissionThreadIds}
+              draftThreadIds={draftThreadIds}
+            />
+          )}
         </div>
 
         {/* Footer buttons */}

@@ -184,6 +184,13 @@ export const IPC_CHANNELS = {
   SCHEDULED_RUN_NOW: "schedule:run-now",
   SCHEDULED_CHANGED: "schedule:changed",
 
+  // Agents
+  AGENTS_LIST: "agents:list",
+  AGENTS_GET: "agents:get",
+  AGENTS_SAVE: "agents:save",
+  AGENTS_DELETE: "agents:delete",
+  AGENTS_CHANGED: "agents:changed",
+
   // Manager Agent
   MANAGER_SEND: "manager:send",
   MANAGER_STREAM: "manager:stream",
