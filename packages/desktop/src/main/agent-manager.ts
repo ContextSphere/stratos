@@ -7,7 +7,6 @@ import { homedir } from "os";
 import { IPC_CHANNELS } from "../common/ipc-channels";
 import {
   ClaudeCodeProvider,
-  CodexProvider,
   OpencodeProvider,
   createProvider,
   FileStorageAdapter,
@@ -332,6 +331,7 @@ export class AgentManager {
   >();
   private activeStreams = new Set<string>();
   private activeStreamIds = new Map<string, string>();
+  private streamSequence = 0;
   /** Messages typed while a turn was running, awaiting the next boundary.
    *  In-memory by design: a restart clears them rather than firing a stale
    *  prompt at a working tree that has since moved on. */
@@ -523,11 +523,13 @@ export class AgentManager {
         images?: { dataUrl: string; mimeType: string }[],
       ) => {
         if (!threadId) return;
-        // Fire-and-forget: start streaming in background, return immediately
-        this.runStream(threadId, prompt, images).catch((err) => {
+        // Use the same atomic admission path as mid-turn sends. A second IPC
+        // send that arrives before the renderer observes isRunning is queued
+        // instead of starting a concurrent provider turn.
+        this.enqueueMessage(threadId, prompt, images, "queue").catch((err) => {
           safeLog(
             console.error,
-            `[agent-manager] stream error for thread ${threadId}:`,
+            `[agent-manager] send error for thread ${threadId}:`,
             err,
           );
         });
@@ -786,15 +788,12 @@ export class AgentManager {
             // stale closure issues with runningThreadIds guards.
             if (threadId) {
               setTimeout(() => {
-                this.sendToRenderer(
-                  IPC_CHANNELS.STREAM_MESSAGE,
-                  {
-                    type: "user_message",
-                    content: "Implement the plan",
-                  },
+                this.enqueueMessage(
                   threadId,
-                );
-                this.runStream(threadId, "Implement the plan").catch((err) => {
+                  "Implement the plan",
+                  undefined,
+                  "queue",
+                ).catch((err) => {
                   safeLog(
                     console.error,
                     `[agent-manager] implement-plan stream error:`,
@@ -1093,12 +1092,58 @@ export class AgentManager {
     );
   }
 
-  private async runStream(
+  /**
+   * Atomically reserve a thread before any asynchronous setup begins. Every
+   * caller goes through this boundary, so there can be only one provider turn
+   * per thread even before the renderer receives its running-state event.
+   */
+  private runStream(
     threadId: string,
     prompt: string,
     images?: { dataUrl: string; mimeType: string }[],
     origin: RunOrigin = "user",
     echoUserMessage = false,
+  ): Promise<void> {
+    if (this.activeStreams.has(threadId)) {
+      return Promise.reject(
+        new Error(`Thread ${threadId} already has an active stream`),
+      );
+    }
+
+    const streamId = `${threadId}-${Date.now()}-${++this.streamSequence}`;
+    this.activeStreams.add(threadId);
+    this.activeStreamIds.set(threadId, streamId);
+
+    return this.runStreamInternal(
+      threadId,
+      prompt,
+      images,
+      origin,
+      echoUserMessage,
+      streamId,
+    ).finally(() => {
+      // Most releases happen in runStreamInternal where completion semantics
+      // are known. This is the safety net for failures during early setup.
+      if (this.activeStreamIds.get(threadId) === streamId) {
+        this.activeStreamIds.delete(threadId);
+        this.activeStreams.delete(threadId);
+        this.threadEffectiveModes.delete(threadId);
+        this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, {
+          threadId,
+          isRunning: false,
+        });
+        this.maybeRunPostStreamGc();
+      }
+    });
+  }
+
+  private async runStreamInternal(
+    threadId: string,
+    prompt: string,
+    images: { dataUrl: string; mimeType: string }[] | undefined,
+    origin: RunOrigin,
+    echoUserMessage: boolean,
+    streamId: string,
   ): Promise<void> {
     // Each new stream attempt clears any prior interrupt intent so that a
     // user-triggered stop followed by a fresh send works correctly.
@@ -1138,11 +1183,6 @@ export class AgentManager {
       }
     }
 
-    // Generate a unique ID for this stream so the renderer can discard
-    // late-arriving events from a previous (interrupted) stream on the same thread.
-    // Declared here (before worktree creation) so worktree progress messages can carry it.
-    const streamId = `${threadId}-${Date.now()}`;
-    this.activeStreamIds.set(threadId, streamId);
     // runId aliases streamId and is persisted immediately so that a crash
     // between stream start and completion leaves lastRunId !== lastReportedRunId,
     // enabling reconcile-on-startup to re-queue the missed notification.
@@ -1329,9 +1369,6 @@ export class AgentManager {
     // Update LRU tracking and evict idle sessions to prevent OOM
     this.touchSession(threadId);
     this.evictIdleSessions();
-
-    // Track active stream
-    this.activeStreams.add(threadId);
 
     // Notify renderer that streaming started
     this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, {
@@ -1609,8 +1646,11 @@ export class AgentManager {
         // Signal the finally block to skip cleanup — the retry's own finally
         // will send isRunning:false when it eventually completes.
         isRetrying = true;
-        this.activeStreams.delete(threadId);
-        this.threadEffectiveModes.delete(threadId);
+        if (this.activeStreamIds.get(threadId) === streamId) {
+          this.activeStreamIds.delete(threadId);
+          this.activeStreams.delete(threadId);
+          this.threadEffectiveModes.delete(threadId);
+        }
         return this.runStream(threadId, prompt, images, origin, false);
       }
 
@@ -1633,11 +1673,9 @@ export class AgentManager {
       // Skip cleanup when we're about to retry — the recursive runStream call
       // owns the running state from here and its own finally will send
       // isRunning:false when it eventually finishes.
-      if (!isRetrying) {
+      if (!isRetrying && this.activeStreamIds.get(threadId) === streamId) {
         this.activeStreams.delete(threadId);
-        if (this.activeStreamIds.get(threadId) === streamId) {
-          this.activeStreamIds.delete(threadId);
-        }
+        this.activeStreamIds.delete(threadId);
         this.threadEffectiveModes.delete(threadId);
         this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, {
           threadId,
@@ -2267,6 +2305,12 @@ export class AgentManager {
   }
 
   clearSession(threadId: string): void {
+    // Invalidate stream ownership before disposing the provider. A late
+    // finally from that stream must not drain queued work into a deleted or
+    // reset thread.
+    this.activeStreamIds.delete(threadId);
+    this.activeStreams.delete(threadId);
+
     const session = this.sessions.get(threadId);
     if (session) {
       if (session.mcpWatcherTimer) {
@@ -2280,6 +2324,9 @@ export class AgentManager {
       (id) => id !== threadId,
     );
     this.threadEffectiveModes.delete(threadId);
+    if (this.pendingByThread.delete(threadId)) {
+      this.emitPendingChanged(threadId);
+    }
     // Prune notification debounce entries for this thread to prevent the map
     // from growing forever as threads are created, used, and evicted.
     for (const key of this.lastNotificationAt.keys()) {
@@ -2462,15 +2509,11 @@ export class AgentManager {
       const session = this.sessions.get(threadId);
       const provider = session?.provider;
 
-      // Codex's app-server and Claude's SDK both accept live input, but neither
-      // reliably pre-empts an assistant message that is already being
-      // generated. In practice a correction can sit behind minutes of
-      // unwanted output. Give both providers the UX meaning of Steer instead:
-      // interrupt the current turn and make the correction the forced next
-      // turn. The existing stream teardown drains it immediately and
-      // suppresses intentional cancellation errors. Copilot retains its true
-      // in-turn input channel.
-      if (provider?.name === "codex" || provider?.name === "claude-code") {
+      // Some transports accept more input without reliably pre-empting the
+      // output already being generated. Their declared strategy gives Steer
+      // the expected UX meaning: interrupt, then deliver the correction as the
+      // forced next turn. Live-capable providers preserve the current turn.
+      if (provider?.midTurnSteering === "interrupt-and-restart") {
         const msg = this.makePending(
           threadId,
           prompt,
@@ -2484,7 +2527,7 @@ export class AgentManager {
         return { status: "queued", id: msg.id, fellBack: false };
       }
 
-      if (provider?.pushMessage) {
+      if (provider?.midTurnSteering === "live" && provider.pushMessage) {
         try {
           const accepted = await provider.pushMessage(prompt, images);
           if (accepted) {
@@ -2593,11 +2636,10 @@ export class AgentManager {
     if (to === "steer") {
       const provider = this.sessions.get(threadId)?.provider;
 
-      // See enqueueMessage(): Codex and Claude only handle their native live
-      // input after the current output segment, so promote by interrupting and
-      // draining this item first.
+      // Providers that declare interrupt-and-restart promote by moving this
+      // item to the front, marking it forced, and stopping the current turn.
       if (
-        (provider?.name === "codex" || provider?.name === "claude-code") &&
+        provider?.midTurnSteering === "interrupt-and-restart" &&
         this.activeStreams.has(threadId)
       ) {
         msg.force = true;
@@ -2608,7 +2650,11 @@ export class AgentManager {
         return { status: "queued", id: msg.id, fellBack: false };
       }
 
-      if (!provider?.pushMessage || !this.activeStreams.has(threadId)) {
+      if (
+        provider?.midTurnSteering !== "live" ||
+        !provider.pushMessage ||
+        !this.activeStreams.has(threadId)
+      ) {
         msg.fellBack = true;
         this.emitPendingChanged(threadId);
         return { status: "queued", id: msg.id, fellBack: true };
@@ -2795,6 +2841,8 @@ export class AgentManager {
     }
     this.sessions.clear();
     this.activeStreams.clear();
+    this.activeStreamIds.clear();
+    this.pendingByThread.clear();
     this.pendingPermissions.clear();
     this.pendingQuestions.clear();
     this.pendingPlanReviews.clear();

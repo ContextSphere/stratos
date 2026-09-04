@@ -366,6 +366,7 @@ function mapModeToPolicy(
  */
 export class CodexProvider implements AgentProvider {
   readonly name = "codex";
+  readonly midTurnSteering = "interrupt-and-restart" as const;
   private config: ProviderConfig = {};
   private threadId?: string;
   private turnId?: string;
@@ -1914,35 +1915,6 @@ export class CodexProvider implements AgentProvider {
       this.sendResponse(requestId, { answers });
     } catch {
       this.sendResponse(requestId, { answers: {} });
-    }
-  }
-
-  /**
-   * Mid-turn steering via the app-server's `turn/steer`, which appends user
-   * input to the in-flight turn without starting a new one. `expectedTurnId`
-   * must match the active turn, and the request fails outright when no turn is
-   * running — both of which we treat as "couldn't steer, fall back to queue".
-   */
-  async pushMessage(
-    content: string,
-    images?: { dataUrl: string; mimeType: string }[],
-  ): Promise<boolean> {
-    if (!this.threadId || !this.turnId || !this.appServer) return false;
-
-    try {
-      await this.sendRpc("turn/steer", {
-        threadId: this.threadId,
-        input: this.buildUserInput({ prompt: content, images }),
-        expectedTurnId: this.turnId,
-      });
-      return true;
-    } catch (err) {
-      // No active turn, a turn id race, or an older server without the method.
-      console.warn(
-        "[codex.provider] turn/steer failed:",
-        err instanceof Error ? err.message : String(err),
-      );
-      return false;
     }
   }
 

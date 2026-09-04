@@ -116,6 +116,7 @@ function mapRawContextUsage(
 
 export class ClaudeCodeProvider implements AgentProvider {
   readonly name = "claude-code";
+  readonly midTurnSteering = "interrupt-and-restart" as const;
   private config: ProviderConfig = {};
   private sessionId?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -131,24 +132,12 @@ export class ClaudeCodeProvider implements AgentProvider {
   // inputClosed=true, and every subsequent canUseTool would synchronously fail
   // with "Tool permission request failed: Error: Stream closed".
   //
-  // It doubles as the mid-turn steering channel — pushMessage() enqueues here
-  // and the CLI picks the message up at its next inference step.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private steerQueue?: SteerQueue<any>;
-  // Streaming-input mode can carry more than one user message through the
-  // same SDK query. Claude emits a `result` for each message, so a steer that
-  // lands before the first result must keep the query alive until its own
-  // result arrives. Without this accounting we closed the query at the first
-  // result and the accepted steer was visible in the transcript but never
-  // processed by Claude.
   private activeTurn?: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     queue: SteerQueue<any>;
-    outstandingResults: number;
     interrupted: boolean;
-    cost: number;
-    inputTokens: number;
-    outputTokens: number;
   };
   // Auto-close the control query after 5 minutes of inactivity. Each new turn
   // cancels and resets this timer. Prevents idle claude subprocesses from
@@ -317,11 +306,7 @@ export class ClaudeCodeProvider implements AgentProvider {
     this.steerQueue = steerQueue;
     const activeTurn = {
       queue: steerQueue,
-      outstandingResults: 1,
       interrupted: false,
-      cost: 0,
-      inputTokens: 0,
-      outputTokens: 0,
     };
     this.activeTurn = activeTurn;
     const initialMessage = {
@@ -361,43 +346,11 @@ export class ClaudeCodeProvider implements AgentProvider {
           });
         }
         if (msg.type === "result") {
-          activeTurn.outstandingResults = Math.max(
-            0,
-            activeTurn.outstandingResults - 1,
-          );
-
           // An intentional interrupt may still flush an SDK error/result (or
           // an interrupt marker) while the subprocess winds down. Do not
           // surface those expected shutdown messages as user-visible errors.
           if (activeTurn.interrupted) break;
-
-          // Each accepted steer is another streaming-input turn and therefore
-          // produces another result. Intermediate result events are internal
-          // boundaries: emitting one would make the renderer finalize the
-          // stream before Claude processes the steered message.
-          if (activeTurn.outstandingResults > 0) {
-            activeTurn.cost += msg.total_cost_usd ?? 0;
-            activeTurn.inputTokens += msg.usage?.input_tokens ?? 0;
-            activeTurn.outputTokens += msg.usage?.output_tokens ?? 0;
-            continue;
-          }
-
-          const finalResult = {
-            ...msg,
-            total_cost_usd: activeTurn.cost + (msg.total_cost_usd ?? 0),
-            ...(msg.usage
-              ? {
-                  usage: {
-                    ...msg.usage,
-                    input_tokens:
-                      activeTurn.inputTokens + (msg.usage.input_tokens ?? 0),
-                    output_tokens:
-                      activeTurn.outputTokens + (msg.usage.output_tokens ?? 0),
-                  },
-                }
-              : {}),
-          };
-          yield* this.transformMessage(finalResult, streamCtx);
+          yield* this.transformMessage(msg, streamCtx);
         } else if (!activeTurn.interrupted) {
           yield* this.transformMessage(msg, streamCtx);
         }
@@ -413,7 +366,7 @@ export class ClaudeCodeProvider implements AgentProvider {
         // thread stuck showing "Working" in the sidebar and blocking
         // WakeupManager.fire() from firing (it defers while
         // isStreaming(threadId) is true).
-        if (msg.type === "result" && activeTurn.outstandingResults === 0) break;
+        if (msg.type === "result") break;
       }
     } finally {
       // Close the steer queue so the prompt generator finishes and the SDK
@@ -541,50 +494,6 @@ export class ClaudeCodeProvider implements AgentProvider {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private get mcpQuery(): any {
     return this.currentQuery ?? this.controlQuery;
-  }
-
-  /**
-   * Push an additional user message into the turn that is already running.
-   * The CLI picks it up at its next inference step, so in-progress reasoning
-   * and tool results are preserved. Returns false when no turn is live, which
-   * lets the caller fall back to queueing.
-   */
-  async pushMessage(
-    content: string,
-    images?: { dataUrl: string; mimeType: string }[],
-  ): Promise<boolean> {
-    const queue = this.steerQueue;
-    if (!queue || !queue.isOpen) return false;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let messageContent: string | any[] = content;
-    if (images && images.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const blocks: any[] = [];
-      if (content) blocks.push({ type: "text", text: content });
-      for (const img of images) {
-        blocks.push({
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: img.mimeType,
-            data: img.dataUrl.replace(/^data:[^;]+;base64,/, ""),
-          },
-        });
-      }
-      messageContent = blocks;
-    }
-
-    const accepted = queue.push({
-      type: "user" as const,
-      message: { role: "user" as const, content: messageContent },
-      parent_tool_use_id: null,
-      session_id: this.sessionId ?? "",
-    });
-    if (accepted && this.activeTurn?.queue === queue) {
-      this.activeTurn.outstandingResults += 1;
-    }
-    return accepted;
   }
 
   async interrupt(): Promise<void> {

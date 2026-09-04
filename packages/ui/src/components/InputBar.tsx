@@ -443,8 +443,8 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
   }, []);
 
   const isInteractive = interactiveMode && interactiveMode.type !== "none";
-  // Content is all that gates sending now: a running turn no longer blocks it,
-  // because the message steers (Enter) or queues (Tab) instead of being dropped.
+  // Content is all that gates sending now: Enter queues while a turn is
+  // running, and the pending row exposes explicit steering controls.
   const canSend = hasContent || images.length > 0 || fileAttachments.length > 0;
 
   const placeholder = useMemo(() => {

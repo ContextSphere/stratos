@@ -1243,6 +1243,7 @@ class EventQueue<T> {
 
 export class CopilotProvider implements AgentProvider {
   readonly name = "copilot";
+  readonly midTurnSteering = "live" as const;
 
   // Single CopilotClient shared across CopilotProvider instances in the same
   // process. The SDK spawns one `copilot` runtime subprocess per client.

@@ -50,6 +50,7 @@ export type {
   OpencodeCustomProvider,
   ContextUsage,
   ContextUsageCategory,
+  MidTurnSteeringStrategy,
 } from "./providers/types";
 export { READ_ONLY_TOOLS } from "./providers/types";
 export { ClaudeCodeProvider } from "./providers/claude-code.provider";
@@ -107,7 +108,6 @@ export {
 } from "./storage/loop-wakeups.store";
 
 // Utils
-export { SteerQueue } from "./utils/steer-queue";
 export type { WorktreeInfo } from "./utils/worktree";
 export {
   detectWorktreeRoot,

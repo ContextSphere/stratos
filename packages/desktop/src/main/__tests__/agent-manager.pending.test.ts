@@ -25,6 +25,26 @@ vi.mock("../settings/settings.store", () => ({
   isManagerEnabled: vi.fn().mockReturnValue(false),
 }));
 
+// Queue tests should not install binaries or bind Unix sockets. Those
+// integrations have dedicated test suites; here we exercise AgentManager's
+// lifecycle with deterministic in-memory boundaries.
+vi.mock("../mcp/stdio-proxy", () => ({
+  cleanupLegacyMcpBinaries: vi.fn(),
+  installStratosMcpProxy: vi.fn(),
+  getStratosMcpPath: vi.fn().mockReturnValue("/tmp/stratos-test-proxy"),
+  getStratosMcpSocketPath: vi.fn().mockReturnValue("/tmp/stratos-test.sock"),
+}));
+
+vi.mock("../mcp/socket-mcp-server", () => ({
+  startStratosMcpSocketServer: vi.fn().mockReturnValue({
+    close: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+
+vi.mock("../mcp/handlers", () => ({
+  createStratosHandlers: vi.fn().mockReturnValue({}),
+}));
+
 describe("AgentManager — mid-turn messages", () => {
   let sent: Array<{ channel: string; data: any; threadId?: string }>;
   let mockWindow: any;
@@ -54,6 +74,20 @@ describe("AgentManager — mid-turn messages", () => {
     const runStream = vi.fn().mockResolvedValue(undefined);
     manager.runStream = runStream;
     return { manager, runStream };
+  }
+
+  /** Manager using the real admission wrapper around a controllable stream. */
+  function makeManagerWithControllableStream() {
+    const manager = new AgentManager(mockWindow) as any;
+    let finish!: () => void;
+    const runStreamInternal = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    manager.runStreamInternal = runStreamInternal;
+    return { manager, runStreamInternal, finish: () => finish() };
   }
 
   function markRunning(manager: any, threadId: string, provider?: any) {
@@ -89,6 +123,25 @@ describe("AgentManager — mid-turn messages", () => {
       manager.dispose();
     });
 
+    it("atomically queues a second send while the first stream is still starting", async () => {
+      const { manager, runStreamInternal, finish } =
+        makeManagerWithControllableStream();
+
+      const first = await manager.enqueueMessage("t1", "first");
+      const second = await manager.enqueueMessage("t1", "second");
+
+      expect(first).toEqual({ status: "sent", fellBack: false });
+      expect(second.status).toBe("queued");
+      expect(runStreamInternal).toHaveBeenCalledOnce();
+      expect(manager.listPending("t1")[0].prompt).toBe("second");
+
+      finish();
+      await vi.waitFor(() => {
+        expect(manager.activeStreams.has("t1")).toBe(false);
+      });
+      manager.dispose();
+    });
+
     it("queues instead of sending while a turn is running", async () => {
       const { manager, runStream } = makeManager();
       markRunning(manager, "t1");
@@ -106,7 +159,10 @@ describe("AgentManager — mid-turn messages", () => {
     it("steers into the live turn when the provider supports it", async () => {
       const { manager, runStream } = makeManager();
       const pushMessage = vi.fn().mockResolvedValue(true);
-      markRunning(manager, "t1", { pushMessage });
+      markRunning(manager, "t1", {
+        midTurnSteering: "live",
+        pushMessage,
+      });
 
       const res = await manager.enqueueMessage(
         "t1",
@@ -134,6 +190,7 @@ describe("AgentManager — mid-turn messages", () => {
       const pushMessage = vi.fn().mockResolvedValue(true);
       markRunning(manager, "t1", {
         name: "codex",
+        midTurnSteering: "interrupt-and-restart",
         interrupt,
         pushMessage,
       });
@@ -164,6 +221,7 @@ describe("AgentManager — mid-turn messages", () => {
       const pushMessage = vi.fn().mockResolvedValue(true);
       markRunning(manager, "t1", {
         name: "claude-code",
+        midTurnSteering: "interrupt-and-restart",
         interrupt,
         pushMessage,
       });
@@ -210,6 +268,7 @@ describe("AgentManager — mid-turn messages", () => {
     it("falls back to queueing when pushMessage reports no live turn", async () => {
       const { manager } = makeManager();
       markRunning(manager, "t1", {
+        midTurnSteering: "live",
         pushMessage: vi.fn().mockResolvedValue(false),
       });
 
@@ -223,6 +282,7 @@ describe("AgentManager — mid-turn messages", () => {
     it("falls back to queueing when pushMessage throws", async () => {
       const { manager } = makeManager();
       markRunning(manager, "t1", {
+        midTurnSteering: "live",
         pushMessage: vi.fn().mockRejectedValue(new Error("transport dead")),
       });
 
@@ -364,6 +424,28 @@ describe("AgentManager — mid-turn messages", () => {
   });
 
   describe("cancelPending / promotePending", () => {
+    it("clears queued payloads when the owning session is cleared", async () => {
+      const { manager } = makeManager();
+      markRunning(manager, "t1");
+      await manager.enqueueMessage("t1", "discard me", [
+        { dataUrl: "data:image/png;base64,AA", mimeType: "image/png" },
+      ]);
+
+      manager.clearSession("t1");
+
+      expect(manager.listPending("t1")).toEqual([]);
+      expect(manager.activeStreams.has("t1")).toBe(false);
+      expect(
+        sent.some(
+          (event) =>
+            event.channel === "chat:pending:changed" &&
+            event.data.threadId === "t1" &&
+            event.data.pending.length === 0,
+        ),
+      ).toBe(true);
+      manager.dispose();
+    });
+
     it("cancels a queued message and notifies the renderer", async () => {
       const { manager } = makeManager();
       markRunning(manager, "t1");
@@ -386,7 +468,10 @@ describe("AgentManager — mid-turn messages", () => {
     it("promoting to steer removes it from the queue on success", async () => {
       const { manager } = makeManager();
       const pushMessage = vi.fn().mockResolvedValue(true);
-      markRunning(manager, "t1", { pushMessage });
+      markRunning(manager, "t1", {
+        midTurnSteering: "live",
+        pushMessage,
+      });
       const res = await manager.enqueueMessage("t1", "actually, do X");
 
       const promoted = await manager.promotePending("t1", res.id, "steer");
@@ -403,6 +488,7 @@ describe("AgentManager — mid-turn messages", () => {
       const pushMessage = vi.fn().mockResolvedValue(true);
       markRunning(manager, "t1", {
         name: "codex",
+        midTurnSteering: "interrupt-and-restart",
         interrupt,
         pushMessage,
       });
@@ -426,6 +512,7 @@ describe("AgentManager — mid-turn messages", () => {
     it("promoting to steer keeps it queued and flags fallback on failure", async () => {
       const { manager } = makeManager();
       markRunning(manager, "t1", {
+        midTurnSteering: "live",
         pushMessage: vi.fn().mockResolvedValue(false),
       });
       const res = await manager.enqueueMessage("t1", "hmm");
