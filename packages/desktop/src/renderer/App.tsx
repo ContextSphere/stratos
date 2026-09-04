@@ -49,12 +49,19 @@ import {
   TerminalPane,
   StratosProvider,
   useStratos,
+  AgentOverview,
+  AgentEditor,
+  type SidebarGrouping,
+  DEFAULT_AGENT,
+  DEFAULT_AGENT_ID,
 } from "@stratosapp/ui";
+import type { AgentDefinition } from "@stratosapp/core";
 
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { useChat } from "./hooks/useChat";
 import { useThreads } from "./hooks/useThreads";
 import { useFolders } from "./hooks/useFolders";
+import { useAgents } from "./hooks/useAgents";
 import { useNavHistory } from "./hooks/useNavHistory";
 import type { NavEntry, NavAnchor } from "./navigation/types";
 import { useGitHub } from "./hooks/useGitHub";
@@ -103,6 +110,34 @@ function AppInner(): React.ReactElement {
   } = useThreads();
 
   const { folders, addFolder, removeFolder, updateFolder } = useFolders();
+  const { agents, save: saveAgent, remove: removeAgent } = useAgents();
+
+  // Sidebar grouping switch (Folders | Agents). Defaults to "folders" so
+  // existing users see no change.
+  const [sidebarGrouping, setSidebarGrouping] =
+    useState<SidebarGrouping>("folders");
+  const [collapsedAgentIds, setCollapsedAgentIds] = useState<Set<string>>(
+    new Set(),
+  );
+  // The agent shown in the main pane (AgentOverview), if any.
+  const [viewingAgentId, setViewingAgentId] = useState<string | null>(null);
+  // The agent being edited in the main pane (AgentEditor). "new" creates one.
+  const [editingAgentId, setEditingAgentId] = useState<string | "new" | null>(
+    null,
+  );
+
+  const resolveAgent = useCallback(
+    (id: string): AgentDefinition | undefined =>
+      agents.find((a) => a.id === id) ??
+      (id === DEFAULT_AGENT_ID ? DEFAULT_AGENT : undefined),
+    [agents],
+  );
+
+  const viewingAgent = viewingAgentId ? resolveAgent(viewingAgentId) : null;
+  const editingAgent =
+    editingAgentId && editingAgentId !== "new"
+      ? resolveAgent(editingAgentId)
+      : null;
 
   // Manager thread ID — only fetched when the Manager Agent setting is on. When
   // off (the default), the manager thread stays hidden from the sidebar and
@@ -140,9 +175,16 @@ function AppInner(): React.ReactElement {
     folders.length === 0 && !isManagerActive && !activeThreadId;
 
   // Reset activeThreadId if it points to a thread not visible in any folder
-  // (but never reset if it's the manager thread)
+  // (but never reset if it's the manager thread, or an agent thread — an agent
+  // thread is reachable from its agent and deliberately registers no folder, so
+  // the folder-visibility check does not apply to it).
   useEffect(() => {
-    if (activeThreadId && activeThread && !activeThread.isManagerThread) {
+    if (
+      activeThreadId &&
+      activeThread &&
+      !activeThread.isManagerThread &&
+      !activeThread.agentId
+    ) {
       const folderPaths = new Set(folders.map((f) => f.path));
       const threadFolder =
         activeThread.worktree?.sourceRepoPath ?? activeThread.cwd;
@@ -417,12 +459,128 @@ function AppInner(): React.ReactElement {
         navHistory.push({ threadId: fromId, anchor: currentAnchorRef.current });
       }
       closePreview();
+      // Opening a thread always drops out of the Agent overview/editor overlay.
+      setViewingAgentId(null);
+      setEditingAgentId(null);
       currentAnchorRef.current = { type: "latest" };
       await setActiveThreadId(threadId);
       // Record the landing location in the new thread
       navHistory.push({ threadId, anchor: { type: "latest" } });
     },
     [setActiveThreadId, closePreview, saveDraft, navHistory],
+  );
+
+  const handleAgentClick = useCallback((agentId: string) => {
+    setEditingAgentId(null);
+    setViewingAgentId(agentId);
+  }, []);
+
+  const handleToggleAgent = useCallback(
+    (agentId: string, collapsed: boolean) => {
+      setCollapsedAgentIds((prev) => {
+        const next = new Set(prev);
+        if (collapsed) next.add(agentId);
+        else next.delete(agentId);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleCreateAgent = useCallback(() => {
+    setViewingAgentId(null);
+    setEditingAgentId("new");
+  }, []);
+
+  const handleEditAgent = useCallback((agentId: string) => {
+    setEditingAgentId(agentId);
+  }, []);
+
+  const handleSaveAgent = useCallback(
+    async (def: AgentDefinition) => {
+      await saveAgent(def);
+      setEditingAgentId(null);
+      setViewingAgentId(def.id);
+    },
+    [saveAgent],
+  );
+
+  const handleCancelEditAgent = useCallback(() => {
+    const wasNew = editingAgentId === "new";
+    setEditingAgentId(null);
+    if (wasNew) setViewingAgentId(null);
+  }, [editingAgentId]);
+
+  const handleDeleteAgent = useCallback(
+    async (agentId: string) => {
+      await removeAgent(agentId);
+      setCollapsedAgentIds((prev) => {
+        if (!prev.has(agentId)) return prev;
+        const next = new Set(prev);
+        next.delete(agentId);
+        return next;
+      });
+      setViewingAgentId((cur) => (cur === agentId ? null : cur));
+      setEditingAgentId((cur) => (cur === agentId ? null : cur));
+    },
+    [removeAgent],
+  );
+
+  /** Creates a thread for the given agent, inheriting its cwd/provider/mode
+   *  defaults. Falls back to the folder-picker flow when the agent has no
+   *  pinned cwd, exactly like starting a thread with no active folder does. */
+  const handleCreateThreadForAgent = useCallback(
+    async (agentId: string) => {
+      const agent =
+        agents.find((a) => a.id === agentId) ??
+        (agentId === DEFAULT_AGENT_ID ? DEFAULT_AGENT : undefined);
+
+      // Starting a thread with an agent must not interrupt with a directory
+      // picker: most agents (a CFO, a chief of staff, a wiki curator) aren't
+      // repo-scoped at all, and being asked to choose a folder is nonsense for
+      // them. Use the agent's pinned cwd when it has one, otherwise fall back
+      // to where its last thread ran, then to the home directory. Anyone who
+      // wants a fixed directory pins one in the agent editor.
+      const lastThreadForAgent = threads
+        .filter((t) => t.agentId === agentId && t.cwd)
+        .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      const cwd = agent?.cwd ?? lastThreadForAgent?.cwd ?? homeDir;
+      if (!cwd) return;
+
+      // Deliberately does NOT register a folder for this cwd. An agent thread
+      // belongs to its agent, not to a folder, and auto-adding one littered the
+      // Folders view with junk entries (a "panik" folder for the home dir).
+      // Agent threads are shown under Agents; Folders stays exactly as it was.
+      const isGit = (await settingsBridge.checkIsGitRepo?.(cwd)) ?? false;
+
+      const provider = agent?.provider ?? pendingProvider;
+      const thread = await createThread("New chat", undefined, cwd, provider);
+      await threadsBridge.update(thread.id, {
+        agentId,
+        ...(agent?.mode ? { mode: agent.mode } : {}),
+        ...(isGit ? { isGitRepo: true, worktreeMode: "local" as const } : {}),
+      });
+      await refreshThreads();
+
+      setViewingAgentId(null);
+      setEditingAgentId(null);
+      await setActiveThreadId(thread.id);
+      inputRef.current?.focus();
+    },
+    [
+      agents,
+      folders,
+      threads,
+      homeDir,
+      addFolder,
+      updateFolder,
+      createThread,
+      threadsBridge,
+      refreshThreads,
+      setActiveThreadId,
+      settingsBridge,
+      pendingProvider,
+    ],
   );
 
   const handleAddFolder = useCallback(async () => {
@@ -1080,6 +1238,16 @@ function AppInner(): React.ReactElement {
             threadNotifications={threadNotifications}
             pendingPermissionThreadIds={pendingPermissionThreadIds}
             draftThreadIds={draftThreadIds}
+            grouping={sidebarGrouping}
+            onGroupingChange={setSidebarGrouping}
+            agents={agents}
+            activeAgentId={viewingAgentId ?? editingAgentId}
+            collapsedAgentIds={collapsedAgentIds}
+            onToggleAgent={handleToggleAgent}
+            onAgentClick={handleAgentClick}
+            onCreateThreadForAgent={handleCreateThreadForAgent}
+            onCreateAgent={handleCreateAgent}
+            onDeleteAgent={handleDeleteAgent}
           />
         </div>
 
@@ -1092,333 +1260,377 @@ function AppInner(): React.ReactElement {
                     <div className="drag-region h-7 flex-shrink-0" />
                   )}
 
-                  {/* Top bar */}
-                  <div
-                    className={`drag-region flex-shrink-0 flex items-end justify-between px-4 pb-1.5 ${sidebarCollapsed ? "" : "h-11"}`}
-                  >
-                    <div className="flex items-center">
-                      {sidebarCollapsed && (
-                        <button
-                          onClick={toggleSidebar}
-                          className="no-drag p-1 rounded-md text-[var(--text-control)] hover:text-[var(--text-primary)] hover:bg-[var(--border)] transition-colors"
-                          title="Expand sidebar"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M13 5l7 7-7 7M5 5l7 7-7 7"
-                            />
-                          </svg>
-                        </button>
+                  {editingAgentId !== null ? (
+                    <AgentEditor
+                      agent={editingAgent}
+                      onSave={handleSaveAgent}
+                      onCancel={handleCancelEditAgent}
+                      onDelete={
+                        editingAgent && !editingAgent.builtIn
+                          ? handleDeleteAgent
+                          : undefined
+                      }
+                      onFetchModels={(p) =>
+                        settingsBridge.getAvailableModels?.(p) ??
+                        Promise.resolve([])
+                      }
+                    />
+                  ) : viewingAgent ? (
+                    <AgentOverview
+                      agent={viewingAgent}
+                      threads={visibleThreads.filter(
+                        (t) =>
+                          !t.isManagerThread &&
+                          (t.agentId ?? DEFAULT_AGENT_ID) === viewingAgent.id,
                       )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setShowClaudeDialog(true)}
-                        className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                        title={
-                          claude.isConnected
-                            ? "Claude connected"
-                            : "Connect Claude"
-                        }
+                      activeThreadId={activeThreadId}
+                      onThreadClick={handleThreadClick}
+                      onCreateThread={() =>
+                        handleCreateThreadForAgent(viewingAgent.id)
+                      }
+                      onEdit={() => handleEditAgent(viewingAgent.id)}
+                    />
+                  ) : (
+                    <>
+                      {/* Top bar */}
+                      <div
+                        className={`drag-region flex-shrink-0 flex items-end justify-between px-4 pb-1.5 ${sidebarCollapsed ? "" : "h-11"}`}
                       >
-                        <div
-                          className={`w-1.5 h-1.5 rounded-full ${claude.isConnected ? "bg-green-500" : "bg-gray-600"}`}
-                        />
-                        <span
-                          className={
-                            claude.isConnected
-                              ? "text-[var(--text-control)]"
-                              : "text-[var(--text-muted)]"
-                          }
-                        >
-                          Claude
-                        </span>
-                      </button>
-                      {codexEnabled && (
-                        <button
-                          onClick={() => setShowCodexDialog(true)}
-                          className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                          title={
-                            codex.isConnected
-                              ? "Codex connected"
-                              : "Connect Codex"
-                          }
-                        >
-                          <div
-                            className={`w-1.5 h-1.5 rounded-full ${codex.isConnected ? "bg-green-500" : "bg-gray-600"}`}
-                          />
-                          <span
-                            className={
-                              codex.isConnected
-                                ? "text-[var(--text-control)]"
-                                : "text-[var(--text-muted)]"
-                            }
-                          >
-                            Codex
-                          </span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setShowOpencodeDialog(true)}
-                        className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                        title={
-                          opencode.configured
-                            ? `Opencode — ${opencode.providerLabels.join(", ")}`
-                            : "Opencode — no providers configured. Click to add."
-                        }
-                      >
-                        <div
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            opencode.configured ? "bg-green-500" : "bg-gray-600"
-                          }`}
-                        />
-                        <span
-                          className={
-                            opencode.configured
-                              ? "text-[var(--text-control)]"
-                              : "text-[var(--text-muted)]"
-                          }
-                        >
-                          Opencode
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => setShowGitHubDialog(true)}
-                        className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                        title={
-                          github.isConnected
-                            ? "GitHub connected"
-                            : "Connect GitHub"
-                        }
-                      >
-                        <div
-                          className={`w-1.5 h-1.5 rounded-full ${github.isConnected ? "bg-green-500" : "bg-gray-600"}`}
-                        />
-                        <span
-                          className={
-                            github.isConnected
-                              ? "text-[var(--text-control)]"
-                              : "text-[var(--text-muted)]"
-                          }
-                        >
-                          GitHub
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Chat info bar */}
-                  <ChatInfoBar
-                    primaryCwd={activeThread?.cwd}
-                    sessionStats={sessionStats}
-                    homeDir={homeDir}
-                    sessionTools={sessionTools ?? undefined}
-                    todoData={latestTodoData}
-                    showTaskPanel={showTaskPanel}
-                    onToggleTaskPanel={() => setShowTaskPanel((s) => !s)}
-                    worktreeMode={activeThread?.worktreeMode}
-                    isGitRepo={activeThread?.isGitRepo}
-                    hasMessages={messages.length > 0}
-                    onWorktreeModeChange={handleWorktreeModeChange}
-                    onToggleFileExplorer={handleToggleFileExplorer}
-                    onToggleTerminal={handleToggleTerminal}
-                    mcpServers={mcpServers ?? undefined}
-                    onToggleMcpServer={
-                      activeThreadId
-                        ? async (serverName: string, enabled: boolean) => {
-                            try {
-                              await chatBridge.toggleMcpServer?.(
-                                activeThreadId,
-                                serverName,
-                                enabled,
-                              );
-                            } catch (err) {
-                              console.error("[MCP] toggle failed:", err);
-                            }
-                          }
-                        : undefined
-                    }
-                    onOpenMcpConfig={(configPath: string) =>
-                      chatBridge.openMcpConfig?.(configPath)
-                    }
-                    onReconnectMcpServer={
-                      activeThreadId
-                        ? (serverName: string) => {
-                            chatBridge
-                              .reconnectMcpServer?.(activeThreadId, serverName)
-                              ?.catch((err: unknown) =>
-                                console.error("[MCP] reconnect failed:", err),
-                              );
-                          }
-                        : undefined
-                    }
-                    sessionChanges={sessionChanges}
-                    onOpenSessionChanges={openFileChanges}
-                  />
-
-                  {/* Chat messages */}
-                  <ChatView
-                    key={activeThreadId ?? "new"}
-                    ref={chatViewRef}
-                    provider={activeProvider}
-                    messages={messages}
-                    isStreaming={isStreaming}
-                    onLinkClick={handleLinkClick}
-                    onSendMessage={handleSend}
-                    onQuestionAnswer={respondQuestion}
-                    onPlanReviewDecision={respondPlanReview}
-                    onViewPlan={openMarkdown}
-                    onUpdateTaskExpanded={updateTaskExpanded}
-                    onViewFile={handleViewFile}
-                    onAnchorChange={handleAnchorChange}
-                    emptyState={
-                      isManagerActive ? (
-                        <div className="text-center px-6 max-w-sm">
-                          <h1 className="text-2xl font-semibold text-gray-300 mb-3">
-                            Manager
-                          </h1>
-                          <p className="text-sm text-gray-400 leading-relaxed">
-                            Orchestrates your agent sessions. Dispatch tasks,
-                            check progress, and relay messages to agents running
-                            in any workspace.
-                          </p>
-                        </div>
-                      ) : isFolderOnboarding ? (
-                        <div className="text-center px-6 max-w-md">
-                          <h1 className="text-2xl font-semibold text-gray-300 mb-3">
-                            Welcome to Stratos
-                          </h1>
-                          <p className="text-sm text-gray-400 leading-relaxed mb-6">
-                            Add a folder to get started. Each folder becomes a
-                            workspace where you can start threads with your
-                            agents.
-                          </p>
-                          <button
-                            onClick={handleAddFolder}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
-                          >
-                            <svg
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth={1.5}
-                              viewBox="0 0 24 24"
+                        <div className="flex items-center">
+                          {sidebarCollapsed && (
+                            <button
+                              onClick={toggleSidebar}
+                              className="no-drag p-1 rounded-md text-[var(--text-control)] hover:text-[var(--text-primary)] hover:bg-[var(--border)] transition-colors"
+                              title="Expand sidebar"
                             >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M13 5l7 7-7 7M5 5l7 7-7 7"
+                                />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setShowClaudeDialog(true)}
+                            className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                            title={
+                              claude.isConnected
+                                ? "Claude connected"
+                                : "Connect Claude"
+                            }
+                          >
+                            <div
+                              className={`w-1.5 h-1.5 rounded-full ${claude.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                            />
+                            <span
+                              className={
+                                claude.isConnected
+                                  ? "text-[var(--text-control)]"
+                                  : "text-[var(--text-muted)]"
+                              }
+                            >
+                              Claude
+                            </span>
+                          </button>
+                          {codexEnabled && (
+                            <button
+                              onClick={() => setShowCodexDialog(true)}
+                              className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                              title={
+                                codex.isConnected
+                                  ? "Codex connected"
+                                  : "Connect Codex"
+                              }
+                            >
+                              <div
+                                className={`w-1.5 h-1.5 rounded-full ${codex.isConnected ? "bg-green-500" : "bg-gray-600"}`}
                               />
-                            </svg>
-                            Add folder
+                              <span
+                                className={
+                                  codex.isConnected
+                                    ? "text-[var(--text-control)]"
+                                    : "text-[var(--text-muted)]"
+                                }
+                              >
+                                Codex
+                              </span>
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setShowOpencodeDialog(true)}
+                            className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                            title={
+                              opencode.configured
+                                ? `Opencode — ${opencode.providerLabels.join(", ")}`
+                                : "Opencode — no providers configured. Click to add."
+                            }
+                          >
+                            <div
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                opencode.configured
+                                  ? "bg-green-500"
+                                  : "bg-gray-600"
+                              }`}
+                            />
+                            <span
+                              className={
+                                opencode.configured
+                                  ? "text-[var(--text-control)]"
+                                  : "text-[var(--text-muted)]"
+                              }
+                            >
+                              Opencode
+                            </span>
+                          </button>
+                          <button
+                            onClick={() => setShowGitHubDialog(true)}
+                            className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                            title={
+                              github.isConnected
+                                ? "GitHub connected"
+                                : "Connect GitHub"
+                            }
+                          >
+                            <div
+                              className={`w-1.5 h-1.5 rounded-full ${github.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                            />
+                            <span
+                              className={
+                                github.isConnected
+                                  ? "text-[var(--text-control)]"
+                                  : "text-[var(--text-muted)]"
+                              }
+                            >
+                              GitHub
+                            </span>
                           </button>
                         </div>
-                      ) : undefined
-                    }
-                    completionStatus={
-                      !isStreaming &&
-                      activeThread?.spawnedBy === "manager" &&
-                      activeThread?.lastCompletionStatus
-                        ? activeThread.lastCompletionStatus
-                        : undefined
-                    }
-                    completionError={activeThread?.lastCompletionError}
-                  />
+                      </div>
 
-                  {/* Input + toolbar (hidden during first-run folder onboarding) */}
-                  {!isFolderOnboarding && (
-                    <>
-                      <InputBar
-                        ref={inputRef}
-                        onSend={handleSend}
-                        onInterrupt={handleInterrupt}
-                        isStreaming={isStreaming}
-                        interactiveMode={interactiveMode}
-                        onInteractiveResponse={handleInteractiveResponse}
-                        slashCommands={slashCommands}
-                        cwd={activeThread?.cwd}
-                        filesBridge={filesBridge}
-                        pendingMessages={pendingMessages}
-                        onCancelPending={(id) => void cancelPending(id)}
-                        onPromotePending={(id, to) =>
-                          void promotePending(id, to)
+                      {/* Chat info bar */}
+                      <ChatInfoBar
+                        primaryCwd={activeThread?.cwd}
+                        sessionStats={sessionStats}
+                        homeDir={homeDir}
+                        sessionTools={sessionTools ?? undefined}
+                        todoData={latestTodoData}
+                        showTaskPanel={showTaskPanel}
+                        onToggleTaskPanel={() => setShowTaskPanel((s) => !s)}
+                        worktreeMode={activeThread?.worktreeMode}
+                        isGitRepo={activeThread?.isGitRepo}
+                        hasMessages={messages.length > 0}
+                        onWorktreeModeChange={handleWorktreeModeChange}
+                        onToggleFileExplorer={handleToggleFileExplorer}
+                        onToggleTerminal={handleToggleTerminal}
+                        mcpServers={mcpServers ?? undefined}
+                        onToggleMcpServer={
+                          activeThreadId
+                            ? async (serverName: string, enabled: boolean) => {
+                                try {
+                                  await chatBridge.toggleMcpServer?.(
+                                    activeThreadId,
+                                    serverName,
+                                    enabled,
+                                  );
+                                } catch (err) {
+                                  console.error("[MCP] toggle failed:", err);
+                                }
+                              }
+                            : undefined
                         }
-                        onEditPending={(message) =>
-                          void handleEditPending(message)
+                        onOpenMcpConfig={(configPath: string) =>
+                          chatBridge.openMcpConfig?.(configPath)
                         }
+                        onReconnectMcpServer={
+                          activeThreadId
+                            ? (serverName: string) => {
+                                chatBridge
+                                  .reconnectMcpServer?.(
+                                    activeThreadId,
+                                    serverName,
+                                  )
+                                  ?.catch((err: unknown) =>
+                                    console.error(
+                                      "[MCP] reconnect failed:",
+                                      err,
+                                    ),
+                                  );
+                              }
+                            : undefined
+                        }
+                        sessionChanges={sessionChanges}
+                        onOpenSessionChanges={openFileChanges}
                       />
 
-                      <div className="flex-shrink-0 bg-[var(--bg-main)] px-4 pb-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <ProviderToggle
-                              provider={activeProvider}
-                              onProviderChange={handleProviderChange}
-                              enabledProviders={enabledProviders ?? undefined}
-                              disabled={
-                                isStreaming ||
-                                // Lock the provider once a regular thread has
-                                // messages (switching mid-conversation breaks
-                                // the transcript). The Manager thread is the
-                                // exception: switching resets it cleanly, so
-                                // users can toggle freely.
-                                (activeThreadId !== managerThreadId &&
-                                  messages.length > 0)
-                              }
-                            />
-                            <span className="text-xs text-[var(--text-muted)]">
-                              |
-                            </span>
-                            <ModelSelector
-                              selectedModel={activeThread?.model}
-                              onModelChange={handleModelChange}
-                              thinkingEffort={activeThread?.thinkingEffort}
-                              onThinkingEffortChange={
-                                handleThinkingEffortChange
-                              }
-                              fetchScope={activeProvider}
-                              onFetchModels={() =>
-                                settingsBridge.getAvailableModels?.(
-                                  activeProvider,
-                                ) ?? Promise.resolve([])
-                              }
-                              isOpen={modelPickerOpen}
-                              onOpenChange={setModelPickerOpen}
-                            />
+                      {/* Chat messages */}
+                      <ChatView
+                        key={activeThreadId ?? "new"}
+                        ref={chatViewRef}
+                        provider={activeProvider}
+                        messages={messages}
+                        isStreaming={isStreaming}
+                        onLinkClick={handleLinkClick}
+                        onSendMessage={handleSend}
+                        onQuestionAnswer={respondQuestion}
+                        onPlanReviewDecision={respondPlanReview}
+                        onViewPlan={openMarkdown}
+                        onUpdateTaskExpanded={updateTaskExpanded}
+                        onViewFile={handleViewFile}
+                        onAnchorChange={handleAnchorChange}
+                        emptyState={
+                          isManagerActive ? (
+                            <div className="text-center px-6 max-w-sm">
+                              <h1 className="text-2xl font-semibold text-gray-300 mb-3">
+                                Manager
+                              </h1>
+                              <p className="text-sm text-gray-400 leading-relaxed">
+                                Orchestrates your agent sessions. Dispatch
+                                tasks, check progress, and relay messages to
+                                agents running in any workspace.
+                              </p>
+                            </div>
+                          ) : isFolderOnboarding ? (
+                            <div className="text-center px-6 max-w-md">
+                              <h1 className="text-2xl font-semibold text-gray-300 mb-3">
+                                Welcome to Stratos
+                              </h1>
+                              <p className="text-sm text-gray-400 leading-relaxed mb-6">
+                                Add a folder to get started. Each folder becomes
+                                a workspace where you can start threads with
+                                your agents.
+                              </p>
+                              <button
+                                onClick={handleAddFolder}
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
+                              >
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth={1.5}
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+                                  />
+                                </svg>
+                                Add folder
+                              </button>
+                            </div>
+                          ) : undefined
+                        }
+                        completionStatus={
+                          !isStreaming &&
+                          activeThread?.spawnedBy === "manager" &&
+                          activeThread?.lastCompletionStatus
+                            ? activeThread.lastCompletionStatus
+                            : undefined
+                        }
+                        completionError={activeThread?.lastCompletionError}
+                      />
+
+                      {/* Input + toolbar (hidden during first-run folder onboarding) */}
+                      {!isFolderOnboarding && (
+                        <>
+                          <InputBar
+                            ref={inputRef}
+                            onSend={handleSend}
+                            onInterrupt={handleInterrupt}
+                            isStreaming={isStreaming}
+                            interactiveMode={interactiveMode}
+                            onInteractiveResponse={handleInteractiveResponse}
+                            slashCommands={slashCommands}
+                            cwd={activeThread?.cwd}
+                            filesBridge={filesBridge}
+                            pendingMessages={pendingMessages}
+                            onCancelPending={(id) => void cancelPending(id)}
+                            onPromotePending={(id, to) =>
+                              void promotePending(id, to)
+                            }
+                            onEditPending={(message) =>
+                              void handleEditPending(message)
+                            }
+                          />
+
+                          <div className="flex-shrink-0 bg-[var(--bg-main)] px-4 pb-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <ProviderToggle
+                                  provider={activeProvider}
+                                  onProviderChange={handleProviderChange}
+                                  enabledProviders={
+                                    enabledProviders ?? undefined
+                                  }
+                                  disabled={
+                                    isStreaming ||
+                                    // Lock the provider once a regular thread has
+                                    // messages (switching mid-conversation breaks
+                                    // the transcript). The Manager thread is the
+                                    // exception: switching resets it cleanly, so
+                                    // users can toggle freely.
+                                    (activeThreadId !== managerThreadId &&
+                                      messages.length > 0)
+                                  }
+                                />
+                                <span className="text-xs text-[var(--text-muted)]">
+                                  |
+                                </span>
+                                <ModelSelector
+                                  selectedModel={activeThread?.model}
+                                  onModelChange={handleModelChange}
+                                  thinkingEffort={activeThread?.thinkingEffort}
+                                  onThinkingEffortChange={
+                                    handleThinkingEffortChange
+                                  }
+                                  fetchScope={activeProvider}
+                                  onFetchModels={() =>
+                                    settingsBridge.getAvailableModels?.(
+                                      activeProvider,
+                                    ) ?? Promise.resolve([])
+                                  }
+                                  isOpen={modelPickerOpen}
+                                  onOpenChange={setModelPickerOpen}
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {contextUsage && (
+                                  <ContextUsageIndicator
+                                    usage={contextUsage}
+                                    onRefresh={refreshContextUsage}
+                                  />
+                                )}
+                                {!isManagerActive && (
+                                  <ModeToggle
+                                    provider={activeProvider}
+                                    mode={
+                                      activeThread?.mode
+                                        ? normalizeMode(
+                                            activeThread.mode,
+                                            activeProvider,
+                                          )
+                                        : pendingMode
+                                    }
+                                    onModeChange={handleModeChange}
+                                    disabled={isStreaming}
+                                  />
+                                )}
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            {contextUsage && (
-                              <ContextUsageIndicator
-                                usage={contextUsage}
-                                onRefresh={refreshContextUsage}
-                              />
-                            )}
-                            {!isManagerActive && (
-                              <ModeToggle
-                                provider={activeProvider}
-                                mode={
-                                  activeThread?.mode
-                                    ? normalizeMode(
-                                        activeThread.mode,
-                                        activeProvider,
-                                      )
-                                    : pendingMode
-                                }
-                                onModeChange={handleModeChange}
-                                disabled={isStreaming}
-                              />
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                        </>
+                      )}
                     </>
                   )}
                 </div>

@@ -33,13 +33,47 @@ export type {
 export { MAX_PENDING_PER_THREAD } from "./types/pending-message";
 export { MODE_CONFIGS, AGENT_MODES } from "./types/mode";
 
+// Agents
+// `AgentDefinition` here is the "named session template" feature type
+// (packages/core/src/types/agent.ts). It shadows the SDK's own
+// `AgentDefinition` (a Task-tool sub-agent spec), which is re-exported from
+// this barrel as `SdkAgentDefinition` below to avoid the name collision.
+export type {
+  AgentDefinition,
+  AgentAccent,
+  AgentMcpServer,
+  AgentTelegramBinding,
+  AgentValidationError,
+} from "./types/agent";
+export {
+  AGENT_ACCENTS,
+  DEFAULT_AGENT_ID,
+  DEFAULT_AGENT,
+  RESERVED_MCP_SERVER_NAMES,
+  validateAgentDefinition,
+} from "./types/agent";
+export { resolveAgentPrompt } from "./agents/resolve-prompt";
+export type { AgentFidelity } from "./agents/realize/index";
+export { realizeAgent, agentFidelity } from "./agents/realize/index";
+export {
+  getAgentsDir,
+  loadAgents,
+  getAgent,
+  saveAgent,
+  deleteAgent,
+  seedDefaultAgents,
+} from "./storage/agents.store";
+export type { AgentSeed } from "./storage/agent-seeds";
+export { AGENT_SEEDS } from "./storage/agent-seeds";
+
 // Providers
 export type {
   AgentProvider,
   AgentMessage,
   ProviderConfig,
   SendMessageParams,
-  AgentDefinition,
+  /** SDK's own sub-agent spec (Task-tool agents) — not the Stratos `AgentDefinition` above. */
+  AgentDefinition as SdkAgentDefinition,
   PermissionHandler,
   PermissionUpdate,
   TokenUsage,

@@ -90,6 +90,10 @@ export interface Thread {
   worktreeMode?: "local" | "worktree";
   worktree?: ThreadWorktree;
   sessionTools?: string[];
+  /** Agent this thread belongs to. Absent means the built-in "default" agent,
+   * whose realization reproduces the pre-agents hard-coded config exactly, so
+   * every thread created before this feature keeps behaving identically. */
+  agentId?: string;
   /** If this thread was created by a scheduled prompt, its ID */
   scheduledPromptId?: string;
   /** True if this is the Manager Agent's singleton thread (pinned, non-deletable) */

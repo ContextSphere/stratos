@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS } from "../common/ipc-channels";
 import type {
+  AgentDefinition,
   AgentMode,
   ContextUsage,
   Folder,
@@ -374,6 +375,7 @@ const api = {
     model?: string,
     cwd?: string,
     provider?: string,
+    agentId?: string,
   ) =>
     ipcRenderer.invoke(
       IPC_CHANNELS.THREADS_CREATE,
@@ -381,6 +383,7 @@ const api = {
       model,
       cwd,
       provider,
+      agentId,
     ),
   threadsGet: (threadId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.THREADS_GET, threadId),
@@ -709,6 +712,26 @@ const api = {
     ipcRenderer.on(IPC_CHANNELS.SCHEDULED_CHANGED, listener);
     return () =>
       ipcRenderer.removeListener(IPC_CHANNELS.SCHEDULED_CHANGED, listener);
+  },
+
+  // Agents
+  agentsList: (): Promise<AgentDefinition[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.AGENTS_LIST),
+
+  agentsGet: (id: string): Promise<AgentDefinition | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.AGENTS_GET, id),
+
+  agentsSave: (def: AgentDefinition): Promise<AgentDefinition> =>
+    ipcRenderer.invoke(IPC_CHANNELS.AGENTS_SAVE, def),
+
+  agentsDelete: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC_CHANNELS.AGENTS_DELETE, id),
+
+  onAgentsChanged: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC_CHANNELS.AGENTS_CHANGED, listener);
+    return () =>
+      ipcRenderer.removeListener(IPC_CHANNELS.AGENTS_CHANGED, listener);
   },
 
   // Manager Agent

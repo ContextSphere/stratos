@@ -112,13 +112,18 @@ import {
   registerSchedulerIpc,
   unregisterSchedulerIpc,
 } from "./scheduler/scheduler.ipc";
+import { registerAgentsIpc, unregisterAgentsIpc } from "./agents/agents.ipc";
 import { ManagerSession } from "./manager/manager-session";
 import {
   registerManagerIpc,
   unregisterManagerIpc,
 } from "./manager/manager.ipc";
 import { statSync } from "fs";
-import { FileStorageAdapter, getWorktreeInfo } from "@stratosapp/core";
+import {
+  FileStorageAdapter,
+  getWorktreeInfo,
+  seedDefaultAgents,
+} from "@stratosapp/core";
 import { generateDockIcon } from "./dock-icon";
 import { ensureClaudeCodeThinkingSummaries } from "./claude-settings";
 import {
@@ -318,6 +323,8 @@ if (!gotLock) {
     });
 
     registerThreadIpc(storage);
+    seedDefaultAgents();
+    registerAgentsIpc();
     registerGitHubIpc(mainWindow);
     registerClaudeIpc(mainWindow);
     if (isProviderEnabled("codex")) {
