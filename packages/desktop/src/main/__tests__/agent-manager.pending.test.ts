@@ -106,20 +106,52 @@ describe("AgentManager — mid-turn messages", () => {
   }
 
   describe("enqueueMessage", () => {
-    it("sends immediately when nothing is running", async () => {
+    it("emits a user message when a main-owned submission starts immediately", async () => {
       const { manager, runStream } = makeManager();
 
       const res = await manager.enqueueMessage("t1", "hello");
 
       expect(res).toEqual({ status: "sent", fellBack: false });
-      expect(runStream).toHaveBeenCalledWith(
-        "t1",
-        "hello",
-        undefined,
-        "user",
-        true,
-      );
+      expect(runStream).toHaveBeenCalledWith("t1", "hello", undefined, {
+        origin: "user",
+        userMessagePresentation: "emit",
+      });
       expect(manager.listPending("t1")).toEqual([]);
+      manager.dispose();
+    });
+
+    it("does not echo an optimistic renderer submission", async () => {
+      const { manager, runStream } = makeManager();
+
+      const res = await manager.submitRendererMessage("t1", "hello");
+
+      expect(res).toEqual({ status: "sent", fellBack: false });
+      expect(runStream).toHaveBeenCalledWith("t1", "hello", undefined, {
+        origin: "user",
+        userMessagePresentation: "already-present",
+      });
+      manager.dispose();
+    });
+
+    it("routes SEND_MESSAGE IPC through renderer-owned admission", async () => {
+      const { manager, runStream } = makeManager();
+      const { ipcMain } = await import("electron");
+      const registration = vi
+        .mocked(ipcMain.handle)
+        .mock.calls.find(([channel]) => channel === "chat:send-message");
+      expect(registration).toBeDefined();
+
+      const handler = registration![1] as (
+        event: unknown,
+        prompt: string,
+        threadId: string,
+      ) => Promise<void>;
+      await handler({}, "hello", "t1");
+
+      expect(runStream).toHaveBeenCalledWith("t1", "hello", undefined, {
+        origin: "user",
+        userMessagePresentation: "already-present",
+      });
       manager.dispose();
     });
 
@@ -138,6 +170,22 @@ describe("AgentManager — mid-turn messages", () => {
       finish();
       await vi.waitFor(() => {
         expect(manager.activeStreams.has("t1")).toBe(false);
+      });
+      manager.dispose();
+    });
+
+    it("preserves renderer ownership when a rapid second send is queued", async () => {
+      const { manager, runStream } = makeManager();
+      markRunning(manager, "t1");
+
+      const queued = await manager.submitRendererMessage("t1", "second");
+      expect(queued.status).toBe("queued");
+
+      manager.drainPending("t1", false);
+
+      expect(runStream).toHaveBeenCalledWith("t1", "second", undefined, {
+        origin: "user",
+        userMessagePresentation: "already-present",
       });
       manager.dispose();
     });
@@ -352,13 +400,10 @@ describe("AgentManager — mid-turn messages", () => {
 
       manager.drainPending("t1", false);
 
-      expect(runStream).toHaveBeenCalledWith(
-        "t1",
-        "first",
-        undefined,
-        "user",
-        true,
-      );
+      expect(runStream).toHaveBeenCalledWith("t1", "first", undefined, {
+        origin: "user",
+        userMessagePresentation: "emit",
+      });
       expect(manager.listPending("t1")).toHaveLength(1);
       expect(manager.listPending("t1")[0].prompt).toBe("second");
       manager.dispose();
@@ -389,8 +434,7 @@ describe("AgentManager — mid-turn messages", () => {
         "t1",
         "do this instead",
         undefined,
-        "user",
-        true,
+        { origin: "user", userMessagePresentation: "emit" },
       );
       manager.dispose();
     });
@@ -412,13 +456,10 @@ describe("AgentManager — mid-turn messages", () => {
 
       manager.drainPending("t1", false);
 
-      expect(runStream).toHaveBeenCalledWith(
-        "t1",
-        "look",
-        images,
-        "user",
-        true,
-      );
+      expect(runStream).toHaveBeenCalledWith("t1", "look", images, {
+        origin: "user",
+        userMessagePresentation: "emit",
+      });
       manager.dispose();
     });
   });

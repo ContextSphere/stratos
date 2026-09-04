@@ -384,7 +384,12 @@ describe("AgentManager (integration)", () => {
         cancelForThread: vi.fn().mockReturnValue(0),
       });
 
-      await (manager as any).runStream("t-wake", "ignored").catch(() => {});
+      await (manager as any)
+        .runStream("t-wake", "ignored", undefined, {
+          origin: "user",
+          userMessagePresentation: "already-present",
+        })
+        .catch(() => {});
 
       expect(scheduleSpy).toHaveBeenCalledTimes(1);
       expect(scheduleSpy).toHaveBeenCalledWith({
@@ -438,7 +443,12 @@ describe("AgentManager (integration)", () => {
       // No wakeup handler wired
 
       await expect(
-        (manager as any).runStream("t-bare", "ignored").catch(() => {}),
+        (manager as any)
+          .runStream("t-bare", "ignored", undefined, {
+            origin: "user",
+            userMessagePresentation: "already-present",
+          })
+          .catch(() => {}),
       ).resolves.toBeUndefined();
       manager.dispose();
     });
@@ -497,20 +507,25 @@ describe("AgentManager (integration)", () => {
         cancelForThread: vi.fn().mockReturnValue(0),
       });
 
-      await (manager as any).runStream("t-bad", "ignored").catch(() => {});
+      await (manager as any)
+        .runStream("t-bad", "ignored", undefined, {
+          origin: "user",
+          userMessagePresentation: "already-present",
+        })
+        .catch(() => {});
       expect(scheduleSpy).not.toHaveBeenCalled();
       manager.dispose();
     });
   });
 
-  describe("non-user-initiated runs bootstrap renderer state", () => {
+  describe("user-message presentation ownership", () => {
     // Regression: useChat's stream-message handler auto-initializes its
     // streamingThreadsRef on a `user_message` event but drops every other
-    // event when there is no state. User-initiated sends create the state
-    // optimistically in the renderer; scheduler wakeups and manager/MCP
-    // send_message calls do not. Without a synthetic user_message the
-    // entire turn (session_init, text, tool_use, result) is silently
-    // discarded by the UI and the thread sits in "thinking" forever.
+    // event when there is no state. Renderer submissions create the state
+    // optimistically; main-owned submissions do not. Origin alone cannot
+    // distinguish those paths because queued user work is still user-originated.
+    // Without a synthetic user_message, a main-owned turn is discarded by the
+    // UI; with one on a renderer-owned turn, the user's message is duplicated.
 
     const buildHarness = () => {
       const mockStorage = {
@@ -546,7 +561,7 @@ describe("AgentManager (integration)", () => {
       return { mockStorage, fakeProvider };
     };
 
-    it("emits a synthetic user_message before the stream when origin is 'scheduler'", async () => {
+    it("emits a synthetic user_message before a main-owned scheduler stream", async () => {
       const { mockStorage, fakeProvider } = buildHarness();
       const manager = new AgentManager(mockWindow);
       (manager as any).storage = mockStorage;
@@ -556,12 +571,10 @@ describe("AgentManager (integration)", () => {
       });
 
       await (manager as any)
-        .runStream(
-          "t-origin",
-          "<<autonomous-loop-dynamic>>",
-          undefined,
-          "scheduler",
-        )
+        .runStream("t-origin", "<<autonomous-loop-dynamic>>", undefined, {
+          origin: "scheduler",
+          userMessagePresentation: "emit",
+        })
         .catch(() => {});
 
       const userMessages = sentMessages.filter(
@@ -594,7 +607,7 @@ describe("AgentManager (integration)", () => {
       manager.dispose();
     });
 
-    it("emits a synthetic user_message when origin is 'manager' (MCP send_message)", async () => {
+    it("emits a synthetic user_message for a main-owned manager stream", async () => {
       const { mockStorage, fakeProvider } = buildHarness();
       const manager = new AgentManager(mockWindow);
       (manager as any).storage = mockStorage;
@@ -604,7 +617,10 @@ describe("AgentManager (integration)", () => {
       });
 
       await (manager as any)
-        .runStream("t-origin", "do the thing", undefined, "manager")
+        .runStream("t-origin", "do the thing", undefined, {
+          origin: "manager",
+          userMessagePresentation: "emit",
+        })
         .catch(() => {});
 
       const userMessages = sentMessages.filter(
@@ -619,7 +635,7 @@ describe("AgentManager (integration)", () => {
       manager.dispose();
     });
 
-    it("does NOT emit a synthetic user_message when origin is 'user' (renderer already added it)", async () => {
+    it("emits for a main-owned message even when its origin is 'user'", async () => {
       const { mockStorage, fakeProvider } = buildHarness();
       const manager = new AgentManager(mockWindow);
       (manager as any).storage = mockStorage;
@@ -629,7 +645,38 @@ describe("AgentManager (integration)", () => {
       });
 
       await (manager as any)
-        .runStream("t-origin", "hello", undefined, "user")
+        .runStream("t-origin", "queued user work", undefined, {
+          origin: "user",
+          userMessagePresentation: "emit",
+        })
+        .catch(() => {});
+
+      const userMessages = sentMessages.filter(
+        (m) =>
+          m.channel === "chat:stream-message" &&
+          (m.data as { type?: string })?.type === "user_message",
+      );
+      expect(userMessages).toHaveLength(1);
+      expect((userMessages[0].data as { content: string }).content).toBe(
+        "queued user work",
+      );
+      manager.dispose();
+    });
+
+    it("does not emit for a renderer-owned user message", async () => {
+      const { mockStorage, fakeProvider } = buildHarness();
+      const manager = new AgentManager(mockWindow);
+      (manager as any).storage = mockStorage;
+      (manager as any).sessions.set("t-origin", {
+        provider: fakeProvider,
+        interruptRequested: false,
+      });
+
+      await (manager as any)
+        .runStream("t-origin", "hello", undefined, {
+          origin: "user",
+          userMessagePresentation: "already-present",
+        })
         .catch(() => {});
 
       const userMessages = sentMessages.filter(
@@ -673,7 +720,12 @@ describe("AgentManager (integration)", () => {
       // It will throw after the stale-model correction when it tries to create
       // a provider session (no real provider injected). That's fine — we only
       // care that updateThread and setProviderSettings were called first.
-      await (manager as any).runStream("t1", "hello").catch(() => {});
+      await (manager as any)
+        .runStream("t1", "hello", undefined, {
+          origin: "user",
+          userMessagePresentation: "already-present",
+        })
+        .catch(() => {});
 
       expect(mockStorage.updateThread).toHaveBeenCalledWith("t1", {
         model: "claude-sonnet-4-6",

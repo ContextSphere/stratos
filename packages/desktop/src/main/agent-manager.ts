@@ -273,6 +273,24 @@ function buildOllamaCustomProvider(): Record<
 
 export type RunOrigin = "user" | "manager" | "scheduler";
 
+/**
+ * Describes whether the current user turn is already visible in the renderer.
+ * This is deliberately separate from RunOrigin: renderer and main submissions
+ * can both be user-originated, but only main-owned submissions need an event.
+ */
+type UserMessagePresentation = "already-present" | "emit";
+
+interface StreamStartContext {
+  origin: RunOrigin;
+  userMessagePresentation: UserMessagePresentation;
+}
+
+interface ManagedPendingMessage extends PendingMessage {
+  /** Preserve transcript ownership if an apparently-idle renderer send races
+   * with stream admission and is queued by main. */
+  userMessagePresentation: UserMessagePresentation;
+}
+
 /** Minimal interface satisfied by WakeupManager. Declared here (not imported)
  *  because WakeupManager needs an AgentManager reference — a real import
  *  would create a circular dependency at module load time. */
@@ -340,7 +358,7 @@ export class AgentManager {
   /** Messages typed while a turn was running, awaiting the next boundary.
    *  In-memory by design: a restart clears them rather than firing a stale
    *  prompt at a working tree that has since moved on. */
-  private pendingByThread = new Map<string, PendingMessage[]>();
+  private pendingByThread = new Map<string, ManagedPendingMessage[]>();
   private modelsCache = new Map<string, { models: unknown[]; ts: number }>();
   private static readonly MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
   private storage: FileStorageAdapter;
@@ -528,10 +546,10 @@ export class AgentManager {
         images?: { dataUrl: string; mimeType: string }[],
       ) => {
         if (!threadId) return;
-        // Use the same atomic admission path as mid-turn sends. A second IPC
-        // send that arrives before the renderer observes isRunning is queued
-        // instead of starting a concurrent provider turn.
-        this.enqueueMessage(threadId, prompt, images, "queue").catch((err) => {
+        // The renderer already inserted this user message optimistically.
+        // Preserve that ownership even if atomic admission queues a rapid
+        // second send behind a stream that has only just started.
+        this.submitRendererMessage(threadId, prompt, images).catch((err) => {
           safeLog(
             console.error,
             `[agent-manager] send error for thread ${threadId}:`,
@@ -1105,9 +1123,8 @@ export class AgentManager {
   private runStream(
     threadId: string,
     prompt: string,
-    images?: { dataUrl: string; mimeType: string }[],
-    origin: RunOrigin = "user",
-    echoUserMessage = false,
+    images: { dataUrl: string; mimeType: string }[] | undefined,
+    context: StreamStartContext,
   ): Promise<void> {
     if (this.activeStreams.has(threadId)) {
       return Promise.reject(
@@ -1123,8 +1140,7 @@ export class AgentManager {
       threadId,
       prompt,
       images,
-      origin,
-      echoUserMessage,
+      context,
       streamId,
     ).finally(() => {
       // Most releases happen in runStreamInternal where completion semantics
@@ -1146,10 +1162,10 @@ export class AgentManager {
     threadId: string,
     prompt: string,
     images: { dataUrl: string; mimeType: string }[] | undefined,
-    origin: RunOrigin,
-    echoUserMessage: boolean,
+    context: StreamStartContext,
     streamId: string,
   ): Promise<void> {
+    const { origin, userMessagePresentation } = context;
     // Each new stream attempt clears any prior interrupt intent so that a
     // user-triggered stop followed by a fresh send works correctly.
     const sessionAtStart = this.sessions.get(threadId);
@@ -1199,17 +1215,12 @@ export class AgentManager {
       });
     }
 
-    // For non-user-initiated runs (scheduler wakeup, manager/MCP send_message),
-    // there is no renderer-side optimistic user message to bootstrap streaming
-    // state. The renderer's useChat hook auto-initializes streamingThreadsRef
-    // when it sees a `user_message` event but DROPS any other event when no
-    // state exists — so without this synthetic message the entire turn's
-    // events (session_init, text, tool_use, result) get discarded by the UI.
-    // Symptom: thread stays in "thinking" state with no visible progress
-    // until the user switches threads and back (which falls through to the
-    // disk-load path that reads the SDK transcript). Carrying _streamId here
-    // also lets the renderer reject late events from a prior interrupted run.
-    if (origin !== "user" || echoUserMessage) {
+    // Main-owned turns (queued delivery, scheduler wakeup, manager/MCP send)
+    // have no optimistic renderer entry, so they must bootstrap the renderer
+    // with a synthetic user_message. Renderer-owned turns are already visible
+    // and must not be echoed. RunOrigin cannot encode this distinction because
+    // queued deliveries are user-originated but main-owned for presentation.
+    if (userMessagePresentation === "emit") {
       this.sendToRenderer(
         IPC_CHANNELS.STREAM_MESSAGE,
         {
@@ -1662,7 +1673,12 @@ export class AgentManager {
           this.activeStreams.delete(threadId);
           this.threadEffectiveModes.delete(threadId);
         }
-        return this.runStream(threadId, prompt, images, origin, false);
+        // The original attempt already established the user turn, either via
+        // renderer optimism or a synthetic event. Never duplicate it on retry.
+        return this.runStream(threadId, prompt, images, {
+          origin,
+          userMessagePresentation: "already-present",
+        });
       }
 
       // Provider shutdown commonly rejects its async iterator after an
@@ -2438,15 +2454,18 @@ export class AgentManager {
 
   /** Start a stream for a thread (used by ManagerSession bridge and MCP
    * handlers). `origin` defaults to "manager" because all current callers of
-   * this public method are manager-driven; user-initiated runs go through
-   * the IPC SEND_MESSAGE handler which calls runStream directly. */
+   * this public method are manager-driven. Since no renderer submission
+   * preceded these runs, main inserts their user message into the transcript. */
   async startStream(
     threadId: string,
     prompt: string,
     images?: { dataUrl: string; mimeType: string }[],
     origin: RunOrigin = "manager",
   ): Promise<void> {
-    return this.runStream(threadId, prompt, images, origin);
+    return this.runStream(threadId, prompt, images, {
+      origin,
+      userMessagePresentation: "emit",
+    });
   }
 
   /** Interrupt a running session (used by ManagerSession bridge). */
@@ -2466,7 +2485,9 @@ export class AgentManager {
 
   /** Snapshot of the queued messages for a thread. */
   listPending(threadId: string): PendingMessage[] {
-    return [...(this.pendingByThread.get(threadId) ?? [])];
+    return (this.pendingByThread.get(threadId) ?? []).map(
+      ({ userMessagePresentation: _presentation, ...message }) => message,
+    );
   }
 
   private emitPendingChanged(threadId: string): void {
@@ -2476,7 +2497,7 @@ export class AgentManager {
     });
   }
 
-  private addPending(msg: PendingMessage): void {
+  private addPending(msg: ManagedPendingMessage): void {
     const list = this.pendingByThread.get(msg.threadId) ?? [];
     list.push(msg);
     // Cap the queue the same way ManagerSession caps notifications: an agent
@@ -2495,13 +2516,27 @@ export class AgentManager {
     this.emitPendingChanged(msg.threadId);
   }
 
+  /** Admit an optimistic renderer submission through the same atomic gate as
+   * queued work, without transferring transcript ownership to main. */
+  private submitRendererMessage(
+    threadId: string,
+    prompt: string,
+    images?: { dataUrl: string; mimeType: string }[],
+  ): Promise<EnqueueResult> {
+    return this.deliverMessage(
+      threadId,
+      prompt,
+      images,
+      "queue",
+      "user",
+      "already-present",
+    );
+  }
+
   /**
-   * Deliver a message that was typed while a turn may already be running.
-   *
-   * When the thread is idle this is just a normal send. When it is streaming,
-   * `delivery` decides: `steer` tries to inject into the live turn and falls
-   * back to queueing if the provider can't, `break` interrupts and delivers
-   * immediately, and `queue` waits for the turn to finish on its own.
+   * Admit a main-owned message from the pending-message path. If it starts
+   * immediately or drains later, main inserts its transcript entry because
+   * the renderer did not add one optimistically.
    */
   async enqueueMessage(
     threadId: string,
@@ -2510,9 +2545,30 @@ export class AgentManager {
     delivery: PendingDelivery = "queue",
     origin: RunOrigin = "user",
   ): Promise<EnqueueResult> {
+    return this.deliverMessage(
+      threadId,
+      prompt,
+      images,
+      delivery,
+      origin,
+      "emit",
+    );
+  }
+
+  private async deliverMessage(
+    threadId: string,
+    prompt: string,
+    images: { dataUrl: string; mimeType: string }[] | undefined,
+    delivery: PendingDelivery,
+    origin: RunOrigin,
+    userMessagePresentation: UserMessagePresentation,
+  ): Promise<EnqueueResult> {
     // Nothing running — this is an ordinary send.
     if (!this.activeStreams.has(threadId)) {
-      this.runStream(threadId, prompt, images, origin, true).catch((err) => {
+      this.runStream(threadId, prompt, images, {
+        origin,
+        userMessagePresentation,
+      }).catch((err) => {
         safeLog(
           console.error,
           `[agent-manager] stream error for thread ${threadId}:`,
@@ -2538,6 +2594,7 @@ export class AgentManager {
           "steer",
           false,
           true,
+          userMessagePresentation,
         );
         this.addPending(msg);
         await this.interruptSession(threadId);
@@ -2578,6 +2635,7 @@ export class AgentManager {
         "steer",
         true,
         false,
+        userMessagePresentation,
       );
       this.addPending(msg);
       return { status: "queued", id: msg.id, fellBack: true };
@@ -2591,6 +2649,7 @@ export class AgentManager {
       delivery,
       false,
       force,
+      userMessagePresentation,
     );
     this.addPending(msg);
 
@@ -2611,7 +2670,8 @@ export class AgentManager {
     requested: PendingDelivery,
     fellBack: boolean,
     force: boolean,
-  ): PendingMessage {
+    userMessagePresentation: UserMessagePresentation,
+  ): ManagedPendingMessage {
     return {
       id: `pending_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       threadId,
@@ -2621,6 +2681,7 @@ export class AgentManager {
       fellBack,
       force,
       createdAt: Date.now(),
+      userMessagePresentation,
     };
   }
 
@@ -2737,15 +2798,16 @@ export class AgentManager {
     if (list.length === 0) this.pendingByThread.delete(threadId);
     this.emitPendingChanged(threadId);
 
-    this.runStream(threadId, next.prompt, next.images, "user", true).catch(
-      (err) => {
-        safeLog(
-          console.error,
-          `[agent-manager] queued message failed for thread ${threadId}:`,
-          err,
-        );
-      },
-    );
+    this.runStream(threadId, next.prompt, next.images, {
+      origin: "user",
+      userMessagePresentation: next.userMessagePresentation,
+    }).catch((err) => {
+      safeLog(
+        console.error,
+        `[agent-manager] queued message failed for thread ${threadId}:`,
+        err,
+      );
+    });
   }
 
   getSlashCommands(): { name: string; description?: string }[] {
