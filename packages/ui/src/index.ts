@@ -5,7 +5,12 @@ export {
   InputBar,
   type InputBarRef,
   type InteractiveMode,
+  type SendDelivery,
 } from "./components/InputBar";
+export {
+  PendingMessages,
+  type PendingMessageView,
+} from "./components/PendingMessages";
 export { ChatInfoBar, type SessionStats } from "./components/ChatInfoBar";
 export { ContextUsageIndicator } from "./components/ContextUsageIndicator";
 export { ContextUsagePopover } from "./components/ContextUsagePopover";

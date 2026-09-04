@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { InputBar } from "../components/InputBar";
@@ -102,18 +102,61 @@ describe("InputBar", () => {
 
   // ---------- streaming state ----------
 
-  it("shows Stop button instead of Send when isStreaming is true", () => {
+  it("shows explicit stop and default queue actions while streaming", () => {
     render(<InputBar {...makeProps({ isStreaming: true })} />);
-    expect(screen.getByTitle("Stop")).toBeInTheDocument();
-    expect(screen.queryByTitle("Send")).not.toBeInTheDocument();
+    expect(screen.getByTitle("Stop current turn")).toBeInTheDocument();
+    expect(
+      screen.getByTitle("Queue for the next turn (Enter)"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps pending messages inside the fixed input bar", () => {
+    render(
+      <InputBar
+        {...makeProps({
+          isStreaming: true,
+          pendingMessages: [
+            {
+              id: "p1",
+              prompt: "write tests next",
+              fellBack: false,
+              force: false,
+            },
+          ],
+        })}
+      />,
+    );
+
+    const inputBar = screen.getByTestId("input-bar");
+    const pending = screen.getByLabelText("Pending messages");
+    expect(inputBar).toContainElement(pending);
+    expect(screen.getByText("write tests next")).toBeInTheDocument();
   });
 
   it("calls onInterrupt when Stop button is clicked", async () => {
     const user = userEvent.setup();
     const props = makeProps({ isStreaming: true });
     render(<InputBar {...props} />);
-    await user.click(screen.getByTitle("Stop"));
+    await user.click(screen.getByTitle("Stop current turn"));
     expect(props.onInterrupt).toHaveBeenCalledOnce();
+  });
+
+  it("queues from the visible default action while streaming", async () => {
+    const user = userEvent.setup();
+    const props = makeProps({ isStreaming: true });
+    render(<InputBar {...props} />);
+    setContentEditable(screen.getByRole("textbox"), "do this next");
+
+    await user.click(
+      screen.getByRole("button", { name: "Queue for the next turn" }),
+    );
+
+    expect(props.onSend).toHaveBeenCalledWith(
+      "do this next",
+      undefined,
+      undefined,
+      "queue",
+    );
   });
 
   // ---------- submit behavior ----------
@@ -128,6 +171,7 @@ describe("InputBar", () => {
     expect(props.onSend).toHaveBeenCalledOnce();
     expect(props.onSend).toHaveBeenCalledWith(
       "hello world",
+      undefined,
       undefined,
       undefined,
     );
@@ -165,7 +209,51 @@ describe("InputBar", () => {
       "press enter",
       undefined,
       undefined,
+      undefined,
     );
+  });
+
+  it("queues on Enter while streaming", async () => {
+    const user = userEvent.setup();
+    const props = makeProps({ isStreaming: true });
+    render(<InputBar {...props} />);
+    const textbox = screen.getByRole("textbox");
+    setContentEditable(textbox, "course correct");
+
+    await user.type(textbox, "{Enter}");
+
+    expect(props.onSend).toHaveBeenCalledWith(
+      "course correct",
+      undefined,
+      undefined,
+      "queue",
+    );
+  });
+
+  it("leaves Tab available for normal focus navigation while streaming", async () => {
+    const user = userEvent.setup();
+    const props = makeProps({ isStreaming: true });
+    render(<InputBar {...props} />);
+    const textbox = screen.getByRole("textbox");
+    setContentEditable(textbox, "do this next");
+
+    await user.type(textbox, "{Tab}");
+
+    expect(props.onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps the message when delivery rejects", async () => {
+    const user = userEvent.setup();
+    const props = makeProps({
+      onSend: vi.fn().mockRejectedValue(new Error("IPC unavailable")),
+    });
+    render(<InputBar {...props} />);
+    const textbox = screen.getByRole("textbox");
+    setContentEditable(textbox, "retry me");
+
+    await user.click(screen.getByTitle("Send"));
+    expect(textbox.textContent).toBe("retry me");
+    expect(screen.getByRole("alert")).toHaveTextContent("IPC unavailable");
   });
 
   it("does NOT call onSend when Shift+Enter is pressed", async () => {

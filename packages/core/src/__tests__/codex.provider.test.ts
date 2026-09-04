@@ -1,9 +1,31 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { CodexProvider } from "../providers/codex.provider";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { CodexProvider, findCodexBinary } from "../providers/codex.provider";
 
 describe("CodexProvider", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("prefers an explicit Stratos Codex CLI path", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "stratos-codex-"));
+    const explicitPath = path.join(tempDir, "codex");
+    const previousPath = process.env.STRATOS_CODEX_PATH;
+    fs.writeFileSync(explicitPath, "diagnostic");
+    process.env.STRATOS_CODEX_PATH = explicitPath;
+
+    try {
+      expect(findCodexBinary()).toBe(explicitPath);
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env.STRATOS_CODEX_PATH;
+      } else {
+        process.env.STRATOS_CODEX_PATH = previousPath;
+      }
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("sends turn/interrupt with threadId and turnId when available", async () => {

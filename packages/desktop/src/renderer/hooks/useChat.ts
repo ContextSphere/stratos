@@ -17,6 +17,8 @@ import type {
   StoredMessage,
   AgentMode,
   ContextUsage,
+  PendingMessage,
+  EnqueueResult,
 } from "@stratosapp/core";
 
 /**
@@ -78,7 +80,14 @@ interface UseChatReturn {
     threadId?: string,
     images?: ImageAttachment[],
     fileAttachments?: FileAttachment[],
+    delivery?: "queue" | "steer",
   ) => Promise<void>;
+  pendingMessages: PendingMessage[];
+  cancelPending: (id: string) => Promise<boolean>;
+  promotePending: (
+    id: string,
+    to: "steer" | "break",
+  ) => Promise<EnqueueResult | null>;
   interrupt: (threadId?: string) => Promise<void>;
   respondPermission: (
     requestId: string,
@@ -106,6 +115,33 @@ interface UseChatReturn {
 let messageIdCounter = 0;
 function nextMessageId(): string {
   return `msg_${++messageIdCounter}_${Date.now()}`;
+}
+
+function streamImagesToAttachments(
+  raw: unknown,
+  messageId: string,
+): ImageAttachment[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const images = raw.flatMap((item, index) => {
+    if (
+      !item ||
+      typeof item !== "object" ||
+      typeof (item as { dataUrl?: unknown }).dataUrl !== "string" ||
+      typeof (item as { mimeType?: unknown }).mimeType !== "string"
+    ) {
+      return [];
+    }
+    const image = item as { dataUrl: string; mimeType: string };
+    return [
+      {
+        id: `${messageId}-image-${index}`,
+        name: `Image ${index + 1}`,
+        dataUrl: image.dataUrl,
+        mimeType: image.mimeType,
+      },
+    ];
+  });
+  return images.length > 0 ? images : undefined;
 }
 
 const TOOL_OUTPUT_DISPLAY_LIMIT = 50_000; // 50KB — full output is in SDK session store
@@ -239,6 +275,7 @@ export function useChat(
   const [sessionTools, setSessionTools] = useState<string[] | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServerInfo[] | null>(null);
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
+  const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
 
   // Derived isStreaming — true only when the active thread is running
   const isStreaming = activeThreadId
@@ -268,6 +305,10 @@ export function useChat(
   // Tracks the active streamId per thread so late events from an interrupted
   // stream can be discarded before they corrupt the new stream's messages.
   const activeStreamIdRef = useRef<Map<string, string>>(new Map());
+  // Monotonically identifies renderer-side turn generations. A transcript
+  // reload started by an interrupted turn must not overwrite a replacement
+  // turn that begins while the SDK JSONL poll is still in flight.
+  const streamGenerationRef = useRef<Map<string, number>>(new Map());
   // Maps Monitor task-id → toolCallId so Monitor events can be attached to
   // the originating tool call instead of rendering as standalone pills.
   const monitorTaskIdsRef = useRef<Map<string, string>>(new Map());
@@ -329,7 +370,11 @@ export function useChat(
   // flicker that would happen if we applied the partial read and then
   // updated again 100 ms later. Aborts if the active thread changes.
   const pollAndApplyLoadedMessages = useCallback(
-    async (threadId: string, expectedMinCount: number) => {
+    async (
+      threadId: string,
+      expectedMinCount: number,
+      expectedGeneration: number,
+    ) => {
       const delaysMs = [0, 100, 250, 500, 1000, 2000];
       let prevLength = -1;
       let lastStored: StoredMessage[] = [];
@@ -337,19 +382,31 @@ export function useChat(
         if (delay > 0) {
           await new Promise((r) => setTimeout(r, delay));
         }
-        if (activeThreadIdRef.current !== threadId) return;
+        if (
+          activeThreadIdRef.current !== threadId ||
+          streamGenerationRef.current.get(threadId) !== expectedGeneration
+        )
+          return;
         try {
           lastStored = await window.api.threadsLoadMessages(threadId);
         } catch {
           return;
         }
-        if (activeThreadIdRef.current !== threadId) return;
+        if (
+          activeThreadIdRef.current !== threadId ||
+          streamGenerationRef.current.get(threadId) !== expectedGeneration
+        )
+          return;
         if (expectedMinCount > 0 && lastStored.length >= expectedMinCount)
           break;
         if (lastStored.length === prevLength) break;
         prevLength = lastStored.length;
       }
-      if (activeThreadIdRef.current !== threadId) return;
+      if (
+        activeThreadIdRef.current !== threadId ||
+        streamGenerationRef.current.get(threadId) !== expectedGeneration
+      )
+        return;
       if (lastStored.length === 0) return;
       const loaded = lastStored.map(fromStoredMessage);
       setMessages(loaded);
@@ -493,7 +550,36 @@ export function useChat(
   }, [activeThreadId, messages, saveMessages]);
 
   useEffect(() => {
+    if (!activeThreadId) {
+      setPendingMessages([]);
+      return;
+    }
+
+    const threadId = activeThreadId;
+    setPendingMessages([]);
+    window.api
+      .listPending(threadId)
+      .then((pending) => {
+        if (activeThreadIdRef.current === threadId) {
+          setPendingMessages(pending);
+        }
+      })
+      .catch((err) => {
+        console.error("[useChat] failed to load pending messages:", err);
+      });
+  }, [activeThreadId]);
+
+  useEffect(() => {
     const { api } = window;
+    const streamingThreads = streamingThreadsRef.current;
+    const activeStreamIds = activeStreamIdRef.current;
+    const streamGenerations = streamGenerationRef.current;
+
+    api.onPendingChanged(({ threadId, pending }) => {
+      if (threadId === activeThreadIdRef.current) {
+        setPendingMessages(pending);
+      }
+    });
 
     api.onStreamMessage((data: unknown, threadId: string | null) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -505,6 +591,33 @@ export function useChat(
       const msgStreamId: string | undefined = msg._streamId;
 
       let state = streamingThreadsRef.current.get(threadId);
+      const previousStreamId = activeStreamIdRef.current.get(threadId);
+
+      // A forced correction starts a brand-new turn immediately after the
+      // interrupted one. Keep the accumulated transcript, but reset all
+      // per-turn cursors so the replacement response gets its own assistant
+      // bubble. Also invalidate any delayed SDK transcript reload belonging
+      // to the old turn.
+      if (
+        state &&
+        msg.type === "user_message" &&
+        msgStreamId &&
+        previousStreamId !== msgStreamId
+      ) {
+        const timer = pendingSetRef.current.get(threadId);
+        if (timer) {
+          clearTimeout(timer);
+          pendingSetRef.current.delete(threadId);
+        }
+        state = {
+          messages: [...state.messages],
+          assistantId: null,
+          activeTaskId: null,
+          interrupted: false,
+        };
+        streamingThreadsRef.current.set(threadId, state);
+      }
+
       if (!state) {
         // Auto-initialize streaming state for main-process-triggered turns
         // (e.g. auto-implement after plan approval). The user_message event
@@ -529,6 +642,17 @@ export function useChat(
         // A new stream started — update the active stream ID.
         // This happens when the renderer pre-creates state before the first IPC event.
         activeStreamIdRef.current.set(threadId, msgStreamId);
+      }
+
+      if (
+        msg.type === "user_message" &&
+        msgStreamId &&
+        previousStreamId !== msgStreamId
+      ) {
+        streamGenerationRef.current.set(
+          threadId,
+          (streamGenerationRef.current.get(threadId) ?? 0) + 1,
+        );
       }
 
       // Discard events from a stale (interrupted/replaced) stream
@@ -577,21 +701,52 @@ export function useChat(
           // after plan approval, or Manager Agent child-completion notifications).
           const rawContent = msg.content ?? "";
           const sessionNotif = parseSessionCompleteNotification(rawContent);
+          const userMessageId = nextMessageId();
+          const streamedImages = streamImagesToAttachments(
+            msg.images,
+            userMessageId,
+          );
           const userMsg: ChatMessage = sessionNotif
             ? {
-                id: nextMessageId(),
+                id: userMessageId,
                 role: "user",
                 content: "",
                 timestamp: Date.now(),
                 sessionCompleteNotification: sessionNotif,
               }
             : {
-                id: nextMessageId(),
+                id: userMessageId,
                 role: "user",
                 content: rawContent,
                 timestamp: Date.now(),
+                ...(streamedImages ? { images: streamedImages } : {}),
               };
           apply((prev) => [...prev, userMsg]);
+          break;
+        }
+        case "steered_message": {
+          // A message the user pushed into the turn that was already running.
+          // Rendered as an ordinary user turn so the transcript reads in the
+          // order things actually happened.
+          const userMessageId = nextMessageId();
+          const streamedImages = streamImagesToAttachments(
+            msg.images,
+            userMessageId,
+          );
+          // Close the current assistant segment. The next text chunk must
+          // create a new assistant bubble after this correction instead of
+          // appending above it.
+          state.assistantId = null;
+          apply((prev) => [
+            ...prev,
+            {
+              id: userMessageId,
+              role: "user",
+              content: msg.content ?? "",
+              timestamp: Date.now(),
+              ...(streamedImages ? { images: streamedImages } : {}),
+            },
+          ]);
           break;
         }
         case "text": {
@@ -1066,7 +1221,11 @@ export function useChat(
           // we just streamed and clobber the user's view. Poll until the
           // on-disk count stabilizes across two consecutive reads, then apply.
           if (threadId === activeThreadIdRef.current) {
-            void pollAndApplyLoadedMessages(threadId, state.messages.length);
+            void pollAndApplyLoadedMessages(
+              threadId,
+              state.messages.length,
+              streamGenerationRef.current.get(threadId) ?? 0,
+            );
 
             // Refresh context-window usage breakdown. The SDK only reports
             // the new state after the turn fully commits, so query it here.
@@ -1373,10 +1532,12 @@ export function useChat(
       api.removeAllListeners("chat:mode-changed");
       api.removeAllListeners("chat:thread-stream-state");
       api.removeAllListeners("chat:thread-activate");
+      api.removeAllListeners("chat:pending:changed");
       api.removeAllListeners("mcp:status-changed");
       api.removeAllListeners("skills:slash-commands");
-      streamingThreadsRef.current.clear();
-      activeStreamIdRef.current.clear();
+      streamingThreads.clear();
+      activeStreamIds.clear();
+      streamGenerations.clear();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1386,12 +1547,43 @@ export function useChat(
       threadId?: string,
       images?: ImageAttachment[],
       fileAttachments?: FileAttachment[],
+      delivery?: "queue" | "steer",
     ) => {
       const targetThreadId = threadId ?? activeThreadId;
       if (!targetThreadId) return;
 
-      // Per-thread guard: don't send to a thread that's already streaming
-      if (runningThreadIds.includes(targetThreadId)) return;
+      const isRunning = runningThreadIds.includes(targetThreadId);
+      // Without an explicit delivery intent a send into a running thread is
+      // still a mistake (e.g. a programmatic caller); with one, the user chose
+      // to steer or queue and the main process decides what that means.
+      if (isRunning && !delivery) return;
+
+      if (isRunning) {
+        const ipcImages = images?.map((img) => ({
+          dataUrl: img.dataUrl,
+          mimeType: img.mimeType,
+        }));
+        let promptForRunning = prompt;
+        if (fileAttachments && fileAttachments.length > 0) {
+          const filePaths = fileAttachments
+            .map((f) => `- ${f.path}`)
+            .join("\n");
+          promptForRunning = prompt
+            ? `${prompt}\n\nAttached files:\n${filePaths}`
+            : `Attached files:\n${filePaths}`;
+        }
+        // A steered message is echoed back over STREAM_MESSAGE as
+        // "steered_message" and rendered there, so nothing is appended here.
+        // A queued one deliberately stays out of the transcript until it is
+        // actually delivered — it lives in the pending chip instead.
+        await window.api.enqueueMessage(
+          targetThreadId,
+          promptForRunning,
+          ipcImages,
+          delivery,
+        );
+        return;
+      }
 
       const currentMessages = messagesRef.current;
       if (currentMessages.length === 0) {
@@ -1508,6 +1700,21 @@ export function useChat(
       }, 5000);
     },
     [saveMessages],
+  );
+
+  const cancelPending = useCallback(async (id: string) => {
+    const threadId = activeThreadIdRef.current;
+    if (!threadId) return false;
+    return window.api.cancelPending(threadId, id);
+  }, []);
+
+  const promotePending = useCallback(
+    async (id: string, to: "steer" | "break") => {
+      const threadId = activeThreadIdRef.current;
+      if (!threadId) return null;
+      return window.api.promotePending(threadId, id, to);
+    },
+    [],
   );
 
   const respondPermission = useCallback(
@@ -1711,6 +1918,9 @@ export function useChat(
     sessionStats,
     interactiveMode,
     sendMessage,
+    pendingMessages,
+    cancelPending,
+    promotePending,
     interrupt,
     respondPermission,
     respondQuestion,

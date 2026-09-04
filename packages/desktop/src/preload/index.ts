@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS } from "../common/ipc-channels";
-import type { AgentMode, ContextUsage, Folder } from "@stratosapp/core";
+import type {
+  AgentMode,
+  ContextUsage,
+  Folder,
+  PendingMessage,
+  PendingDelivery,
+  EnqueueResult,
+} from "@stratosapp/core";
 
 export type ElectronAPI = typeof api;
 
@@ -14,6 +21,42 @@ const api = {
 
   interrupt: (threadId?: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.INTERRUPT, threadId),
+
+  /** Send while a turn may be running: queue, steer, or break. */
+  enqueueMessage: (
+    threadId: string,
+    prompt: string,
+    images?: { dataUrl: string; mimeType: string }[],
+    delivery?: PendingDelivery,
+  ): Promise<EnqueueResult> =>
+    ipcRenderer.invoke(
+      IPC_CHANNELS.PENDING_ENQUEUE,
+      threadId,
+      prompt,
+      images,
+      delivery,
+    ),
+
+  cancelPending: (threadId: string, id: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC_CHANNELS.PENDING_CANCEL, threadId, id),
+
+  listPending: (threadId: string): Promise<PendingMessage[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.PENDING_LIST, threadId),
+
+  promotePending: (
+    threadId: string,
+    id: string,
+    to: "steer" | "break",
+  ): Promise<EnqueueResult | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.PENDING_PROMOTE, threadId, id, to),
+
+  onPendingChanged: (
+    callback: (data: { threadId: string; pending: PendingMessage[] }) => void,
+  ): void => {
+    ipcRenderer.on(IPC_CHANNELS.PENDING_CHANGED, (_event, data) =>
+      callback(data),
+    );
+  },
 
   getAvailableModels: (provider?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_AVAILABLE_MODELS, provider),

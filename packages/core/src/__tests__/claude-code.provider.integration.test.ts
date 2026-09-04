@@ -107,6 +107,77 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
     });
   });
 
+  it("keeps the query open until an accepted steer produces its result", async () => {
+    let releaseFirstResult!: () => void;
+    const firstResultReady = new Promise<void>((resolve) => {
+      releaseFirstResult = resolve;
+    });
+
+    mockQuery.mockReturnValue({
+      [Symbol.asyncIterator]: async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-steer",
+          tools: [],
+          slash_commands: [],
+        };
+        await firstResultReady;
+        yield {
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "first turn",
+          total_cost_usd: 0.1,
+          usage: { input_tokens: 10, output_tokens: 20 },
+        };
+        yield {
+          type: "assistant",
+          message: {
+            content: [{ type: "text", text: "STEERED_OK" }],
+          },
+        };
+        yield {
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "STEERED_OK",
+          total_cost_usd: 0.2,
+          usage: { input_tokens: 30, output_tokens: 40 },
+        };
+      },
+      interrupt: vi.fn().mockResolvedValue(undefined),
+    } as any);
+
+    const provider = new ClaudeCodeProvider();
+    await provider.initialize({});
+    const collecting = collectMessages(provider, "start");
+
+    // Let sendMessage initialize its live queue before steering.
+    await vi.waitFor(() => {
+      expect((provider as any).steerQueue).toBeDefined();
+    });
+    await expect(provider.pushMessage("change course")).resolves.toBe(true);
+    releaseFirstResult();
+
+    const msgs = await collecting;
+    const results = msgs.filter((msg) => msg.type === "result");
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual(
+      expect.objectContaining({
+        type: "result",
+        content: "STEERED_OK",
+        usage: { inputTokens: 40, outputTokens: 60 },
+      }),
+    );
+    expect(results[0].cost).toBeCloseTo(0.3);
+    expect(msgs).toContainEqual({
+      type: "text",
+      content: "STEERED_OK",
+      isStreaming: false,
+    });
+  });
+
   it("emits thinking from thinking_delta", async () => {
     mockQuery.mockReturnValue(
       makeStream([
@@ -413,6 +484,59 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
     await gen.return(undefined);
 
     expect(mockInterrupt).toHaveBeenCalled();
+  });
+
+  it("does not emit Claude shutdown errors after an intentional interrupt", async () => {
+    let releaseShutdown!: () => void;
+    const shutdown = new Promise<void>((resolve) => {
+      releaseShutdown = resolve;
+    });
+    const mockInterrupt = vi.fn().mockImplementation(async () => {
+      releaseShutdown();
+    });
+    mockQuery.mockReturnValue({
+      [Symbol.asyncIterator]: async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-int-error",
+          tools: [],
+          slash_commands: [],
+        };
+        await shutdown;
+        yield {
+          type: "assistant",
+          error: "interrupt",
+          message: {
+            content: [{ type: "text", text: "Request interrupted by user" }],
+          },
+        };
+        yield {
+          type: "result",
+          subtype: "error_during_execution",
+          is_error: true,
+          errors: ["Request interrupted by user"],
+        };
+      },
+      interrupt: mockInterrupt,
+    } as any);
+
+    const provider = new ClaudeCodeProvider();
+    await provider.initialize({});
+    const turn = provider.sendMessage({
+      prompt: "keep working",
+      permissionHandler: autoApprove,
+    });
+
+    expect((await turn.next()).value).toMatchObject({
+      type: "session_init",
+    });
+    await provider.interrupt();
+
+    const remaining: unknown[] = [];
+    for await (const msg of turn) remaining.push(msg);
+    expect(remaining).toEqual([]);
+    expect(mockInterrupt).toHaveBeenCalledOnce();
   });
 
   describe("streaming-input prompt lifecycle", () => {

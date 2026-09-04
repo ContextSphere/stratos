@@ -30,6 +30,21 @@ export interface AgentProvider {
   /** Interrupt the current operation */
   interrupt(): Promise<void>;
 
+  /**
+   * Mid-turn steering: push an additional user message into the turn that is
+   * already running, so the agent course-corrects without losing in-progress
+   * work. Returns true if the message was accepted by the live turn.
+   *
+   * Optional — providers that can't inject mid-turn simply omit it, and the
+   * caller falls back to queueing the message for the next turn. Callers must
+   * treat a `false` return the same way: it means there was no live turn to
+   * steer, not that the message was delivered.
+   */
+  pushMessage?(
+    content: string,
+    images?: { dataUrl: string; mimeType: string }[],
+  ): Promise<boolean>;
+
   /** Check if a previous session can be resumed */
   canResume(sessionId: string): boolean;
 

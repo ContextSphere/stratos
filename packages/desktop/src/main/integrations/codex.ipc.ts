@@ -61,6 +61,10 @@ function findCodexBinary(): string {
     throw new Error(`Unsupported platform: ${platform} (${arch})`);
 
   const binaryName = process.platform === "win32" ? "codex.exe" : "codex";
+  const explicitCodexPath = process.env.STRATOS_CODEX_PATH;
+  if (explicitCodexPath && fs.existsSync(explicitCodexPath)) {
+    return explicitCodexPath;
+  }
   const binaryRelPath = path.join("vendor", targetTriple, "codex", binaryName);
 
   // The native binary lives in the platform-specific optional package,
@@ -169,7 +173,22 @@ function findCodexBinary(): string {
     }
   }
 
-  throw new Error("Unable to locate Codex CLI binary");
+  const fallbackCandidates = [
+    ...(process.platform === "darwin"
+      ? ["/Applications/Codex.app/Contents/Resources/codex"]
+      : []),
+    ...(process.env.PATH ?? "")
+      .split(path.delimiter)
+      .filter(Boolean)
+      .map((dir) => path.join(dir, binaryName)),
+  ];
+  for (const candidate of fallbackCandidates) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
+
+  throw new Error(
+    "Unable to locate Codex CLI binary. Install Codex or set STRATOS_CODEX_PATH.",
+  );
 }
 
 // ── App-server JSON-RPC client ──────────────────────────────────────────────
@@ -355,7 +374,10 @@ async function checkAuthStatus(): Promise<{
     await ensureAppServer();
     const result = await sendRpc("account/read", { refreshToken: false });
     const account = result?.account;
-    if (account && !result.requiresOpenaiAuth) {
+    // Current app-server builds can report requiresOpenaiAuth=true even while
+    // returning a usable signed-in ChatGPT account. The account object is the
+    // authoritative signal; live provider turns use the same credentials.
+    if (account) {
       return {
         authenticated: true,
         email: account.email ?? null,

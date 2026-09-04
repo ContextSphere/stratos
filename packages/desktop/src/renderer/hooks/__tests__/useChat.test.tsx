@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useChat } from "../useChat";
+import type { PendingMessage } from "@stratosapp/core";
 
 // ---------------------------------------------------------------------------
 // Mock window.api — every method the hook touches must be present so that the
@@ -29,6 +30,7 @@ function makeMockApi() {
     onMcpStatusChanged: vi.fn(),
     onThreadActivate: vi.fn(),
     onThreadMessagesReload: vi.fn(),
+    onPendingChanged: vi.fn(),
     removeAllListeners: vi.fn(),
 
     // Data-fetching calls used on mount / thread switch
@@ -40,10 +42,18 @@ function makeMockApi() {
     threadsUpdate: vi.fn().mockResolvedValue(undefined),
     getContextUsage: vi.fn().mockResolvedValue(null),
     mcpServerStatus: vi.fn().mockResolvedValue([]),
+    listPending: vi.fn().mockResolvedValue([]),
 
     // Message sending / control
     sendMessage: vi.fn().mockResolvedValue(undefined),
     interrupt: vi.fn().mockResolvedValue(undefined),
+    enqueueMessage: vi
+      .fn()
+      .mockResolvedValue({ status: "queued", id: "p1", fellBack: false }),
+    cancelPending: vi.fn().mockResolvedValue(true),
+    promotePending: vi
+      .fn()
+      .mockResolvedValue({ status: "steered", fellBack: false }),
 
     // Permission / question / plan-review responses
     respondToolPermission: vi.fn(),
@@ -149,6 +159,7 @@ describe("useChat — API calls on mount", () => {
     expect(mockApi.onAskUserQuestion).toHaveBeenCalledTimes(1);
     expect(mockApi.onPlanReview).toHaveBeenCalledTimes(1);
     expect(mockApi.onThreadStreamState).toHaveBeenCalledTimes(1);
+    expect(mockApi.onPendingChanged).toHaveBeenCalledTimes(1);
   });
 
   it("removes IPC listeners on unmount", () => {
@@ -338,6 +349,122 @@ describe("useChat — sendMessage", () => {
       "hi",
       "thread-2",
       undefined,
+    );
+  });
+
+  it("forwards a mid-turn delivery intent to the pending IPC path", async () => {
+    mockApi.getRunningThreads.mockResolvedValue(["thread-1"]);
+    const { result } = renderUseChat("thread-1");
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.sendMessage(
+        "correct course",
+        undefined,
+        undefined,
+        undefined,
+        "steer",
+      );
+    });
+
+    expect(mockApi.enqueueMessage).toHaveBeenCalledWith(
+      "thread-1",
+      "correct course",
+      undefined,
+      "steer",
+    );
+    expect(mockApi.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("useChat — pending messages", () => {
+  it("loads pending state for the active thread", async () => {
+    mockApi.listPending.mockResolvedValue([
+      {
+        id: "p1",
+        threadId: "thread-1",
+        prompt: "next",
+        requested: "queue",
+        fellBack: false,
+        force: false,
+        createdAt: 1,
+      },
+    ]);
+    const { result } = renderUseChat("thread-1");
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockApi.listPending).toHaveBeenCalledWith("thread-1");
+    expect(result.current.pendingMessages).toHaveLength(1);
+  });
+
+  it("applies pending-change events only to the active thread", async () => {
+    let pendingHandler:
+      | ((data: { threadId: string; pending: PendingMessage[] }) => void)
+      | undefined;
+    mockApi.onPendingChanged.mockImplementation((handler) => {
+      pendingHandler = handler;
+    });
+    const { result } = renderUseChat("thread-1");
+    await act(async () => Promise.resolve());
+
+    act(() =>
+      pendingHandler?.({
+        threadId: "other",
+        pending: [
+          {
+            id: "x",
+            threadId: "other",
+            prompt: "ignore",
+            requested: "queue",
+            fellBack: false,
+            force: false,
+            createdAt: 1,
+          },
+        ],
+      }),
+    );
+    expect(result.current.pendingMessages).toEqual([]);
+
+    act(() =>
+      pendingHandler?.({
+        threadId: "thread-1",
+        pending: [
+          {
+            id: "p1",
+            threadId: "thread-1",
+            prompt: "next",
+            requested: "queue",
+            fellBack: false,
+            force: false,
+            createdAt: 1,
+          },
+        ],
+      }),
+    );
+    expect(result.current.pendingMessages).toHaveLength(1);
+  });
+
+  it("routes cancel and promotion through the active thread", async () => {
+    const { result } = renderUseChat("thread-1");
+    await act(async () => Promise.resolve());
+
+    await act(async () => {
+      await result.current.cancelPending("p1");
+      await result.current.promotePending("p1", "break");
+    });
+
+    expect(mockApi.cancelPending).toHaveBeenCalledWith("thread-1", "p1");
+    expect(mockApi.promotePending).toHaveBeenCalledWith(
+      "thread-1",
+      "p1",
+      "break",
     );
   });
 });
@@ -550,6 +677,144 @@ describe("useChat — streaming throttle", () => {
     expect(assistant!.content.length).toBeGreaterThan(0);
     expect(assistant!.content).toContain("0 ");
 
+    vi.useRealTimers();
+  });
+
+  it("splits assistant output around a steered user message", async () => {
+    vi.useFakeTimers();
+    let streamHandler:
+      | ((data: unknown, threadId: string | null) => void)
+      | null = null;
+    mockApi.onStreamMessage.mockImplementation((cb) => {
+      streamHandler = cb;
+    });
+    const { result } = renderUseChat("thread-1");
+    await act(async () => Promise.resolve());
+
+    await act(async () => {
+      streamHandler!(
+        { type: "user_message", content: "start", _streamId: "s1" },
+        "thread-1",
+      );
+      streamHandler!(
+        { type: "text", content: "before", _streamId: "s1" },
+        "thread-1",
+      );
+      streamHandler!(
+        { type: "steered_message", content: "change", _streamId: "s1" },
+        "thread-1",
+      );
+      streamHandler!(
+        { type: "text", content: "after", _streamId: "s1" },
+        "thread-1",
+      );
+      vi.advanceTimersByTime(60);
+      await Promise.resolve();
+    });
+
+    expect(result.current.messages.map((message) => message.content)).toEqual([
+      "start",
+      "before",
+      "change",
+      "after",
+    ]);
+    vi.useRealTimers();
+  });
+
+  it("starts a fresh assistant segment when an interrupted turn is replaced", async () => {
+    vi.useFakeTimers();
+    let streamHandler:
+      | ((data: unknown, threadId: string | null) => void)
+      | null = null;
+    mockApi.onStreamMessage.mockImplementation((cb) => {
+      streamHandler = cb;
+    });
+    const { result } = renderUseChat("thread-1");
+    await act(async () => Promise.resolve());
+
+    await act(async () => {
+      streamHandler!(
+        { type: "user_message", content: "original", _streamId: "s1" },
+        "thread-1",
+      );
+      streamHandler!(
+        { type: "text", content: "partial", _streamId: "s1" },
+        "thread-1",
+      );
+      streamHandler!(
+        { type: "user_message", content: "correction", _streamId: "s2" },
+        "thread-1",
+      );
+      streamHandler!(
+        { type: "text", content: "replacement", _streamId: "s2" },
+        "thread-1",
+      );
+      // A late terminal event from the interrupted stream must not tear down
+      // or overwrite the replacement stream.
+      streamHandler!(
+        {
+          type: "result",
+          cost: 0,
+          usage: { inputTokens: 1, outputTokens: 1 },
+          _streamId: "s1",
+        },
+        "thread-1",
+      );
+      vi.advanceTimersByTime(60);
+      await Promise.resolve();
+    });
+
+    expect(result.current.messages.map((message) => message.content)).toEqual([
+      "original",
+      "partial",
+      "correction",
+      "replacement",
+    ]);
+    vi.useRealTimers();
+  });
+
+  it("replaces a renderer-initiated stream that had no synthetic user event", async () => {
+    vi.useFakeTimers();
+    let streamHandler:
+      | ((data: unknown, threadId: string | null) => void)
+      | null = null;
+    mockApi.onStreamMessage.mockImplementation((cb) => {
+      streamHandler = cb;
+    });
+    const { result } = renderUseChat("thread-1");
+    await act(async () => Promise.resolve());
+
+    // Ordinary user sends are inserted optimistically and do not receive a
+    // synthetic user_message event from main, so no active stream ID exists.
+    await act(async () => {
+      await result.current.sendMessage("original");
+      streamHandler!(
+        { type: "text", content: "partial", _streamId: "s1" },
+        "thread-1",
+      );
+      vi.advanceTimersByTime(60);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      streamHandler!(
+        { type: "user_message", content: "correction", _streamId: "s2" },
+        "thread-1",
+      );
+      streamHandler!(
+        { type: "text", content: "replacement", _streamId: "s2" },
+        "thread-1",
+      );
+      vi.advanceTimersByTime(60);
+      await Promise.resolve();
+    });
+
+    expect(result.current.messages.map((message) => message.content)).toEqual([
+      "original",
+      "partial",
+      "correction",
+      "replacement",
+    ]);
     vi.useRealTimers();
   });
 });

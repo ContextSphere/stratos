@@ -1252,6 +1252,9 @@ export class CopilotProvider implements AgentProvider {
   private config: ProviderConfig = {};
   private sessionId?: string;
   private currentSession?: CopilotSessionType;
+  /** True while a turn is streaming, so pushMessage knows there is something
+   *  to steer. The SDK session object outlives any single turn. */
+  private turnActive = false;
   private modelInfoCache?: ModelInfo[];
   private lastContextUsage: ContextUsage | null = null;
   private lastKnownMcpStatus: McpServerInfo[] = [];
@@ -1351,6 +1354,36 @@ export class CopilotProvider implements AgentProvider {
 
   async getContextUsage(): Promise<ContextUsage | null> {
     return this.lastContextUsage;
+  }
+
+  /**
+   * Mid-turn steering. The Copilot SDK exposes delivery mode per message:
+   * "enqueue" (its default) parks the message behind the session's backlog,
+   * "immediate" delivers it into the running turn. We only ever want the
+   * latter here — queueing is handled a layer up, where it can be shown to
+   * the user and cancelled.
+   */
+  async pushMessage(
+    content: string,
+    images?: { dataUrl: string; mimeType: string }[],
+  ): Promise<boolean> {
+    if (!this.currentSession || !this.turnActive) return false;
+
+    const attachments = imagesToAttachments(images);
+    try {
+      await this.currentSession.send({
+        prompt: content,
+        mode: "immediate",
+        ...(attachments ? { attachments } : {}),
+      } as MessageOptions);
+      return true;
+    } catch (err) {
+      console.warn(
+        "[copilot] steer send failed:",
+        (err as Error)?.message ?? err,
+      );
+      return false;
+    }
   }
 
   async interrupt(): Promise<void> {
@@ -1541,10 +1574,14 @@ export class CopilotProvider implements AgentProvider {
     const attachments = imagesToAttachments(params.images);
     const messageOptions: MessageOptions = {
       prompt: params.prompt,
+      // "immediate" starts this turn now rather than queueing it behind the
+      // session's own backlog. Mid-turn steering reuses the same field —
+      // see pushMessage().
       mode: "immediate",
       agentMode: stratosModeToCopilotAgentMode(mode),
       ...(attachments ? { attachments } : {}),
     };
+    this.turnActive = true;
 
     const sendPromise = session.send(messageOptions).catch((err) => {
       queue.push({
@@ -1595,6 +1632,7 @@ export class CopilotProvider implements AgentProvider {
         }
       }
     } finally {
+      this.turnActive = false;
       if (idleCloseTimer) clearTimeout(idleCloseTimer);
       try {
         unsubscribe();

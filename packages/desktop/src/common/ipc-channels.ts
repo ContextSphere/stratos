@@ -4,6 +4,15 @@ export const IPC_CHANNELS = {
   TOOL_PERMISSION: "chat:tool-permission",
   TOOL_RESPONSE: "chat:tool-response",
   INTERRUPT: "chat:interrupt",
+
+  // Mid-turn messages: queue / steer / break while a turn is streaming
+  PENDING_ENQUEUE: "chat:pending:enqueue",
+  PENDING_CANCEL: "chat:pending:cancel",
+  PENDING_LIST: "chat:pending:list",
+  PENDING_PROMOTE: "chat:pending:promote",
+  /** main → renderer: the pending list for a thread changed */
+  PENDING_CHANGED: "chat:pending:changed",
+
   SESSION_READY: "chat:session-ready",
   GET_AVAILABLE_MODELS: "provider:get-available-models",
   SELECT_DIRECTORY: "settings:select-directory",
