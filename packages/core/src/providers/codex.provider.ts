@@ -111,7 +111,12 @@ export function findCodexBinary(): string {
   if (explicitCodexPath && fs.existsSync(explicitCodexPath)) {
     return explicitCodexPath;
   }
-  const binaryRelPath = path.join("vendor", targetTriple, "codex", binaryName);
+  // Codex CLI >=0.15x moved the binary from vendor/<triple>/codex/<name> to
+  // vendor/<triple>/bin/<name>. Try both layouts, newest first.
+  const binaryRelPaths = [
+    path.join("vendor", targetTriple, "bin", binaryName),
+    path.join("vendor", targetTriple, "codex", binaryName),
+  ];
 
   // The native binary lives in the platform-specific optional package,
   // e.g. @openai/codex-darwin-arm64, not in @openai/codex itself.
@@ -142,78 +147,80 @@ export function findCodexBinary(): string {
   for (const startDir of startDirs) {
     let dir = startDir;
     for (let i = 0; i < 10; i++) {
-      // Check platform-specific package (primary location)
-      if (platformPackage) {
-        const platformCandidate = path.join(
-          dir,
-          "node_modules",
-          platformPackage,
-          binaryRelPath,
-        );
-        if (fs.existsSync(platformCandidate)) return platformCandidate;
-      }
+      for (const binaryRelPath of binaryRelPaths) {
+        // Check platform-specific package (primary location)
+        if (platformPackage) {
+          const platformCandidate = path.join(
+            dir,
+            "node_modules",
+            platformPackage,
+            binaryRelPath,
+          );
+          if (fs.existsSync(platformCandidate)) return platformCandidate;
+        }
 
-      // Check pnpm hoisted layout: node_modules/.pnpm/@openai+codex@*-<platform>-<arch>/...
-      const pnpmDir = path.join(dir, "node_modules", ".pnpm");
-      try {
-        const entries = fs.readdirSync(pnpmDir);
-        for (const entry of entries) {
-          if (
-            entry.startsWith("@openai+codex@") &&
-            entry.includes(`-${process.platform}-`)
-          ) {
-            const candidate = path.join(
-              pnpmDir,
-              entry,
-              "node_modules",
-              "@openai",
-              "codex",
-              binaryRelPath,
-            );
-            if (fs.existsSync(candidate)) return candidate;
-
-            // Also check platform package inside pnpm entry
-            if (platformPackage) {
-              const [, pkgName] = platformPackage.split("/");
-              const pnpmPlatformCandidate = path.join(
+        // Check pnpm hoisted layout: node_modules/.pnpm/@openai+codex@*-<platform>-<arch>/...
+        const pnpmDir = path.join(dir, "node_modules", ".pnpm");
+        try {
+          const entries = fs.readdirSync(pnpmDir);
+          for (const entry of entries) {
+            if (
+              entry.startsWith("@openai+codex@") &&
+              entry.includes(`-${process.platform}-`)
+            ) {
+              const candidate = path.join(
                 pnpmDir,
                 entry,
                 "node_modules",
                 "@openai",
-                pkgName,
+                "codex",
                 binaryRelPath,
               );
-              if (fs.existsSync(pnpmPlatformCandidate))
-                return pnpmPlatformCandidate;
+              if (fs.existsSync(candidate)) return candidate;
+
+              // Also check platform package inside pnpm entry
+              if (platformPackage) {
+                const [, pkgName] = platformPackage.split("/");
+                const pnpmPlatformCandidate = path.join(
+                  pnpmDir,
+                  entry,
+                  "node_modules",
+                  "@openai",
+                  pkgName,
+                  binaryRelPath,
+                );
+                if (fs.existsSync(pnpmPlatformCandidate))
+                  return pnpmPlatformCandidate;
+              }
             }
           }
+        } catch {
+          // Directory doesn't exist
         }
-      } catch {
-        // Directory doesn't exist
+
+        // Check direct node_modules layout (npm/yarn)
+        const directCandidate = path.join(
+          dir,
+          "node_modules",
+          "@openai",
+          "codex",
+          binaryRelPath,
+        );
+        if (fs.existsSync(directCandidate)) return directCandidate;
+
+        // Also check via @openai/codex-sdk symlink chain
+        const sdkCodexDir = path.join(
+          dir,
+          "node_modules",
+          "@openai",
+          "codex-sdk",
+          "node_modules",
+          "@openai",
+          "codex",
+        );
+        const sdkCandidate = path.join(sdkCodexDir, binaryRelPath);
+        if (fs.existsSync(sdkCandidate)) return sdkCandidate;
       }
-
-      // Check direct node_modules layout (npm/yarn)
-      const directCandidate = path.join(
-        dir,
-        "node_modules",
-        "@openai",
-        "codex",
-        binaryRelPath,
-      );
-      if (fs.existsSync(directCandidate)) return directCandidate;
-
-      // Also check via @openai/codex-sdk symlink chain
-      const sdkCodexDir = path.join(
-        dir,
-        "node_modules",
-        "@openai",
-        "codex-sdk",
-        "node_modules",
-        "@openai",
-        "codex",
-      );
-      const sdkCandidate = path.join(sdkCodexDir, binaryRelPath);
-      if (fs.existsSync(sdkCandidate)) return sdkCandidate;
 
       const parent = path.dirname(dir);
       if (parent === dir) break;
