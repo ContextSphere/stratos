@@ -72,7 +72,7 @@ type CodexCollaborationMode = {
  * Find the Codex CLI binary shipped with @openai/codex via @openai/codex-sdk.
  * This mirrors the findCodexPath() logic in the SDK itself.
  */
-function findCodexBinary(): string {
+export function findCodexBinary(): string {
   const { platform, arch } = process;
   let targetTriple: string | null = null;
   switch (platform) {
@@ -107,6 +107,10 @@ function findCodexBinary(): string {
   }
 
   const binaryName = process.platform === "win32" ? "codex.exe" : "codex";
+  const explicitCodexPath = process.env.STRATOS_CODEX_PATH;
+  if (explicitCodexPath && fs.existsSync(explicitCodexPath)) {
+    return explicitCodexPath;
+  }
   const binaryRelPath = path.join("vendor", targetTriple, "codex", binaryName);
 
   // The native binary lives in the platform-specific optional package,
@@ -217,8 +221,24 @@ function findCodexBinary(): string {
     }
   }
 
+  // The Codex desktop app and standalone CLI are valid app-server hosts too.
+  // This fallback is especially useful when a package manager or host security
+  // policy strips the large optional native binary from node_modules.
+  const fallbackCandidates = [
+    ...(process.platform === "darwin"
+      ? ["/Applications/Codex.app/Contents/Resources/codex"]
+      : []),
+    ...(process.env.PATH ?? "")
+      .split(path.delimiter)
+      .filter(Boolean)
+      .map((dir) => path.join(dir, binaryName)),
+  ];
+  for (const candidate of fallbackCandidates) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
+
   throw new Error(
-    "Unable to locate Codex CLI binary. Ensure @openai/codex-sdk is installed with optional dependencies.",
+    "Unable to locate Codex CLI binary. Install Codex or set STRATOS_CODEX_PATH.",
   );
 }
 
@@ -346,6 +366,7 @@ function mapModeToPolicy(
  */
 export class CodexProvider implements AgentProvider {
   readonly name = "codex";
+  readonly midTurnSteering = "interrupt-and-restart" as const;
   private config: ProviderConfig = {};
   private threadId?: string;
   private turnId?: string;
@@ -886,7 +907,10 @@ export class CodexProvider implements AgentProvider {
    * Supports text and images (via localImage type).
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private buildUserInput(params: SendMessageParams): any[] {
+  private buildUserInput(params: {
+    prompt?: string;
+    images?: { dataUrl: string; mimeType: string }[];
+  }): any[] {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const inputs: any[] = [];
 
@@ -1962,42 +1986,45 @@ export class CodexProvider implements AgentProvider {
       // Fall through to static list
     }
 
-    // Fallback static list
+    // Fallback static list. Keep this conservative: it is only shown when the
+    // app-server cannot provide its authoritative model catalog.
     return [
       {
-        value: "gpt-5.3-codex",
-        displayName: "GPT-5.3 Codex",
-        description: "Latest frontier agentic coding model",
+        value: "gpt-5.6-sol",
+        displayName: "GPT-5.6-Sol",
+        description: "Reliable agentic workhorse for everyday tasks.",
         supportsReasoning: true,
       },
       {
-        value: "gpt-5.2-codex",
-        displayName: "GPT-5.2 Codex",
-        description: "Advanced agentic coding model",
+        value: "gpt-5.6-terra",
+        displayName: "GPT-5.6-Terra",
+        description: "Balanced agentic coding model for everyday work.",
         supportsReasoning: true,
       },
       {
-        value: "gpt-5.1-codex",
-        displayName: "GPT-5.1 Codex",
-        description: "Agentic coding model with deep reasoning",
+        value: "gpt-5.6-luna",
+        displayName: "GPT-5.6-Luna",
+        description: "Fast and affordable agentic coding model.",
         supportsReasoning: true,
       },
       {
-        value: "gpt-5.1-codex-mini",
-        displayName: "GPT-5.1 Codex Mini",
-        description: "Fast, lightweight coding model",
+        value: "gpt-5.5",
+        displayName: "GPT-5.5",
+        description:
+          "Proven previous-generation model for coding and general work.",
         supportsReasoning: true,
       },
       {
         value: "gpt-5.4",
         displayName: "GPT-5.4",
-        description: "Latest general-purpose model",
+        description: "Strong model for everyday coding.",
         supportsReasoning: true,
       },
       {
-        value: "gpt-5.2",
-        displayName: "GPT-5.2",
-        description: "General-purpose model with coding capabilities",
+        value: "gpt-5.4-mini",
+        displayName: "GPT-5.4-Mini",
+        description:
+          "Small, fast, and cost-efficient model for simpler coding tasks.",
         supportsReasoning: true,
       },
     ];

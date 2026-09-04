@@ -25,6 +25,12 @@ export type {
 export { scheduleToCron, scheduleToHuman } from "./types/scheduled-prompt";
 export { normalizeMode, DEFAULT_PROVIDER } from "./types/thread";
 export type { ModeConfig } from "./types/mode";
+export type {
+  PendingMessage,
+  PendingDelivery,
+  EnqueueResult,
+} from "./types/pending-message";
+export { MAX_PENDING_PER_THREAD } from "./types/pending-message";
 export { MODE_CONFIGS, AGENT_MODES } from "./types/mode";
 
 // Providers
@@ -44,10 +50,11 @@ export type {
   OpencodeCustomProvider,
   ContextUsage,
   ContextUsageCategory,
+  MidTurnSteeringStrategy,
 } from "./providers/types";
 export { READ_ONLY_TOOLS } from "./providers/types";
 export { ClaudeCodeProvider } from "./providers/claude-code.provider";
-export { CodexProvider } from "./providers/codex.provider";
+export { CodexProvider, findCodexBinary } from "./providers/codex.provider";
 export { OpencodeProvider } from "./providers/opencode.provider";
 export { CopilotProvider } from "./providers/copilot.provider";
 export { createProvider, getAvailableProviders } from "./providers/index";

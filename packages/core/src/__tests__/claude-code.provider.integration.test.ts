@@ -415,6 +415,59 @@ describe("ClaudeCodeProvider integration (fake SDK)", () => {
     expect(mockInterrupt).toHaveBeenCalled();
   });
 
+  it("does not emit Claude shutdown errors after an intentional interrupt", async () => {
+    let releaseShutdown!: () => void;
+    const shutdown = new Promise<void>((resolve) => {
+      releaseShutdown = resolve;
+    });
+    const mockInterrupt = vi.fn().mockImplementation(async () => {
+      releaseShutdown();
+    });
+    mockQuery.mockReturnValue({
+      [Symbol.asyncIterator]: async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "sess-int-error",
+          tools: [],
+          slash_commands: [],
+        };
+        await shutdown;
+        yield {
+          type: "assistant",
+          error: "interrupt",
+          message: {
+            content: [{ type: "text", text: "Request interrupted by user" }],
+          },
+        };
+        yield {
+          type: "result",
+          subtype: "error_during_execution",
+          is_error: true,
+          errors: ["Request interrupted by user"],
+        };
+      },
+      interrupt: mockInterrupt,
+    } as any);
+
+    const provider = new ClaudeCodeProvider();
+    await provider.initialize({});
+    const turn = provider.sendMessage({
+      prompt: "keep working",
+      permissionHandler: autoApprove,
+    });
+
+    expect((await turn.next()).value).toMatchObject({
+      type: "session_init",
+    });
+    await provider.interrupt();
+
+    const remaining: unknown[] = [];
+    for await (const msg of turn) remaining.push(msg);
+    expect(remaining).toEqual([]);
+    expect(mockInterrupt).toHaveBeenCalledOnce();
+  });
+
   describe("streaming-input prompt lifecycle", () => {
     // Regression: the prompt generator handed to the SDK previously returned
     // immediately after its one yield, causing the SDK transport to send

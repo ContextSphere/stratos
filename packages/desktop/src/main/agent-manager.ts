@@ -7,7 +7,6 @@ import { homedir } from "os";
 import { IPC_CHANNELS } from "../common/ipc-channels";
 import {
   ClaudeCodeProvider,
-  CodexProvider,
   OpencodeProvider,
   createProvider,
   FileStorageAdapter,
@@ -25,7 +24,11 @@ import type {
   PermissionHandler,
   SendMessageParams,
   ProviderType,
+  PendingMessage,
+  PendingDelivery,
+  EnqueueResult,
 } from "@stratosapp/core";
+import { MAX_PENDING_PER_THREAD } from "@stratosapp/core";
 import {
   loadSettings,
   setProviderSettings,
@@ -327,6 +330,12 @@ export class AgentManager {
     (event: StreamCompletedEvent) => void
   >();
   private activeStreams = new Set<string>();
+  private activeStreamIds = new Map<string, string>();
+  private streamSequence = 0;
+  /** Messages typed while a turn was running, awaiting the next boundary.
+   *  In-memory by design: a restart clears them rather than firing a stale
+   *  prompt at a working tree that has since moved on. */
+  private pendingByThread = new Map<string, PendingMessage[]>();
   private modelsCache = new Map<string, { models: unknown[]; ts: number }>();
   private static readonly MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
   private storage: FileStorageAdapter;
@@ -514,15 +523,53 @@ export class AgentManager {
         images?: { dataUrl: string; mimeType: string }[],
       ) => {
         if (!threadId) return;
-        // Fire-and-forget: start streaming in background, return immediately
-        this.runStream(threadId, prompt, images).catch((err) => {
+        // Use the same atomic admission path as mid-turn sends. A second IPC
+        // send that arrives before the renderer observes isRunning is queued
+        // instead of starting a concurrent provider turn.
+        this.enqueueMessage(threadId, prompt, images, "queue").catch((err) => {
           safeLog(
             console.error,
-            `[agent-manager] stream error for thread ${threadId}:`,
+            `[agent-manager] send error for thread ${threadId}:`,
             err,
           );
         });
       },
+    );
+
+    ipcMain.handle(
+      IPC_CHANNELS.PENDING_ENQUEUE,
+      async (
+        _event,
+        threadId: string,
+        prompt: string,
+        images?: { dataUrl: string; mimeType: string }[],
+        delivery?: PendingDelivery,
+      ) => {
+        if (!threadId) return { status: "queued", fellBack: false };
+        return this.enqueueMessage(
+          threadId,
+          prompt,
+          images,
+          delivery ?? "queue",
+        );
+      },
+    );
+
+    ipcMain.handle(
+      IPC_CHANNELS.PENDING_CANCEL,
+      async (_event, threadId: string, id: string) =>
+        this.cancelPending(threadId, id),
+    );
+
+    ipcMain.handle(
+      IPC_CHANNELS.PENDING_LIST,
+      async (_event, threadId: string) => this.listPending(threadId),
+    );
+
+    ipcMain.handle(
+      IPC_CHANNELS.PENDING_PROMOTE,
+      async (_event, threadId: string, id: string, to: "steer" | "break") =>
+        this.promotePending(threadId, id, to),
     );
 
     ipcMain.handle(
@@ -741,15 +788,12 @@ export class AgentManager {
             // stale closure issues with runningThreadIds guards.
             if (threadId) {
               setTimeout(() => {
-                this.sendToRenderer(
-                  IPC_CHANNELS.STREAM_MESSAGE,
-                  {
-                    type: "user_message",
-                    content: "Implement the plan",
-                  },
+                this.enqueueMessage(
                   threadId,
-                );
-                this.runStream(threadId, "Implement the plan").catch((err) => {
+                  "Implement the plan",
+                  undefined,
+                  "queue",
+                ).catch((err) => {
                   safeLog(
                     console.error,
                     `[agent-manager] implement-plan stream error:`,
@@ -1048,11 +1092,58 @@ export class AgentManager {
     );
   }
 
-  private async runStream(
+  /**
+   * Atomically reserve a thread before any asynchronous setup begins. Every
+   * caller goes through this boundary, so there can be only one provider turn
+   * per thread even before the renderer receives its running-state event.
+   */
+  private runStream(
     threadId: string,
     prompt: string,
     images?: { dataUrl: string; mimeType: string }[],
     origin: RunOrigin = "user",
+    echoUserMessage = false,
+  ): Promise<void> {
+    if (this.activeStreams.has(threadId)) {
+      return Promise.reject(
+        new Error(`Thread ${threadId} already has an active stream`),
+      );
+    }
+
+    const streamId = `${threadId}-${Date.now()}-${++this.streamSequence}`;
+    this.activeStreams.add(threadId);
+    this.activeStreamIds.set(threadId, streamId);
+
+    return this.runStreamInternal(
+      threadId,
+      prompt,
+      images,
+      origin,
+      echoUserMessage,
+      streamId,
+    ).finally(() => {
+      // Most releases happen in runStreamInternal where completion semantics
+      // are known. This is the safety net for failures during early setup.
+      if (this.activeStreamIds.get(threadId) === streamId) {
+        this.activeStreamIds.delete(threadId);
+        this.activeStreams.delete(threadId);
+        this.threadEffectiveModes.delete(threadId);
+        this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, {
+          threadId,
+          isRunning: false,
+        });
+        this.maybeRunPostStreamGc();
+      }
+    });
+  }
+
+  private async runStreamInternal(
+    threadId: string,
+    prompt: string,
+    images: { dataUrl: string; mimeType: string }[] | undefined,
+    origin: RunOrigin,
+    echoUserMessage: boolean,
+    streamId: string,
   ): Promise<void> {
     // Each new stream attempt clears any prior interrupt intent so that a
     // user-triggered stop followed by a fresh send works correctly.
@@ -1092,10 +1183,6 @@ export class AgentManager {
       }
     }
 
-    // Generate a unique ID for this stream so the renderer can discard
-    // late-arriving events from a previous (interrupted) stream on the same thread.
-    // Declared here (before worktree creation) so worktree progress messages can carry it.
-    const streamId = `${threadId}-${Date.now()}`;
     // runId aliases streamId and is persisted immediately so that a crash
     // between stream start and completion leaves lastRunId !== lastReportedRunId,
     // enabling reconcile-on-startup to re-queue the missed notification.
@@ -1117,12 +1204,13 @@ export class AgentManager {
     // until the user switches threads and back (which falls through to the
     // disk-load path that reads the SDK transcript). Carrying _streamId here
     // also lets the renderer reject late events from a prior interrupted run.
-    if (origin !== "user") {
+    if (origin !== "user" || echoUserMessage) {
       this.sendToRenderer(
         IPC_CHANNELS.STREAM_MESSAGE,
         {
           type: "user_message",
           content: prompt,
+          images,
           _streamId: streamId,
         },
         threadId,
@@ -1281,9 +1369,6 @@ export class AgentManager {
     // Update LRU tracking and evict idle sessions to prevent OOM
     this.touchSession(threadId);
     this.evictIdleSessions();
-
-    // Track active stream
-    this.activeStreams.add(threadId);
 
     // Notify renderer that streaming started
     this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, {
@@ -1561,12 +1646,18 @@ export class AgentManager {
         // Signal the finally block to skip cleanup — the retry's own finally
         // will send isRunning:false when it eventually completes.
         isRetrying = true;
-        this.activeStreams.delete(threadId);
-        this.threadEffectiveModes.delete(threadId);
-        return this.runStream(threadId, prompt, images, origin);
+        if (this.activeStreamIds.get(threadId) === streamId) {
+          this.activeStreamIds.delete(threadId);
+          this.activeStreams.delete(threadId);
+          this.threadEffectiveModes.delete(threadId);
+        }
+        return this.runStream(threadId, prompt, images, origin, false);
       }
 
-      if (!specificErrorSent) {
+      // Provider shutdown commonly rejects its async iterator after an
+      // intentional interrupt. That is a successful Stop action, not a chat
+      // error, and must never flash as an error bubble in the renderer.
+      if (!specificErrorSent && !session.interruptRequested) {
         this.sendToRenderer(
           IPC_CHANNELS.STREAM_MESSAGE,
           {
@@ -1582,8 +1673,9 @@ export class AgentManager {
       // Skip cleanup when we're about to retry — the recursive runStream call
       // owns the running state from here and its own finally will send
       // isRunning:false when it eventually finishes.
-      if (!isRetrying) {
+      if (!isRetrying && this.activeStreamIds.get(threadId) === streamId) {
         this.activeStreams.delete(threadId);
+        this.activeStreamIds.delete(threadId);
         this.threadEffectiveModes.delete(threadId);
         this.sendToRenderer(IPC_CHANNELS.THREAD_STREAM_STATE, {
           threadId,
@@ -1613,6 +1705,11 @@ export class AgentManager {
           });
           this.sendToRenderer(IPC_CHANNELS.THREADS_CHANGED, undefined);
         }
+
+        // Deliver the next queued message, if the user left one. Runs after
+        // the isRunning:false / completion bookkeeping above so the renderer
+        // sees a clean turn boundary before the next turn starts.
+        this.drainPending(threadId, status === "interrupted");
 
         this.emitStreamCompleted({
           threadId,
@@ -2208,6 +2305,12 @@ export class AgentManager {
   }
 
   clearSession(threadId: string): void {
+    // Invalidate stream ownership before disposing the provider. A late
+    // finally from that stream must not drain queued work into a deleted or
+    // reset thread.
+    this.activeStreamIds.delete(threadId);
+    this.activeStreams.delete(threadId);
+
     const session = this.sessions.get(threadId);
     if (session) {
       if (session.mcpWatcherTimer) {
@@ -2221,6 +2324,9 @@ export class AgentManager {
       (id) => id !== threadId,
     );
     this.threadEffectiveModes.delete(threadId);
+    if (this.pendingByThread.delete(threadId)) {
+      this.emitPendingChanged(threadId);
+    }
     // Prune notification debounce entries for this thread to prevent the map
     // from growing forever as threads are created, used, and evicted.
     for (const key of this.lastNotificationAt.keys()) {
@@ -2339,6 +2445,292 @@ export class AgentManager {
     }
   }
 
+  // ────────────────────────── mid-turn messages ──────────────────────────
+
+  /** Snapshot of the queued messages for a thread. */
+  listPending(threadId: string): PendingMessage[] {
+    return [...(this.pendingByThread.get(threadId) ?? [])];
+  }
+
+  private emitPendingChanged(threadId: string): void {
+    this.sendToRenderer(IPC_CHANNELS.PENDING_CHANGED, {
+      threadId,
+      pending: this.listPending(threadId),
+    });
+  }
+
+  private addPending(msg: PendingMessage): void {
+    const list = this.pendingByThread.get(msg.threadId) ?? [];
+    list.push(msg);
+    // Cap the queue the same way ManagerSession caps notifications: an agent
+    // that runs for twenty minutes invites a pile of messages that no longer
+    // make sense together. Drop the oldest non-forced entry so a `break`
+    // (which the user is actively waiting on) is never the one evicted.
+    while (list.length > MAX_PENDING_PER_THREAD) {
+      const idx = list.findIndex((m) => !m.force);
+      const [dropped] = list.splice(idx === -1 ? 0 : idx, 1);
+      safeLog(
+        console.warn,
+        `[agent-manager] pending queue at cap for thread ${msg.threadId}; dropped ${dropped?.id}`,
+      );
+    }
+    this.pendingByThread.set(msg.threadId, list);
+    this.emitPendingChanged(msg.threadId);
+  }
+
+  /**
+   * Deliver a message that was typed while a turn may already be running.
+   *
+   * When the thread is idle this is just a normal send. When it is streaming,
+   * `delivery` decides: `steer` tries to inject into the live turn and falls
+   * back to queueing if the provider can't, `break` interrupts and delivers
+   * immediately, and `queue` waits for the turn to finish on its own.
+   */
+  async enqueueMessage(
+    threadId: string,
+    prompt: string,
+    images?: { dataUrl: string; mimeType: string }[],
+    delivery: PendingDelivery = "queue",
+    origin: RunOrigin = "user",
+  ): Promise<EnqueueResult> {
+    // Nothing running — this is an ordinary send.
+    if (!this.activeStreams.has(threadId)) {
+      this.runStream(threadId, prompt, images, origin, true).catch((err) => {
+        safeLog(
+          console.error,
+          `[agent-manager] stream error for thread ${threadId}:`,
+          err,
+        );
+      });
+      return { status: "sent", fellBack: false };
+    }
+
+    if (delivery === "steer") {
+      const session = this.sessions.get(threadId);
+      const provider = session?.provider;
+
+      // Some transports accept more input without reliably pre-empting the
+      // output already being generated. Their declared strategy gives Steer
+      // the expected UX meaning: interrupt, then deliver the correction as the
+      // forced next turn. Live-capable providers preserve the current turn.
+      if (provider?.midTurnSteering === "interrupt-and-restart") {
+        const msg = this.makePending(
+          threadId,
+          prompt,
+          images,
+          "steer",
+          false,
+          true,
+        );
+        this.addPending(msg);
+        await this.interruptSession(threadId);
+        return { status: "queued", id: msg.id, fellBack: false };
+      }
+
+      if (provider?.midTurnSteering === "live" && provider.pushMessage) {
+        try {
+          const accepted = await provider.pushMessage(prompt, images);
+          if (accepted) {
+            // Mirror the steered text into the transcript so the user can see
+            // what they said landed mid-turn rather than vanishing.
+            this.sendToRenderer(
+              IPC_CHANNELS.STREAM_MESSAGE,
+              {
+                type: "steered_message",
+                content: prompt,
+                images,
+                _streamId: this.activeStreamIds.get(threadId),
+              },
+              threadId,
+            );
+            return { status: "steered", fellBack: false };
+          }
+        } catch (err) {
+          safeLog(
+            console.warn,
+            `[agent-manager] steer failed for thread ${threadId}:`,
+            err,
+          );
+        }
+      }
+      // Provider can't steer, or there was no live turn to steer after all.
+      const msg = this.makePending(
+        threadId,
+        prompt,
+        images,
+        "steer",
+        true,
+        false,
+      );
+      this.addPending(msg);
+      return { status: "queued", id: msg.id, fellBack: true };
+    }
+
+    const force = delivery === "break";
+    const msg = this.makePending(
+      threadId,
+      prompt,
+      images,
+      delivery,
+      false,
+      force,
+    );
+    this.addPending(msg);
+
+    if (force) {
+      // Break: stop the current turn. The drain in runStream's finally honours
+      // `force` even though interruptRequested is set, so this message still
+      // goes out — unlike a plain queued one, which Stop intentionally drops.
+      await this.interruptSession(threadId);
+    }
+
+    return { status: "queued", id: msg.id, fellBack: false };
+  }
+
+  private makePending(
+    threadId: string,
+    prompt: string,
+    images: { dataUrl: string; mimeType: string }[] | undefined,
+    requested: PendingDelivery,
+    fellBack: boolean,
+    force: boolean,
+  ): PendingMessage {
+    return {
+      id: `pending_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      threadId,
+      prompt,
+      ...(images && images.length > 0 ? { images } : {}),
+      requested,
+      fellBack,
+      force,
+      createdAt: Date.now(),
+    };
+  }
+
+  /** Remove a queued message before it is delivered. */
+  cancelPending(threadId: string, id: string): boolean {
+    const list = this.pendingByThread.get(threadId);
+    if (!list) return false;
+    const idx = list.findIndex((m) => m.id === id);
+    if (idx === -1) return false;
+    list.splice(idx, 1);
+    if (list.length === 0) this.pendingByThread.delete(threadId);
+    this.emitPendingChanged(threadId);
+    return true;
+  }
+
+  /**
+   * Re-target a queued message: `steer` injects it into the running turn now,
+   * `break` interrupts the turn and sends it immediately. Mirrors opencode's
+   * inbox promotion endpoints, generalised across providers.
+   */
+  async promotePending(
+    threadId: string,
+    id: string,
+    to: "steer" | "break",
+  ): Promise<EnqueueResult | null> {
+    const list = this.pendingByThread.get(threadId);
+    const msg = list?.find((m) => m.id === id);
+    if (!msg || !list) return null;
+
+    if (to === "steer") {
+      const provider = this.sessions.get(threadId)?.provider;
+
+      // Providers that declare interrupt-and-restart promote by moving this
+      // item to the front, marking it forced, and stopping the current turn.
+      if (
+        provider?.midTurnSteering === "interrupt-and-restart" &&
+        this.activeStreams.has(threadId)
+      ) {
+        msg.force = true;
+        list.splice(list.indexOf(msg), 1);
+        list.unshift(msg);
+        this.emitPendingChanged(threadId);
+        await this.interruptSession(threadId);
+        return { status: "queued", id: msg.id, fellBack: false };
+      }
+
+      if (
+        provider?.midTurnSteering !== "live" ||
+        !provider.pushMessage ||
+        !this.activeStreams.has(threadId)
+      ) {
+        msg.fellBack = true;
+        this.emitPendingChanged(threadId);
+        return { status: "queued", id: msg.id, fellBack: true };
+      }
+      let accepted = false;
+      try {
+        accepted = await provider.pushMessage(msg.prompt, msg.images);
+      } catch {
+        accepted = false;
+      }
+      if (!accepted) {
+        msg.fellBack = true;
+        this.emitPendingChanged(threadId);
+        return { status: "queued", id: msg.id, fellBack: true };
+      }
+      this.cancelPending(threadId, id);
+      this.sendToRenderer(
+        IPC_CHANNELS.STREAM_MESSAGE,
+        {
+          type: "steered_message",
+          content: msg.prompt,
+          images: msg.images,
+          _streamId: this.activeStreamIds.get(threadId),
+        },
+        threadId,
+      );
+      return { status: "steered", fellBack: false };
+    }
+
+    // break — mark it forced so the drain honours it past the interrupt, then
+    // move it to the front so it is the next thing delivered.
+    msg.force = true;
+    list.splice(list.indexOf(msg), 1);
+    list.unshift(msg);
+    this.emitPendingChanged(threadId);
+    if (this.activeStreams.has(threadId)) {
+      await this.interruptSession(threadId);
+    }
+    return { status: "queued", id: msg.id, fellBack: false };
+  }
+
+  /**
+   * Deliver the next queued message for a thread, if any. Called from
+   * runStream's finally once the turn has fully wound down.
+   *
+   * A plain queued message is dropped when the user interrupted — Stop should
+   * mean stop. A `force` message (from break) is delivered anyway, since
+   * interrupting is precisely what the user asked for.
+   */
+  private drainPending(threadId: string, interrupted: boolean): void {
+    const list = this.pendingByThread.get(threadId);
+    if (!list || list.length === 0) return;
+
+    const idx = interrupted ? list.findIndex((m) => m.force) : 0;
+    if (idx === -1) {
+      // Interrupted with nothing forced: the queue is stale intent, drop it.
+      this.pendingByThread.delete(threadId);
+      this.emitPendingChanged(threadId);
+      return;
+    }
+
+    const [next] = list.splice(idx, 1);
+    if (list.length === 0) this.pendingByThread.delete(threadId);
+    this.emitPendingChanged(threadId);
+
+    this.runStream(threadId, next.prompt, next.images, "user", true).catch(
+      (err) => {
+        safeLog(
+          console.error,
+          `[agent-manager] queued message failed for thread ${threadId}:`,
+          err,
+        );
+      },
+    );
+  }
+
   getSlashCommands(): { name: string; description?: string }[] {
     return this.cachedSlashCommands;
   }
@@ -2411,6 +2803,10 @@ export class AgentManager {
 
   unregisterIpc(): void {
     ipcMain.removeHandler(IPC_CHANNELS.SEND_MESSAGE);
+    ipcMain.removeHandler(IPC_CHANNELS.PENDING_ENQUEUE);
+    ipcMain.removeHandler(IPC_CHANNELS.PENDING_CANCEL);
+    ipcMain.removeHandler(IPC_CHANNELS.PENDING_LIST);
+    ipcMain.removeHandler(IPC_CHANNELS.PENDING_PROMOTE);
     ipcMain.removeHandler(IPC_CHANNELS.INTERRUPT);
     ipcMain.removeHandler(IPC_CHANNELS.GET_AVAILABLE_MODELS);
     ipcMain.removeHandler(IPC_CHANNELS.THREADS_RECOVER_ORPHANED);
@@ -2445,6 +2841,8 @@ export class AgentManager {
     }
     this.sessions.clear();
     this.activeStreams.clear();
+    this.activeStreamIds.clear();
+    this.pendingByThread.clear();
     this.pendingPermissions.clear();
     this.pendingQuestions.clear();
     this.pendingPlanReviews.clear();

@@ -9,6 +9,7 @@ import {
 import type { ImageAttachment, FileAttachment } from "../types";
 import { SlashCommandMenu, type SlashCommandInfo } from "./SlashCommandMenu";
 import { FileMentionMenu } from "./FileMentionMenu";
+import { PendingMessages, type PendingMessageView } from "./PendingMessages";
 import { processFiles } from "./attached-files";
 import {
   useFileMentions,
@@ -20,11 +21,19 @@ export type InteractiveMode =
   | { type: "plan-review"; requestId: string; data: unknown }
   | { type: "question"; requestId: string; data: unknown };
 
+/**
+ * How a message typed mid-turn should be delivered. Mirrors
+ * `PendingDelivery` in @stratosapp/core; kept structural here so the UI
+ * package stays free of provider concerns.
+ */
+export type SendDelivery = "queue" | "steer";
+
 interface Props {
   onSend: (
     prompt: string,
     images?: ImageAttachment[],
     fileAttachments?: FileAttachment[],
+    delivery?: SendDelivery,
   ) => Promise<void>;
   onInterrupt: () => Promise<void>;
   isStreaming: boolean;
@@ -33,6 +42,10 @@ interface Props {
   slashCommands?: SlashCommandInfo[];
   cwd?: string;
   filesBridge?: FileMentionsBridge;
+  pendingMessages?: PendingMessageView[];
+  onCancelPending?: (id: string) => void;
+  onPromotePending?: (id: string, to: "steer" | "break") => void;
+  onEditPending?: (message: PendingMessageView) => void;
 }
 
 export interface InputBarRef {
@@ -58,6 +71,10 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
     slashCommands = [],
     cwd,
     filesBridge,
+    pendingMessages = [],
+    onCancelPending,
+    onPromotePending,
+    onEditPending,
   },
   ref,
 ): React.ReactElement {
@@ -76,6 +93,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
     filesBridge,
   );
   const [hasContent, setHasContent] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const editableRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -148,45 +166,56 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
     [images, fileAttachments],
   );
 
-  const handleSend = useCallback(async () => {
-    const trimmed = getPlainText().trim();
-    if (!trimmed && images.length === 0 && fileAttachments.length === 0) return;
+  const handleSend = useCallback(
+    async (delivery: SendDelivery = "steer") => {
+      const trimmed = getPlainText().trim();
+      if (!trimmed && images.length === 0 && fileAttachments.length === 0)
+        return;
 
-    if (interactiveMode && interactiveMode.type !== "none") {
-      onInteractiveResponse?.(trimmed);
+      if (interactiveMode && interactiveMode.type !== "none") {
+        onInteractiveResponse?.(trimmed);
+        if (editableRef.current) editableRef.current.innerHTML = "";
+        setHasContent(false);
+        setImages([]);
+        setFileAttachments([]);
+        setSlashMenu(null);
+        setMentionMenu(null);
+        return;
+      }
+
+      // Keep the composer intact until the host accepts the delivery request.
+      // If IPC fails, the user can retry without reconstructing their message.
+      setSendError(null);
+      try {
+        await onSend(
+          trimmed,
+          images.length > 0 ? images : undefined,
+          fileAttachments.length > 0 ? fileAttachments : undefined,
+          isStreaming ? delivery : undefined,
+        );
+      } catch (err) {
+        setSendError(
+          err instanceof Error ? err.message : "Message could not be sent.",
+        );
+        return;
+      }
+
       if (editableRef.current) editableRef.current.innerHTML = "";
       setHasContent(false);
       setImages([]);
       setFileAttachments([]);
       setSlashMenu(null);
       setMentionMenu(null);
-      return;
-    }
-
-    if (isStreaming) return;
-
-    const sentImages = images;
-    const sentFileAttachments = fileAttachments;
-    if (editableRef.current) editableRef.current.innerHTML = "";
-    setHasContent(false);
-    setImages([]);
-    setFileAttachments([]);
-    setSlashMenu(null);
-    setMentionMenu(null);
-
-    await onSend(
-      trimmed,
-      sentImages.length > 0 ? sentImages : undefined,
-      sentFileAttachments.length > 0 ? sentFileAttachments : undefined,
-    );
-  }, [
-    images,
-    fileAttachments,
-    isStreaming,
-    interactiveMode,
-    onInteractiveResponse,
-    onSend,
-  ]);
+    },
+    [
+      images,
+      fileAttachments,
+      isStreaming,
+      interactiveMode,
+      onInteractiveResponse,
+      onSend,
+    ],
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -203,10 +232,22 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       if (slashMenu || mentionHasResults) return;
       if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        handleSend();
+        // Queue safely while a turn is running. The pending row exposes an
+        // explicit "Steer now" action if the user wants to escalate it.
+        const isAnsweringPrompt =
+          interactiveMode && interactiveMode.type !== "none";
+        handleSend(isStreaming && !isAnsweringPrompt ? "queue" : "steer");
       }
     },
-    [handleSend, slashMenu, mentionMenu, mentionFiles, mentionLoading],
+    [
+      handleSend,
+      slashMenu,
+      mentionMenu,
+      mentionFiles,
+      mentionLoading,
+      isStreaming,
+      interactiveMode,
+    ],
   );
 
   const handleInput = useCallback(() => {
@@ -402,9 +443,9 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
   }, []);
 
   const isInteractive = interactiveMode && interactiveMode.type !== "none";
-  const canSend =
-    (hasContent || images.length > 0 || fileAttachments.length > 0) &&
-    (!isStreaming || isInteractive);
+  // Content is all that gates sending now: Enter queues while a turn is
+  // running, and the pending row exposes explicit steering controls.
+  const canSend = hasContent || images.length > 0 || fileAttachments.length > 0;
 
   const placeholder = useMemo(() => {
     if (isDragging) return "Drop files...";
@@ -422,6 +463,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
           ? "border-blue-500 bg-blue-950/20"
           : "border-[var(--border)] bg-[var(--bg-main)]"
       } p-4`}
+      data-testid="input-bar"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -456,15 +498,23 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
           loading={mentionLoading}
         />
       )}
-      <div>
+      <div className="flex flex-col gap-2">
+        <PendingMessages
+          pending={pendingMessages}
+          isStreaming={isStreaming}
+          onCancel={onCancelPending ?? (() => {})}
+          onPromote={onPromotePending ?? (() => {})}
+          onEdit={onEditPending ?? (() => {})}
+        />
+
         {isDragging && (
-          <div className="mb-2 text-center text-blue-400 text-xs py-1">
+          <div className="text-center text-blue-400 text-xs py-1">
             Drop files here
           </div>
         )}
 
         {(images.length > 0 || fileAttachments.length > 0) && (
-          <div className="flex flex-wrap gap-2 mb-2">
+          <div className="flex flex-wrap gap-2">
             {images.map((img) => (
               <div key={img.id} className="relative group flex-shrink-0">
                 <img
@@ -515,6 +565,12 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
           </div>
         )}
 
+        {sendError && (
+          <p role="alert" className="text-xs text-red-400">
+            {sendError}
+          </p>
+        )}
+
         <div className="flex items-center gap-2">
           <input
             ref={fileInputRef}
@@ -556,11 +612,14 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
             aria-multiline="true"
           />
 
-          {isStreaming && !isInteractive ? (
+          {/* Stop remains distinct from sending. While streaming, sending
+              queues safely; the pending row offers "Steer now" afterward. */}
+          {isStreaming && !isInteractive && (
             <button
               onClick={() => onInterrupt()}
               className="no-drag flex-shrink-0 w-10 h-10 rounded-xl bg-red-600 hover:bg-red-500 text-white flex items-center justify-center transition-colors"
-              title="Stop"
+              title="Stop current turn"
+              aria-label="Stop current turn"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -571,23 +630,38 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
                 <rect x="6" y="6" width="12" height="12" rx="1" />
               </svg>
             </button>
-          ) : (
-            <button
-              onClick={handleSend}
-              disabled={!canSend}
-              className="no-drag flex-shrink-0 w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-[var(--border-mid)] disabled:cursor-not-allowed text-white flex items-center justify-center transition-colors"
-              title="Send"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                className="w-4 h-4"
-              >
-                <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-              </svg>
-            </button>
           )}
+          <button
+            onClick={() =>
+              handleSend(isStreaming && !isInteractive ? "queue" : "steer")
+            }
+            disabled={!canSend}
+            className={`no-drag flex-shrink-0 h-10 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-[var(--border-mid)] disabled:cursor-not-allowed text-white flex items-center justify-center gap-1.5 transition-colors ${
+              isStreaming && !isInteractive ? "px-3" : "w-10"
+            }`}
+            title={
+              isStreaming && !isInteractive
+                ? "Queue for the next turn (Enter)"
+                : "Send"
+            }
+            aria-label={
+              isStreaming && !isInteractive ? "Queue for the next turn" : "Send"
+            }
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              className="w-4 h-4"
+            >
+              <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+            </svg>
+            {isStreaming && !isInteractive && (
+              <span className="text-xs font-medium">
+                Queue <span className="text-blue-100/70">Enter</span>
+              </span>
+            )}
+          </button>
         </div>
       </div>
     </div>

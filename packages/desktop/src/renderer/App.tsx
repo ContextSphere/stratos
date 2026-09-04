@@ -28,6 +28,8 @@ import {
   type ChatViewHandle,
   InputBar,
   type InputBarRef,
+  type SendDelivery,
+  type PendingMessageView,
   type InteractiveMode,
   PermissionDialog,
   PreviewPane,
@@ -172,6 +174,9 @@ function AppInner(): React.ReactElement {
     fetchMcpStatus,
     contextUsage,
     refreshContextUsage,
+    pendingMessages,
+    cancelPending,
+    promotePending,
   } = useChat(activeThreadId, { onThreadUpdated: refreshThreads });
 
   const [enabledProviders, setEnabledProviders] = useState<
@@ -546,6 +551,7 @@ function AppInner(): React.ReactElement {
       prompt: string,
       images?: ImageAttachment[],
       fileAttachments?: FileAttachment[],
+      delivery?: SendDelivery,
     ) => {
       let threadId = activeThreadId;
 
@@ -604,7 +610,7 @@ function AppInner(): React.ReactElement {
         }
       }
 
-      await sendMessage(prompt, threadId, images, fileAttachments);
+      await sendMessage(prompt, threadId, images, fileAttachments, delivery);
       // Clear draft for this thread since it was sent
       draftsRef.current.delete(threadId);
       setDraftThreadIds((prev) => {
@@ -638,6 +644,23 @@ function AppInner(): React.ReactElement {
       await interrupt();
     }
   }, [isManagerActive, interrupt]);
+
+  const handleEditPending = useCallback(
+    async (message: PendingMessageView) => {
+      const removed = await cancelPending(message.id);
+      if (!removed) return;
+      const images: ImageAttachment[] = (message.images ?? []).map(
+        (image, index) => ({
+          id: `pending-edit-${message.id}-${index}`,
+          name: `Queued image ${index + 1}`,
+          dataUrl: image.dataUrl,
+          mimeType: image.mimeType,
+        }),
+      );
+      inputRef.current?.prefillDraft(message.prompt, images);
+    },
+    [cancelPending],
+  );
 
   const handleModelChange = useCallback(
     async (model: string) => {
@@ -1323,6 +1346,14 @@ function AppInner(): React.ReactElement {
                         slashCommands={slashCommands}
                         cwd={activeThread?.cwd}
                         filesBridge={filesBridge}
+                        pendingMessages={pendingMessages}
+                        onCancelPending={(id) => void cancelPending(id)}
+                        onPromotePending={(id, to) =>
+                          void promotePending(id, to)
+                        }
+                        onEditPending={(message) =>
+                          void handleEditPending(message)
+                        }
                       />
 
                       <div className="flex-shrink-0 bg-[var(--bg-main)] px-4 pb-2">

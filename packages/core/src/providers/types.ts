@@ -13,6 +13,9 @@ export const READ_ONLY_TOOLS = [
 /** Re-export SDK's AgentDefinition for type consistency */
 export type AgentDefinition = SDKAgentDefinition;
 
+/** How a provider implements an explicit mid-turn correction. */
+export type MidTurnSteeringStrategy = "live" | "interrupt-and-restart";
+
 /**
  * Provider abstraction for AI coding agents.
  * Implement this interface to add support for a new agent backend
@@ -20,6 +23,12 @@ export type AgentDefinition = SDKAgentDefinition;
  */
 export interface AgentProvider {
   readonly name: string;
+
+  /**
+   * Declares the provider's steering semantics so orchestration stays
+   * provider-agnostic. Omit when steering is unsupported and should queue.
+   */
+  readonly midTurnSteering?: MidTurnSteeringStrategy;
 
   /** Initialize the provider (validate credentials, etc.) */
   initialize(config: ProviderConfig): Promise<void>;
@@ -29,6 +38,20 @@ export interface AgentProvider {
 
   /** Interrupt the current operation */
   interrupt(): Promise<void>;
+
+  /**
+   * Mid-turn steering: push an additional user message into the turn that is
+   * already running, so the agent course-corrects without losing in-progress
+   * work. Returns true if the message was accepted by the live turn.
+   *
+   * Only providers with `midTurnSteering: "live"` implement this method.
+   * Providers that require interruption declare `"interrupt-and-restart"`;
+   * unsupported providers omit both the capability and method.
+   */
+  pushMessage?(
+    content: string,
+    images?: { dataUrl: string; mimeType: string }[],
+  ): Promise<boolean>;
 
   /** Check if a previous session can be resumed */
   canResume(sessionId: string): boolean;

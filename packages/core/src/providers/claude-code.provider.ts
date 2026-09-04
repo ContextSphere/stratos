@@ -13,6 +13,7 @@ import type {
 import { MODE_CONFIGS } from "../types/mode";
 import { parseTaskNotification as parseTaskNotificationText } from "../storage/sdk-transcript";
 import { truncateForTrace } from "../storage/trace.store";
+import { SteerQueue } from "../utils/steer-queue";
 
 /**
  * Use all default Claude Code tools (including deferred ones like
@@ -115,6 +116,7 @@ function mapRawContextUsage(
 
 export class ClaudeCodeProvider implements AgentProvider {
   readonly name = "claude-code";
+  readonly midTurnSteering = "interrupt-and-restart" as const;
   private config: ProviderConfig = {};
   private sessionId?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -123,13 +125,20 @@ export class ClaudeCodeProvider implements AgentProvider {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private controlQuery?: any;
   private controlCleanup?: () => void;
-  // Releases the parked streamingPrompt generator at end-of-turn so the SDK's
-  // stdin pipe stays open while the CLI is still emitting control_requests
-  // (can_use_tool, etc.). If the generator returned immediately after its one
-  // yield, the SDK would call stdin.end() on the CLI, the CLI would set
-  // inputClosed=true, and every subsequent canUseTool would synchronously
-  // fail with "Tool permission request failed: Error: Stream closed".
-  private releaseStreamingPrompt?: () => void;
+  // Feeds the streaming-input prompt generator for the turn in flight. Holds
+  // the SDK's stdin pipe open while the CLI is still emitting control_requests
+  // (can_use_tool, etc.): if the generator returned right after its one yield,
+  // the SDK would call stdin.end() on the CLI, the CLI would set
+  // inputClosed=true, and every subsequent canUseTool would synchronously fail
+  // with "Tool permission request failed: Error: Stream closed".
+  //
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private steerQueue?: SteerQueue<any>;
+  private activeTurn?: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    queue: SteerQueue<any>;
+    interrupted: boolean;
+  };
   // Auto-close the control query after 5 minutes of inactivity. Each new turn
   // cancels and resets this timer. Prevents idle claude subprocesses from
   // accumulating when the user hasn't interacted with a thread for a while.
@@ -289,11 +298,17 @@ export class ClaudeCodeProvider implements AgentProvider {
     //     "Tool permission request failed: Error: Stream closed"
     // To keep the pipe open for the entire turn, we park the generator on
     // a Promise that resolves only when the for-await loop below finishes
-    // (success, error, or interrupt). See releaseStreamingPrompt.
-    this.releaseStreamingPrompt?.();
-    const parked = new Promise<void>((resolve) => {
-      this.releaseStreamingPrompt = resolve;
-    });
+    // (success, error, or interrupt). See SteerQueue.
+    this.activeTurn?.queue.close();
+    this.steerQueue?.close();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const steerQueue = new SteerQueue<any>();
+    this.steerQueue = steerQueue;
+    const activeTurn = {
+      queue: steerQueue,
+      interrupted: false,
+    };
+    this.activeTurn = activeTurn;
     const initialMessage = {
       type: "user" as const,
       message: { role: "user" as const, content: messageContent },
@@ -302,7 +317,9 @@ export class ClaudeCodeProvider implements AgentProvider {
     };
     async function* streamingPrompt() {
       yield initialMessage;
-      await parked;
+      // Parks while empty and only returns once the consuming loop below
+      // closes the queue — see SteerQueue for why that matters.
+      yield* steerQueue.drain();
     }
     this.currentQuery = query({ prompt: streamingPrompt(), options });
 
@@ -328,8 +345,17 @@ export class ClaudeCodeProvider implements AgentProvider {
             data: truncateForTrace(msg),
           });
         }
-        yield* this.transformMessage(msg, streamCtx);
-        // End-of-turn marker — break so JavaScript invokes the SDK
+        if (msg.type === "result") {
+          // An intentional interrupt may still flush an SDK error/result (or
+          // an interrupt marker) while the subprocess winds down. Do not
+          // surface those expected shutdown messages as user-visible errors.
+          if (activeTurn.interrupted) break;
+          yield* this.transformMessage(msg, streamCtx);
+        } else if (!activeTurn.interrupted) {
+          yield* this.transformMessage(msg, streamCtx);
+        }
+
+        // Final result marker — break so JavaScript invokes the SDK
         // iterator's return(), which runs readSdkMessages' finally → B9
         // cleanup() → transport.close() → CLI exits. Without this, the
         // streaming-input prompt keeps the CLI's stdin parked open even
@@ -343,12 +369,13 @@ export class ClaudeCodeProvider implements AgentProvider {
         if (msg.type === "result") break;
       }
     } finally {
-      // Release the parked generator so the SDK transport tears down cleanly.
-      // Must run on every exit path (normal completion, thrown error, or
-      // caller aborting the async iterator) — otherwise the generator stays
-      // suspended and the subprocess lingers.
-      this.releaseStreamingPrompt?.();
-      this.releaseStreamingPrompt = undefined;
+      // Close the steer queue so the prompt generator finishes and the SDK
+      // transport tears down cleanly. Must run on every exit path (normal
+      // completion, thrown error, or caller aborting the async iterator) —
+      // otherwise the generator stays suspended and the subprocess lingers.
+      steerQueue.close();
+      if (this.steerQueue === steerQueue) this.steerQueue = undefined;
+      if (this.activeTurn === activeTurn) this.activeTurn = undefined;
     }
 
     // The turn is done — the query's transport is now closed.
@@ -470,6 +497,7 @@ export class ClaudeCodeProvider implements AgentProvider {
   }
 
   async interrupt(): Promise<void> {
+    if (this.activeTurn) this.activeTurn.interrupted = true;
     if (
       this.currentQuery &&
       typeof this.currentQuery.interrupt === "function"
@@ -479,8 +507,8 @@ export class ClaudeCodeProvider implements AgentProvider {
     // Unblock the parked streamingPrompt generator so the SDK transport
     // can tear down cleanly. The for-await loop's finally also handles
     // this, but interrupt() may be called before/outside that scope.
-    this.releaseStreamingPrompt?.();
-    this.releaseStreamingPrompt = undefined;
+    this.steerQueue?.close();
+    this.steerQueue = undefined;
   }
 
   canResume(sessionId: string): boolean {
@@ -759,8 +787,9 @@ export class ClaudeCodeProvider implements AgentProvider {
     this.closeControlQuery();
     this.sessionId = undefined;
     this.currentQuery = undefined;
-    this.releaseStreamingPrompt?.();
-    this.releaseStreamingPrompt = undefined;
+    this.steerQueue?.close();
+    this.steerQueue = undefined;
+    this.activeTurn = undefined;
   }
 
   private *transformMessage(
