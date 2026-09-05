@@ -38,6 +38,8 @@ export interface OllamaConfig {
 
 export interface AppSettings {
   theme?: AppTheme;
+  /** Visual design, independent of light/dark color mode. */
+  designVariant?: "classic" | "refined";
   providers?: Record<string, ProviderPrefs>;
   /** Opencode sub-provider API keys keyed by opencode provider ID (e.g. "anthropic", "openai") */
   opencodeProviderKeys?: Record<string, OpencodeProviderKey>;
@@ -78,7 +80,7 @@ function getStorePath(): string {
 }
 
 function getDefaults(): AppSettings {
-  return { theme: "dark" };
+  return { theme: "dark", designVariant: "classic" };
 }
 
 export function loadSettings(): AppSettings {

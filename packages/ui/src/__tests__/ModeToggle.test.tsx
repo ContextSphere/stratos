@@ -11,22 +11,7 @@ describe("ModeToggle", () => {
     onModeChange.mockClear();
   });
 
-  it("renders Claude mode buttons", () => {
-    render(
-      <ModeToggle
-        provider="claude-code"
-        mode="default"
-        onModeChange={onModeChange}
-      />,
-    );
-    expect(screen.getByText("Shift+Tab")).toBeInTheDocument();
-    expect(screen.getByText("Plan")).toBeInTheDocument();
-    expect(screen.getByText("Default")).toBeInTheDocument();
-    expect(screen.getByText("Accept Edits")).toBeInTheDocument();
-    expect(screen.getByText("Bypass")).toBeInTheDocument();
-  });
-
-  it("renders Codex mode buttons", () => {
+  it("shows the current provider-specific permission label", () => {
     render(
       <ModeToggle
         provider="codex"
@@ -34,27 +19,31 @@ describe("ModeToggle", () => {
         onModeChange={onModeChange}
       />,
     );
+    expect(
+      screen.getByRole("button", { name: "Permissions: Default permissions" }),
+    ).toBeInTheDocument();
+  });
+
+  it("reveals only the modes supported by the active provider", async () => {
+    const user = userEvent.setup();
+    render(
+      <ModeToggle
+        provider="codex"
+        mode="default"
+        onModeChange={onModeChange}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Permissions: Default permissions" }),
+    );
     expect(screen.getByText("Plan")).toBeInTheDocument();
-    expect(screen.getByText("Default permissions")).toBeInTheDocument();
     expect(screen.getByText("Full access")).toBeInTheDocument();
     expect(screen.queryByText("Accept Edits")).not.toBeInTheDocument();
     expect(screen.queryByText("Bypass")).not.toBeInTheDocument();
   });
 
-  it('defaults to "default" mode when mode is undefined', () => {
-    render(
-      <ModeToggle
-        provider="claude-code"
-        mode={undefined}
-        onModeChange={onModeChange}
-      />,
-    );
-    const defaultBtn = screen.getByText("Default");
-    // Active button gets a bg-blue class
-    expect(defaultBtn.className).toContain("bg-blue");
-  });
-
-  it("highlights the active mode", () => {
+  it("marks and selects the current mode", async () => {
+    const user = userEvent.setup();
     render(
       <ModeToggle
         provider="claude-code"
@@ -62,56 +51,19 @@ describe("ModeToggle", () => {
         onModeChange={onModeChange}
       />,
     );
-    const planBtn = screen.getByText("Plan");
-    expect(planBtn.className).toContain("bg-amber");
-    // Other buttons should not have active styling
-    const defaultBtn = screen.getByText("Default");
-    expect(defaultBtn.className).not.toContain("bg-blue");
+    await user.click(screen.getByRole("button", { name: "Permissions: Plan" }));
+    expect(screen.getByRole("menuitemradio", { name: /Plan/ })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await user.click(
+      screen.getByRole("menuitemradio", { name: /Accept Edits/ }),
+    );
+    expect(onModeChange).toHaveBeenCalledWith("acceptEdits");
   });
 
-  it("calls onModeChange when a mode button is clicked", async () => {
+  it("keeps destructive modes visually explicit", async () => {
     const user = userEvent.setup();
-    render(
-      <ModeToggle
-        provider="claude-code"
-        mode="default"
-        onModeChange={onModeChange}
-      />,
-    );
-    await user.click(screen.getByText("Plan"));
-    expect(onModeChange).toHaveBeenCalledWith("plan");
-  });
-
-  it("disables all buttons when disabled prop is true", () => {
-    render(
-      <ModeToggle
-        provider="claude-code"
-        mode="default"
-        onModeChange={onModeChange}
-        disabled
-      />,
-    );
-    const buttons = screen.getAllByRole("button");
-    buttons.forEach((btn) => {
-      expect(btn).toBeDisabled();
-    });
-  });
-
-  it("does not call onModeChange when disabled", async () => {
-    const user = userEvent.setup();
-    render(
-      <ModeToggle
-        provider="claude-code"
-        mode="default"
-        onModeChange={onModeChange}
-        disabled
-      />,
-    );
-    await user.click(screen.getByText("Plan"));
-    expect(onModeChange).not.toHaveBeenCalled();
-  });
-
-  it("shows description as title attribute", () => {
     render(
       <ModeToggle
         provider="codex"
@@ -119,13 +71,58 @@ describe("ModeToggle", () => {
         onModeChange={onModeChange}
       />,
     );
+    await user.click(
+      screen.getByRole("button", { name: "Permissions: Default permissions" }),
+    );
     expect(
-      screen.getByTitle("Read-only. Plans without modifying files."),
-    ).toBeInTheDocument();
+      screen.getByRole("menuitemradio", { name: /Full access/ }),
+    ).toHaveClass("text-left");
+    expect(screen.getByText("Full access")).toHaveClass(
+      "text-[var(--text-danger)]",
+    );
+  });
+
+  it("supports arrow-key navigation and Escape", async () => {
+    const user = userEvent.setup();
+    render(
+      <ModeToggle
+        provider="claude-code"
+        mode="default"
+        onModeChange={onModeChange}
+      />,
+    );
+    const trigger = screen.getByRole("button", {
+      name: "Permissions: Default",
+    });
+    await user.click(trigger);
     expect(
-      screen.getByTitle(
-        "Allows unrestricted file access and network access without permission prompts.",
-      ),
-    ).toBeInTheDocument();
+      screen.getByRole("menuitemradio", { name: /Default/ }),
+    ).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
+    expect(
+      screen.getByRole("menuitemradio", { name: /Accept Edits/ }),
+    ).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("cannot open or change while disabled", async () => {
+    const user = userEvent.setup();
+    render(
+      <ModeToggle
+        provider="claude-code"
+        mode="default"
+        onModeChange={onModeChange}
+        disabled
+      />,
+    );
+    const trigger = screen.getByRole("button", {
+      name: "Permissions: Default",
+    });
+    expect(trigger).toBeDisabled();
+    await user.click(trigger);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(onModeChange).not.toHaveBeenCalled();
   });
 });
