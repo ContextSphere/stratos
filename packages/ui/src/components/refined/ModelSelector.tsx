@@ -19,6 +19,9 @@ const PROVIDER_LABELS: Record<ProviderType, string> = {
   copilot: "GitHub Copilot",
 };
 
+/** Model lists longer than this get a filter box. */
+const MODEL_SEARCH_THRESHOLD = 8;
+
 export interface ModelSelectorProps {
   provider?: ProviderType;
   onProviderChange?: (provider: ProviderType) => void;
@@ -52,8 +55,10 @@ export default function ModelSelector({
   onOpenChange,
 }: ModelSelectorProps): React.ReactElement {
   const [internalOpen, setInternalOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const modelButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const { models, isLoading } = useAvailableModels(
     modelsProp,
@@ -84,8 +89,8 @@ export default function ModelSelector({
       }
       if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
       const buttons = modelButtonRefs.current.filter(
-        Boolean,
-      ) as HTMLButtonElement[];
+        (button): button is HTMLButtonElement => !!button && button.isConnected,
+      );
       if (buttons.length === 0) return;
       event.preventDefault();
       event.stopPropagation();
@@ -109,6 +114,17 @@ export default function ModelSelector({
 
   const currentModel = selectedModel || models[0]?.value;
   const currentModelInfo = models.find((m) => m.value === currentModel);
+  const showModelSearch = models.length > MODEL_SEARCH_THRESHOLD;
+  const trimmedQuery = query.trim().toLowerCase();
+  // Match the display name *or* the raw id, so "GPT-6 Astra" and
+  // "gpt-6-astra" both find the same entry.
+  const visibleModels = trimmedQuery
+    ? models.filter(
+        (model) =>
+          model.displayName.toLowerCase().includes(trimmedQuery) ||
+          model.value.toLowerCase().includes(trimmedQuery),
+      )
+    : models;
   const showEffort = modelSupportsEffort(currentModelInfo);
   const providerLabel = provider ? PROVIDER_LABELS[provider] : "Provider";
   const modelLabel =
@@ -118,17 +134,30 @@ export default function ModelSelector({
   const visibleProviders =
     enabledProviders ?? (Object.keys(PROVIDER_LABELS) as ProviderType[]);
 
+  // On open, focus the filter box when present so the user can type straight
+  // away; otherwise focus the selected row (which also scrolls it into view).
+  // Clear the filter on close so the next open starts from the full list.
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setQuery("");
+      return;
+    }
     const selectedIndex = Math.max(
       0,
       models.findIndex((item) => item.value === currentModel),
     );
     const frame = requestAnimationFrame(() => {
+      if (showModelSearch) {
+        searchRef.current?.focus();
+        modelButtonRefs.current[selectedIndex]?.scrollIntoView({
+          block: "nearest",
+        });
+        return;
+      }
       modelButtonRefs.current[selectedIndex]?.focus();
     });
     return () => cancelAnimationFrame(frame);
-  }, [currentModel, isOpen, models]);
+  }, [currentModel, isOpen, models, showModelSearch]);
 
   return (
     <div ref={rootRef} className="relative min-w-0 max-w-[300px] flex-1">
@@ -209,6 +238,25 @@ export default function ModelSelector({
             <div className="px-2 pb-1 pt-1 text-xs font-medium text-[var(--text-muted)]">
               Model
             </div>
+            {showModelSearch && !isLoading && (
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  const first = visibleModels[0];
+                  if (!first) return;
+                  event.preventDefault();
+                  onModelChange(first.value);
+                  setIsOpen(false);
+                  triggerRef.current?.focus();
+                }}
+                placeholder="Search models…"
+                aria-label="Search models"
+                className="mb-1 w-full rounded-lg bg-[var(--bg-hover)] px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+              />
+            )}
             {isLoading ? (
               <div className="px-2 py-3 text-xs text-[var(--text-muted)]">
                 Loading models…
@@ -217,8 +265,12 @@ export default function ModelSelector({
               <div className="px-2 py-3 text-xs text-[var(--text-muted)]">
                 No models available
               </div>
+            ) : visibleModels.length === 0 ? (
+              <div className="px-2 py-3 text-xs text-[var(--text-muted)]">
+                No models match “{query.trim()}”
+              </div>
             ) : (
-              models.map((model, index) => (
+              visibleModels.map((model, index) => (
                 <button
                   key={model.value}
                   ref={(element) => {

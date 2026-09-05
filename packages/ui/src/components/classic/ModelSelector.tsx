@@ -82,6 +82,7 @@ export default function ModelSelector({
           if (open) setIsEffortOpen(false);
         }}
         minWidth="min-w-48"
+        searchPlaceholder="Search models…"
       />
 
       {showEffort && (
