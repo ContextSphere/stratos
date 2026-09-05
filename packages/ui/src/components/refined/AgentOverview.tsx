@@ -3,7 +3,6 @@ import type { AgentDefinition, AgentFidelity } from "@stratosapp/core";
 import { getModeConfig } from "../../utils/modes";
 import { AgentGlyph } from "../AgentGlyph";
 import { getThreadStatus } from "../ThreadList";
-import { useDesignVariant } from "../../context/DesignContext";
 
 /** Reports fields of an agent that a given provider realization ignores. */
 export type { AgentFidelity as AgentFidelityInfo } from "@stratosapp/core";
@@ -65,18 +64,13 @@ export function AgentOverview({
   pendingPermissionThreadIds,
   threadNotifications,
 }: Props): React.ReactElement {
-  const classic = useDesignVariant() === "classic";
   const mcpServerNames = Object.keys(agent.mcpServers ?? {});
 
   return (
     <div className="flex flex-col h-full overflow-y-auto bg-[var(--bg-main)]">
       {/* Top bar */}
-      <div
-        className={`flex-shrink-0 flex items-center justify-between px-6 border-b border-[var(--border)] ${classic ? "py-3" : "py-2.5"}`}
-      >
-        <div
-          className={`flex min-w-0 items-center gap-1.5 ${classic ? "text-xs" : "text-[13px] text-[var(--text-secondary)]"}`}
-        >
+      <div className="flex-shrink-0 flex items-center justify-between px-6 border-b border-[var(--border)] py-2.5">
+        <div className="flex min-w-0 items-center gap-1.5 text-[13px] text-[var(--text-secondary)]">
           <>
             <span className="truncate">Agents</span>
             <span aria-hidden="true" className="text-[var(--text-faint)]">
@@ -97,9 +91,7 @@ export function AgentOverview({
         </div>
       </div>
 
-      <div
-        className={`flex-1 w-full px-6 mx-auto ${classic ? "max-w-2xl space-y-8 py-6" : "max-w-[620px] space-y-7 py-7"}`}
-      >
+      <div className="flex-1 w-full px-6 mx-auto max-w-[620px] space-y-7 py-7">
         {/* Header */}
         <div className="flex items-start gap-4">
           <AgentGlyph
@@ -144,16 +136,8 @@ export function AgentOverview({
 
         {/* Threads */}
         <div>
-          <div
-            className={`flex items-center justify-between ${classic ? "mb-2" : "mb-1 border-b border-[var(--border)] pb-2"}`}
-          >
-            <h2
-              className={
-                classic
-                  ? "text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]"
-                  : "text-[13px] font-medium text-[var(--text-secondary)]"
-              }
-            >
+          <div className="flex items-center justify-between mb-1 border-b border-[var(--border)] pb-2">
+            <h2 className="text-[13px] font-medium text-[var(--text-secondary)]">
               Recent threads{" "}
               <span className="text-[var(--text-muted)]">{threads.length}</span>
             </h2>
@@ -171,7 +155,7 @@ export function AgentOverview({
               <button
                 key={thread.id}
                 onClick={() => onThreadClick(thread.id)}
-                className={`no-drag group flex w-full items-center gap-2 rounded-md text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${classic ? "px-3 py-2 text-sm" : "h-[30px] px-2 text-[13px]"} ${
+                className={`no-drag group flex w-full items-center gap-2 rounded-md text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 h-[30px] px-2 text-[13px] ${
                   thread.id === activeThreadId
                     ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
                     : "text-[var(--text-control)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
@@ -241,21 +225,11 @@ export function AgentOverview({
         {/* Configuration */}
         <div>
           <h2
-            className={
-              classic
-                ? "mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]"
-                : "mb-1 border-b border-[var(--border)] pb-2 text-[13px] font-medium text-[var(--text-secondary)]"
-            }
+            className="mb-1 border-b border-[var(--border)] pb-2 text-[13px] font-medium text-[var(--text-secondary)]"
           >
             Configuration
           </h2>
-          <dl
-            className={
-              classic
-                ? "grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-3 text-sm"
-                : "grid grid-cols-[130px_1fr] text-[13px]"
-            }
-          >
+          <dl className="grid grid-cols-[130px_1fr] text-[13px]">
             <dt className="border-b border-[var(--border)] py-2 text-[var(--text-muted)]">
               Instructions
             </dt>

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { ToolCall } from "../../types";
 import type { InternalToolDescriptor } from "../../tool-registry/types";
-import { useDesignVariant } from "../../context/DesignContext";
 
 const STATUS_COLORS: Record<ToolCall["status"], string> = {
   pending: "text-[var(--text-secondary)]",
@@ -31,7 +30,6 @@ export function BuiltinToolCard({
   hasBody = true,
   children,
 }: Props): React.ReactElement {
-  const classic = useDesignVariant() === "classic";
   const defaultExpanded =
     toolCall.status === "denied"
       ? true
@@ -49,17 +47,10 @@ export function BuiltinToolCard({
   return (
     <div
       className={`overflow-hidden rounded-lg border text-xs ${
-        classic
-          ? "border-[var(--border-mid)] bg-[var(--bg-overlay)]"
-          : toolCall.status === "denied"
-            ? "border-[var(--border-danger)] bg-[var(--bg-danger)]"
-            : "border-[var(--border)] bg-[var(--bg-overlay)]"
+        toolCall.status === "denied"
+          ? "border-[var(--border-danger)] bg-[var(--bg-danger)]"
+          : "border-[var(--border)] bg-[var(--bg-overlay)]"
       }`}
-      style={
-        classic
-          ? { borderLeftColor: display.accentColor, borderLeftWidth: "3px" }
-          : undefined
-      }
     >
       {/* Header */}
       <div className="flex items-center gap-2 px-2.5 py-2">

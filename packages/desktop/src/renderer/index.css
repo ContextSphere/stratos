@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./styles/design-tokens.css";
 @source "../../../../packages/ui/src/**/*.tsx";
 @source "../../../../packages/ui/src/**/*.ts";
 
@@ -11,87 +12,6 @@
     "Courier New", monospace;
 }
 
-/* ── Theme palette ─────────────────────────────────────────────────── */
-:root[data-design="refined"] {
-  /* Refined dark theme */
-  --bg-root: #121211;
-  --bg-main: #171716;
-  --bg-surface: #232321;
-  --bg-overlay: #1d1d1b;
-  --bg-hover: #292927;
-  --bg-selected: #302f2c;
-  --border: #2d2d2a;
-  --border-mid: #3b3a36;
-  --text-primary: #e7e6e2;
-  --text-secondary: #b5b3ac;
-  --text-muted: #99978f;
-  --text-faint: #7d7b74;
-  --text-control: #d0cfc9;
-  --text-danger: #f08c86;
-  --bg-danger: rgba(239, 68, 68, 0.08);
-  --border-danger: rgba(248, 113, 113, 0.35);
-  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
-}
-
-:root[data-design="refined"][data-theme="light"] {
-  --bg-root: #f2f1ee;
-  --bg-main: #fcfbf9;
-  --bg-surface: #f4f3f0;
-  --bg-overlay: #efeeeb;
-  --bg-hover: #eae9e5;
-  --bg-selected: #e3e2dc;
-  --border: #dfded8;
-  --border-mid: #c9c7c0;
-  --text-primary: #252522;
-  --text-secondary: #50504a;
-  --text-muted: #686861;
-  --text-faint: #76766f;
-  --text-control: #353530;
-  --text-danger: #b42318;
-  --bg-danger: rgba(180, 35, 24, 0.07);
-  --border-danger: rgba(180, 35, 24, 0.3);
-  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
-  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.25);
-}
-
-/* The visual design does not change the selected color mode. */
-:root:not([data-design="refined"]) {
-  /* Original palette, with shared interaction tokens. */
-  --bg-hover: #202020;
-  --bg-selected: #292929;
-  --bg-root: #0a0a0a;
-  --bg-main: #0f0f0f;
-  --bg-surface: #1a1a1a;
-  --bg-overlay: #121212;
-  --border: #2a2a2a;
-  --border-mid: #333333;
-  --text-primary: #e0e0e0;
-  --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
-  --text-faint: #4b5563;
-  --text-control: #c9cdd4;
-  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
-}
-
-:root:not([data-design="refined"])[data-theme="light"] {
-  --bg-hover: #e6e6e6;
-  --bg-selected: #dedede;
-  --bg-root: #ececec;
-  --bg-main: #f2f2f2;
-  --bg-surface: #ffffff;
-  --bg-overlay: #e6e6e6;
-  --border: #d0d0d0;
-  --border-mid: #b8b8b8;
-  --text-primary: #1a1a1a;
-  --text-secondary: #374151;
-  --text-muted: #6b7280;
-  --text-faint: #9ca3af;
-  --text-control: #1a1a1a;
-  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
-  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.25);
-}
 
 body {
   margin: 0;

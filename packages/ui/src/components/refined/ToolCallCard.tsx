@@ -5,7 +5,6 @@ import { MonitorCard } from "../MonitorCard";
 import { BuiltinToolCard } from "./BuiltinToolCard";
 import { DefaultBuiltinCardBody } from "../DefaultBuiltinCardBody";
 import { toolRegistry } from "../../tool-registry";
-import { useDesignVariant } from "../../context/DesignContext";
 
 const FileChangeViewer = lazy(() =>
   import("../FileChangeViewer").then((m) => ({ default: m.FileChangeViewer })),
@@ -79,7 +78,6 @@ function hasExplicitErrorOutput(output: string | undefined): boolean {
 }
 
 function GenericToolActivity({ toolCall }: Props): React.ReactElement {
-  const classic = useDesignVariant() === "classic";
   const isError =
     toolCall.status === "denied" || hasExplicitErrorOutput(toolCall.output);
   const statusLabel =
@@ -112,7 +110,7 @@ function GenericToolActivity({ toolCall }: Props): React.ReactElement {
 
   return (
     <div
-      className={`text-[13px] ${classic ? "rounded-lg border border-[var(--border-mid)] bg-[var(--bg-overlay)] p-2" : ""} ${isError ? "rounded-md bg-[var(--bg-danger)]" : ""}`}
+      className={`text-[13px] ${isError ? "rounded-md bg-[var(--bg-danger)]" : ""}`}
     >
       <button
         type="button"

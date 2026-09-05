@@ -1,4 +1,3 @@
-import { useDesignVariant } from "../../context/DesignContext";
 import React, { useEffect, useRef, useState } from "react";
 import type { AgentMode, ProviderType } from "../../utils/modes";
 import { getAgentModes, getModeConfig } from "../../utils/modes";
@@ -16,7 +15,6 @@ export default function ModeToggle({
   onModeChange,
   disabled,
 }: ModeToggleProps): React.ReactElement {
-  const classic = useDesignVariant() === "classic";
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -81,7 +79,7 @@ export default function ModeToggle({
         type="button"
         onClick={() => !disabled && setIsOpen((open) => !open)}
         disabled={disabled}
-        className={`no-drag flex items-center gap-1.5 whitespace-nowrap px-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${classic ? "h-7 rounded-md border border-[var(--border-mid)] bg-[var(--bg-surface)]" : "h-8 rounded-lg"} ${
+        className={`no-drag flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
           currentConfig.dangerous
             ? "bg-[var(--bg-danger)] text-[var(--text-danger)] hover:opacity-90"
             : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"

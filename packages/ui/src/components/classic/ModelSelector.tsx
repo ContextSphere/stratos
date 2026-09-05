@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from "react";
 import type { ModelInfo } from "../../types";
 import DropdownPicker from "../shared/DropdownPicker";
+import {
+  modelSupportsEffort,
+  THINKING_EFFORTS,
+  useAvailableModels,
+} from "../model-selector-state";
 
-const EFFORT_LEVELS = [
-  { value: "low", label: "Low effort" },
-  { value: "medium", label: "Medium effort" },
-  { value: "high", label: "High effort" },
-  { value: "max", label: "Max effort" },
-];
+const EFFORT_LEVELS = THINKING_EFFORTS.map((value) => ({
+  value,
+  label: `${value[0].toUpperCase()}${value.slice(1)} effort`,
+}));
 
 export interface ModelSelectorProps {
   selectedModel?: string;
@@ -28,13 +31,6 @@ export interface ModelSelectorProps {
   onOpenChange?: (open: boolean) => void;
 }
 
-function isOpusModel(model: ModelInfo | undefined): boolean {
-  if (!model) return false;
-  const text =
-    `${model.value} ${model.displayName} ${model.description}`.toLowerCase();
-  return text.includes("opus");
-}
-
 export default function ModelSelector({
   selectedModel,
   onModelChange,
@@ -46,39 +42,12 @@ export default function ModelSelector({
   isOpen: controlledModelOpen,
   onOpenChange,
 }: ModelSelectorProps): React.ReactElement {
-  const [fetchedModels, setFetchedModels] = useState<ModelInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(!modelsProp);
   const [isEffortOpen, setIsEffortOpen] = useState(false);
-
-  const models = modelsProp ?? fetchedModels;
-
-  useEffect(() => {
-    if (modelsProp || !onFetchModels) {
-      setIsLoading(false);
-      return;
-    }
-    // Drop any previously-fetched list before issuing a new request — otherwise
-    // changing scope (e.g. provider switch) would render the old scope's models
-    // until the new fetch resolved.
-    setFetchedModels([]);
-    setIsLoading(true);
-    let cancelled = false;
-    onFetchModels()
-      .then((list) => {
-        if (!cancelled) setFetchedModels(list);
-      })
-      .catch((err) => console.error("Failed to fetch models:", err))
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // `onFetchModels` is intentionally NOT in the dep array — callers typically
-    // pass an inline arrow, which would refire on every parent render. The
-    // `fetchScope` prop is the stable invalidation signal.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelsProp, fetchScope]);
+  const { models, isLoading } = useAvailableModels(
+    modelsProp,
+    onFetchModels,
+    fetchScope,
+  );
 
   // Mutual exclusion: opening model picker closes effort picker
   useEffect(() => {
@@ -93,10 +62,7 @@ export default function ModelSelector({
 
   const currentModel = selectedModel || models[0]?.value;
   const currentModelInfo = models.find((m) => m.value === currentModel);
-  const showEffort =
-    currentModelInfo?.supportsEffort ??
-    currentModelInfo?.supportsReasoning ??
-    isOpusModel(currentModelInfo);
+  const showEffort = modelSupportsEffort(currentModelInfo);
 
   const modelItems = models.map((m) => ({
     value: m.value,

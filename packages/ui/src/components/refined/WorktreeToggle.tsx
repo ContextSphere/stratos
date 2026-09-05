@@ -1,5 +1,4 @@
 import React from "react";
-import { useDesignVariant } from "../../context/DesignContext";
 
 export interface WorktreeToggleProps {
   worktreeMode: "local" | "worktree" | undefined;
@@ -27,7 +26,6 @@ export default function WorktreeToggle({
   disabled,
   onWorktreeModeChange,
 }: WorktreeToggleProps): React.ReactElement | null {
-  const classic = useDesignVariant() === "classic";
   if (!isGitRepo) return null;
 
   const current = worktreeMode ?? "local";
@@ -45,11 +43,7 @@ export default function WorktreeToggle({
               title={m.description}
               className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
                 isActive
-                  ? classic
-                    ? m.key === "local"
-                      ? "bg-blue-600/80 text-white"
-                      : "bg-purple-600/80 text-white"
-                    : "bg-[var(--bg-selected)] text-[var(--text-primary)] shadow-sm"
+                  ? "bg-[var(--bg-selected)] text-[var(--text-primary)] shadow-sm"
                   : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
               } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
             >

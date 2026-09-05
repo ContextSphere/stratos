@@ -14,7 +14,6 @@ import { TurnRail } from "../shared/TurnRail";
 import type { ChatMessage, TodoData } from "../../types";
 import type { ProviderType } from "../../utils/modes";
 import type { NavAnchor } from "../../types/nav";
-import { useDesignVariant } from "../../context/DesignContext";
 
 export interface ChatViewHandle {
   scrollToMessage(messageId: string): void;
@@ -78,7 +77,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }: Props,
   ref,
 ) {
-  const classic = useDesignVariant() === "classic";
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -325,15 +323,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className={`flex-1 overflow-y-auto pr-4 ${classic ? "py-2" : "py-4"} ${
+        className={`flex-1 overflow-y-auto py-4 pr-4 ${
           hasTurnRail ? "pl-12" : "px-4"
         }`}
       >
-        <div
-          className={
-            classic ? "space-y-4" : "mx-auto w-full max-w-[900px] space-y-5"
-          }
-        >
+        <div className="mx-auto w-full max-w-[900px] space-y-5">
           {hiddenCount > 0 && (
             <div className="flex justify-center py-2">
               <button

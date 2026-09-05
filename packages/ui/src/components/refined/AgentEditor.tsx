@@ -17,7 +17,6 @@ import {
   getAgentGlyph,
   isAgentGlyph,
 } from "../AgentGlyph";
-import { useDesignVariant } from "../../context/DesignContext";
 
 const PROVIDERS: ProviderType[] = [
   "claude-code",
@@ -133,9 +132,8 @@ function Section({
   description?: string;
   children: React.ReactNode;
 }): React.ReactElement {
-  const classic = useDesignVariant() === "classic";
   return (
-    <section className={classic ? "" : "border-t border-[var(--border)] pt-4"}>
+    <section className="border-t border-[var(--border)] pt-4">
       <div className="mb-3">
         <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
           {title}
@@ -175,7 +173,6 @@ export function AgentEditor({
   onDelete,
   onFetchModels,
 }: Props): React.ReactElement {
-  const classic = useDesignVariant() === "classic";
   const isBuiltIn = agent?.builtIn ?? false;
 
   const [name, setName] = useState(agent?.name ?? "");
@@ -357,10 +354,8 @@ export function AgentEditor({
 
   return (
     <div className="flex flex-col h-full overflow-y-auto bg-[var(--bg-main)]">
-      <div
-        className={`flex-1 w-full mx-auto px-6 ${classic ? "max-w-2xl py-6" : "max-w-[620px] py-7"}`}
-      >
-        <div className={classic ? "mb-6" : "mb-7"}>
+      <div className="flex-1 w-full mx-auto px-6 max-w-[620px] py-7">
+        <div className="mb-7">
           <h1 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">
             {agent ? `Edit ${agent.name || "agent"}` : "New agent"}
           </h1>
@@ -373,7 +368,7 @@ export function AgentEditor({
           </div>
         )}
 
-        <div className={classic ? "space-y-6" : "space-y-7"}>
+        <div className="space-y-7">
           <Section title="Identity">
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_128px]">
               <div>
@@ -784,12 +779,8 @@ export function AgentEditor({
           </Section>
         </div>
       </div>
-      <footer
-        className={`sticky bottom-0 flex items-center gap-2 border-t border-[var(--border)] bg-[var(--bg-main)] ${classic ? "px-6 py-4" : "py-3"}`}
-      >
-        <div
-          className={`mx-auto flex w-full items-center gap-2 ${classic ? "max-w-2xl" : "max-w-[620px] px-6"}`}
-        >
+      <footer className="sticky bottom-0 flex items-center gap-2 border-t border-[var(--border)] bg-[var(--bg-main)] py-3">
+        <div className="mx-auto flex w-full items-center gap-2 max-w-[620px] px-6">
           <button
             type="button"
             onClick={onCancel}

@@ -2,7 +2,6 @@ import type { Thread, Folder } from "@stratosapp/core";
 import type { AgentDefinition } from "@stratosapp/core";
 import { ThreadList } from "../ThreadList";
 import { AgentGroupList } from "./AgentGroupList";
-import { useDesignVariant } from "../../context/DesignContext";
 
 export type SidebarGrouping = "folders" | "agents";
 
@@ -69,27 +68,14 @@ export function Sidebar({
   onCreateAgent,
   onDeleteAgent,
 }: Props): React.ReactElement {
-  const classic = useDesignVariant() === "classic";
   return (
-    <div
-      className={`flex h-full flex-shrink-0 flex-col overflow-hidden bg-[var(--bg-root)] ${classic ? "w-64 min-w-64" : "w-[220px] min-w-[220px] text-[13px]"}`}
-    >
+    <div className="flex h-full w-[220px] min-w-[220px] flex-shrink-0 flex-col overflow-hidden bg-[var(--bg-root)] text-[13px]">
       <div className="flex flex-col h-full">
         {/* Traffic-light clearance */}
-        <div
-          className={`drag-region flex-shrink-0 ${classic ? "h-7" : "h-6"}`}
-        />
+        <div className="drag-region h-6 flex-shrink-0" />
         {/* Header with logo */}
-        <div
-          className={`flex flex-shrink-0 items-center justify-between ${classic ? "px-3 pb-1" : "px-4 pb-2 pt-1"}`}
-        >
-          <span
-            className={
-              classic
-                ? "font-semibold text-blue-500"
-                : "text-[13px] font-semibold tracking-[-0.01em] text-[var(--text-primary)]"
-            }
-          >
+        <div className="flex flex-shrink-0 items-center justify-between px-4 pb-2 pt-1">
+          <span className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--text-primary)]">
             Stratos
           </span>
           <button
@@ -118,17 +104,15 @@ export function Sidebar({
           <div
             role="tablist"
             aria-label="Sidebar grouping"
-            className={`no-drag mx-3 flex flex-shrink-0 items-center ${classic ? "mb-1 gap-0.5 rounded-lg bg-[var(--bg-surface)] p-0.5" : "mb-2 gap-1"}`}
+            className="no-drag mx-3 mb-2 flex flex-shrink-0 items-center gap-1"
           >
             <button
               role="tab"
               aria-selected={grouping === "folders"}
               onClick={() => onGroupingChange("folders")}
-              className={`flex-1 rounded-md px-2 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--text-muted)] ${classic ? "py-1 text-xs font-medium" : "py-1.5 text-[13px]"} ${
+              className={`flex-1 rounded-md px-2 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--text-muted)] ${
                 grouping === "folders"
-                  ? classic
-                    ? "bg-[var(--border)] text-[var(--text-primary)]"
-                    : "bg-[var(--bg-surface)] text-[var(--text-primary)]"
+                  ? "bg-[var(--bg-surface)] text-[var(--text-primary)]"
                   : "text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
               }`}
             >
@@ -138,11 +122,9 @@ export function Sidebar({
               role="tab"
               aria-selected={grouping === "agents"}
               onClick={() => onGroupingChange("agents")}
-              className={`flex-1 rounded-md px-2 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--text-muted)] ${classic ? "py-1 text-xs font-medium" : "py-1.5 text-[13px]"} ${
+              className={`flex-1 rounded-md px-2 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--text-muted)] ${
                 grouping === "agents"
-                  ? classic
-                    ? "bg-[var(--border)] text-[var(--text-primary)]"
-                    : "bg-[var(--bg-surface)] text-[var(--text-primary)]"
+                  ? "bg-[var(--bg-surface)] text-[var(--text-primary)]"
                   : "text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
               }`}
             >
@@ -152,9 +134,7 @@ export function Sidebar({
         )}
 
         {/* Thread list */}
-        <div
-          className={`flex min-h-0 flex-1 flex-col overflow-y-auto ${classic ? "border-t border-[var(--border)] px-1 py-2" : "px-1.5 py-1"}`}
-        >
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 py-1">
           {grouping === "agents" ? (
             <AgentGroupList
               agents={agents}
@@ -198,9 +178,7 @@ export function Sidebar({
         </div>
 
         {/* Footer buttons */}
-        <div
-          className={`flex-shrink-0 space-y-0.5 px-3 ${classic ? "border-t border-[var(--border)] py-2" : "pb-3 pt-2"}`}
-        >
+        <div className="flex-shrink-0 space-y-0.5 px-3 pb-3 pt-2">
           {onSchedulesClick && (
             <button
               onClick={onSchedulesClick}

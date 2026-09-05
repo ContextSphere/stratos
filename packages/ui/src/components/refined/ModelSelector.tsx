@@ -1,14 +1,16 @@
-import { useDesignVariant } from "../../context/DesignContext";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ModelInfo } from "../../types";
 import type { ProviderType } from "../../utils/modes";
+import {
+  modelSupportsEffort,
+  THINKING_EFFORTS,
+  useAvailableModels,
+} from "../model-selector-state";
 
-const EFFORT_LEVELS = [
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "max", label: "Max" },
-];
+const EFFORT_LEVELS = THINKING_EFFORTS.map((value) => ({
+  value,
+  label: `${value[0].toUpperCase()}${value.slice(1)}`,
+}));
 
 const PROVIDER_LABELS: Record<ProviderType, string> = {
   "claude-code": "Claude Code",
@@ -34,13 +36,6 @@ export interface ModelSelectorProps {
   onOpenChange?: (open: boolean) => void;
 }
 
-function isOpusModel(model: ModelInfo | undefined): boolean {
-  if (!model) return false;
-  const text =
-    `${model.value} ${model.displayName} ${model.description}`.toLowerCase();
-  return text.includes("opus");
-}
-
 export default function ModelSelector({
   provider,
   onProviderChange,
@@ -56,14 +51,15 @@ export default function ModelSelector({
   isOpen: controlledOpen,
   onOpenChange,
 }: ModelSelectorProps): React.ReactElement {
-  const classic = useDesignVariant() === "classic";
-  const [fetchedModels, setFetchedModels] = useState<ModelInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(!modelsProp);
   const [internalOpen, setInternalOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const modelButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const models = modelsProp ?? fetchedModels;
+  const { models, isLoading } = useAvailableModels(
+    modelsProp,
+    onFetchModels,
+    fetchScope,
+  );
   const isOpen = controlledOpen ?? internalOpen;
   const setIsOpen = useCallback(
     (open: boolean) => {
@@ -72,29 +68,6 @@ export default function ModelSelector({
     },
     [onOpenChange],
   );
-
-  useEffect(() => {
-    if (modelsProp || !onFetchModels) {
-      setIsLoading(false);
-      return;
-    }
-    setFetchedModels([]);
-    setIsLoading(true);
-    let cancelled = false;
-    onFetchModels()
-      .then((list) => {
-        if (!cancelled) setFetchedModels(list);
-      })
-      .catch((err) => console.error("Failed to fetch models:", err))
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // Callers commonly pass an inline fetcher. fetchScope is the stable key.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelsProp, fetchScope]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -136,10 +109,7 @@ export default function ModelSelector({
 
   const currentModel = selectedModel || models[0]?.value;
   const currentModelInfo = models.find((m) => m.value === currentModel);
-  const showEffort =
-    currentModelInfo?.supportsEffort ??
-    currentModelInfo?.supportsReasoning ??
-    isOpusModel(currentModelInfo);
+  const showEffort = modelSupportsEffort(currentModelInfo);
   const providerLabel = provider ? PROVIDER_LABELS[provider] : "Provider";
   const modelLabel =
     currentModelInfo?.displayName ||
@@ -166,7 +136,7 @@ export default function ModelSelector({
         ref={triggerRef}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`no-drag flex w-full min-w-0 items-center gap-1.5 px-2 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${classic ? "h-7 rounded-md border border-[var(--border-mid)] bg-[var(--bg-surface)]" : "h-8 rounded-lg"}`}
+        className="no-drag flex h-8 w-full min-w-0 items-center gap-1.5 rounded-lg px-2 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         title={`${providerLabel}, ${modelLabel}`}

@@ -11,7 +11,6 @@ import type { ChatMessage } from "../../types";
 import type { AgentMode, ProviderType } from "../../utils/modes";
 import { getModeConfig } from "../../utils/modes";
 import { toolRegistry } from "../../tool-registry";
-import { useDesignVariant } from "../../context/DesignContext";
 
 // Static Tailwind class map for mode-change pills
 const PILL_COLOR_MAP: Record<
@@ -182,7 +181,6 @@ function MessageBubbleImpl({
   onViewFile,
   isStreaming,
 }: Props): React.ReactElement {
-  const classic = useDesignVariant() === "classic";
   const isUser = message.role === "user";
 
   const { attachments, cleanContent } = useMemo(() => {
@@ -354,7 +352,7 @@ function MessageBubbleImpl({
     <div
       id={`msg-${message.id}`}
       data-message-id={message.id}
-      className={classic ? "space-y-2" : "space-y-2.5"}
+      className="space-y-2.5"
     >
       {/* Message content — user gets a bubble, assistant flows full-width */}
       {(isUser || hasTextContent) && (
@@ -362,12 +360,8 @@ function MessageBubbleImpl({
           <div
             className={
               isUser
-                ? classic
-                  ? "max-w-[85%] rounded-2xl bg-blue-600 px-4 py-3 break-words text-white"
-                  : "max-w-[min(82%,720px)] rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5 break-words text-[var(--text-primary)]"
-                : classic
-                  ? "w-full break-words py-1 text-[var(--text-primary)]"
-                  : "w-full max-w-[720px] break-words py-1 text-[var(--text-primary)]"
+                ? "max-w-[min(82%,720px)] rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5 break-words text-[var(--text-primary)]"
+                : "w-full max-w-[720px] break-words py-1 text-[var(--text-primary)]"
             }
           >
             {/* Thinking block */}
@@ -473,7 +467,7 @@ function MessageBubbleImpl({
                     seg.content && (
                       <div
                         key={i}
-                        className={`${classic ? "text-sm leading-relaxed" : "text-[15px] leading-6"} prose prose-sm max-w-none`}
+                        className="text-[15px] leading-6 prose prose-sm max-w-none"
                       >
                         <MarkdownContent
                           content={seg.content}
@@ -484,9 +478,7 @@ function MessageBubbleImpl({
                   ),
                 )
               : cleanContent && (
-                  <div
-                    className={`${classic ? "text-sm leading-relaxed" : "text-[15px] leading-6"} prose prose-sm max-w-none`}
-                  >
+                  <div className="text-[15px] leading-6 prose prose-sm max-w-none">
                     <MarkdownContent
                       content={cleanContent}
                       onLinkClick={onLinkClick}
@@ -549,7 +541,7 @@ function MessageBubbleImpl({
       )}
 
       {regularToolCalls.length > 0 && (
-        <div className={`w-full ${classic ? "space-y-2" : "space-y-1.5"}`}>
+        <div className="w-full space-y-1.5">
           {regularToolCalls.map((tc) => (
             <ToolCallCard
               key={tc.toolCallId}
