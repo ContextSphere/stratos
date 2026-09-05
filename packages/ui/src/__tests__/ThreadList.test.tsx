@@ -69,6 +69,72 @@ describe("ThreadList", () => {
     expect(screen.getByText("Alpha")).toBeInTheDocument();
   });
 
+  it("shows five threads at a time within a folder", async () => {
+    const user = userEvent.setup();
+    const folders = [makeFolder("f1", "proj", "/proj")];
+    const threads = Array.from({ length: 12 }, (_, index) =>
+      makeThread(`t${index + 1}`, `Thread ${index + 1}`, "/proj"),
+    );
+
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={threads}
+        folders={folders}
+        activeThreadId={null}
+      />,
+    );
+
+    expect(screen.getByText("Thread 5")).toBeInTheDocument();
+    expect(screen.queryByText("Thread 6")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Show more" }));
+    expect(screen.getByText("Thread 10")).toBeInTheDocument();
+    expect(screen.queryByText("Thread 11")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Show more" }));
+    expect(screen.getByText("Thread 12")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Show more" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("expands thread lists independently for each folder", async () => {
+    const user = userEvent.setup();
+    const folders = [
+      makeFolder("f1", "one", "/one"),
+      makeFolder("f2", "two", "/two"),
+    ];
+    const threads = [
+      ...Array.from({ length: 6 }, (_, index) =>
+        makeThread(`one-${index}`, `One ${index + 1}`, "/one"),
+      ),
+      ...Array.from({ length: 6 }, (_, index) =>
+        makeThread(`two-${index}`, `Two ${index + 1}`, "/two"),
+      ),
+    ];
+
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={threads}
+        folders={folders}
+        activeThreadId={null}
+      />,
+    );
+
+    const showMoreButtons = screen.getAllByRole("button", {
+      name: "Show more",
+    });
+    await user.click(showMoreButtons[0]);
+
+    expect(screen.getByText("One 6")).toBeInTheDocument();
+    expect(screen.queryByText("Two 6")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Show more" }),
+    ).toBeInTheDocument();
+  });
+
   it('shows "No threads" for empty folders', () => {
     const folders = [makeFolder("f1", "my-project", "/home/user/my-project")];
     render(

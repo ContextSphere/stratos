@@ -2,6 +2,8 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import type { Thread, Folder } from "@stratosapp/core";
 import { basename } from "../utils/path";
 
+const THREAD_PAGE_SIZE = 5;
+
 export interface StatusPill {
   label: string;
   colorClass: string;
@@ -319,6 +321,9 @@ export function ThreadList({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [menuOpenFolderId, setMenuOpenFolderId] = useState<string | null>(null);
+  const [visibleThreadCounts, setVisibleThreadCounts] = useState<
+    Record<string, number>
+  >({});
 
   // Separate manager thread from regular threads
   const managerThread = useMemo(
@@ -439,6 +444,13 @@ export function ThreadList({
         ) : (
           folders.map((folder) => {
             const folderThreads = threadsByFolderPath.get(folder.path) ?? [];
+            const visibleThreadCount =
+              visibleThreadCounts[folder.id] ?? THREAD_PAGE_SIZE;
+            const visibleFolderThreads = folderThreads.slice(
+              0,
+              visibleThreadCount,
+            );
+            const hasMoreThreads = visibleThreadCount < folderThreads.length;
             const isCollapsed = folder.collapsed ?? false;
             const isMenuOpen = menuOpenFolderId === folder.id;
 
@@ -551,7 +563,7 @@ export function ThreadList({
                         No threads
                       </p>
                     ) : (
-                      folderThreads.map((thread) => {
+                      visibleFolderThreads.map((thread) => {
                         const isActive = thread.id === activeThreadId;
                         const status = getThreadStatus(
                           thread.id,
@@ -577,6 +589,22 @@ export function ThreadList({
                           />
                         );
                       })
+                    )}
+                    {hasMoreThreads && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setVisibleThreadCounts((counts) => ({
+                            ...counts,
+                            [folder.id]:
+                              (counts[folder.id] ?? THREAD_PAGE_SIZE) +
+                              THREAD_PAGE_SIZE,
+                          }))
+                        }
+                        className="no-drag w-full rounded-md py-1.5 pl-7 pr-3 text-left text-sm text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--text-muted)]"
+                      >
+                        Show more
+                      </button>
                     )}
                   </div>
                 )}
