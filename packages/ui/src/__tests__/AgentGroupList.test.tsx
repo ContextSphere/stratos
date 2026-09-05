@@ -50,9 +50,9 @@ describe("AgentGroupList", () => {
     vi.clearAllMocks();
   });
 
-  it("renders a single Agents section, with no Built-in group", () => {
+  it("renders a single Bots section, with no Built-in group", () => {
     render(<AgentGroupList {...baseProps} agents={[]} threads={[]} />);
-    expect(screen.getByText("Agents")).toBeInTheDocument();
+    expect(screen.getByText("Bots")).toBeInTheDocument();
     expect(screen.queryByText("Built-in")).not.toBeInTheDocument();
     expect(screen.queryByText("Yours")).not.toBeInTheDocument();
   });
@@ -121,12 +121,12 @@ describe("AgentGroupList", () => {
   it("calls onCreateAgent when the Yours section + is clicked", async () => {
     const user = userEvent.setup();
     render(<AgentGroupList {...baseProps} agents={[]} threads={[]} />);
-    await user.click(screen.getByTitle("New agent"));
+    await user.click(screen.getByTitle("New bot"));
     expect(baseProps.onCreateAgent).toHaveBeenCalledOnce();
   });
 
   it("does not show an agent-options menu button for built-in agents", () => {
     render(<AgentGroupList {...baseProps} agents={[]} threads={[]} />);
-    expect(screen.queryByTitle("Agent options")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Bot options")).not.toBeInTheDocument();
   });
 });

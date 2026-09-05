@@ -128,7 +128,7 @@ export function Sidebar({
                   : "text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
               }`}
             >
-              Agents
+              Bots
             </button>
           </div>
         )}

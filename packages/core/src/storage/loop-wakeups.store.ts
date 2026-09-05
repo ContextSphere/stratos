@@ -6,7 +6,7 @@ import type { LoopWakeup } from "../types/loop-wakeup";
 const STORE_FILE = "loop-wakeups.json";
 
 function getConfigDir(): string {
-  return join(homedir(), ".stratos");
+  return process.env.STRATOS_DATA_DIR || join(homedir(), ".stratos");
 }
 
 function getStorePath(): string {

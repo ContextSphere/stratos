@@ -63,7 +63,7 @@ function AgentMenu({
         }}
         className="w-full text-left px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-red-400 hover:bg-[var(--border)] transition-colors"
       >
-        Delete agent
+        Delete bot
       </button>
     </div>
   );
@@ -183,7 +183,7 @@ export function AgentGroupList({
                   setMenuOpenAgentId(isMenuOpen ? null : agent.id);
                 }}
                 className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                title="Agent options"
+                title="Bot options"
               >
                 <svg
                   className="w-3.5 h-3.5"
@@ -279,12 +279,12 @@ export function AgentGroupList({
             `yourAgents` note above. */}
         <div className="flex items-center justify-between px-2 pt-1 pb-0.5">
           <span className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
-            Agents
+            Bots
           </span>
           <button
             onClick={onCreateAgent}
             className="no-drag p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors"
-            title="New agent"
+            title="New bot"
           >
             <svg
               className="w-3.5 h-3.5"
@@ -303,12 +303,12 @@ export function AgentGroupList({
         </div>
         {yourAgents.length === 0 ? (
           <p className="text-xs text-[var(--text-muted)] py-4 px-3 text-center">
-            No agents yet.{" "}
+            No bots yet.{" "}
             <button
               onClick={onCreateAgent}
               className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] underline"
             >
-              Create an agent
+              Create a bot
             </button>{" "}
             to get started.
           </p>

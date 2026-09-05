@@ -1331,6 +1331,7 @@ export class AgentManager {
       });
       const mcpServers = mergeAgentMcpServers(builtMcpServers, agentOverlay);
       await provider.initialize({
+        systemPrompt: agentOverlay.systemPrompt,
         ...(providerName === "claude-code"
           ? {
               cliPath: resolvedClaudeCliPath,
@@ -2211,6 +2212,7 @@ export class AgentManager {
       });
       const mcpServers = mergeAgentMcpServers(builtMcpServers, agentOverlay);
       await provider.initialize({
+        systemPrompt: agentOverlay.systemPrompt,
         ...(providerName === "claude-code"
           ? {
               cliPath: resolvedClaudeCliPath,

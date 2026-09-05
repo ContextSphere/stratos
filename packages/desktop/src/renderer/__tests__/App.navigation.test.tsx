@@ -13,6 +13,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   setActiveThreadId: vi.fn(async () => {}),
   createThread: vi.fn(async () => ({ id: "new-thread" })),
+  createAgent: vi.fn(async () => ({
+    id: "new-bot",
+    name: "New bot",
+    description: "Checks arithmetic",
+    prompt: "Check arithmetic carefully.",
+    icon: "🤖",
+    accent: "blue",
+    builtIn: false,
+    provider: "codex",
+    model: "gpt-5.6-sol",
+    mode: "default",
+    cwd: "/bot-workspace",
+  })),
   updateFolder: vi.fn(async () => {}),
   updateThread: vi.fn(async () => {}),
   refreshThreads: vi.fn(async () => {}),
@@ -90,6 +103,7 @@ vi.mock("../hooks/useAgents", () => ({
       },
     ],
     save: vi.fn(),
+    create: mocks.createAgent,
     remove: vi.fn(),
   }),
 }));
@@ -195,6 +209,7 @@ vi.mock("@stratosapp/ui", () => {
       onThreadClick: (id: string) => void;
       onCreateThreadInFolder: (id: string) => void;
       onToggleSidebar: () => void;
+      onCreateAgent: () => void;
     }) => (
       <nav>
         <button onClick={() => props.onAgentClick("penny")}>View Penny</button>
@@ -205,10 +220,32 @@ vi.mock("@stratosapp/ui", () => {
           Folder plus
         </button>
         <button onClick={props.onToggleSidebar}>Collapse sidebar</button>
+        <button onClick={props.onCreateAgent}>New bot</button>
       </nav>
     ),
     AgentOverview: () => <div>Penny overview</div>,
-    AgentEditor: () => <div>Agent editor</div>,
+    AgentEditor: (props: {
+      onSave: (
+        definition: unknown,
+        options: { startChat: boolean },
+      ) => Promise<void>;
+    }) => (
+      <button
+        onClick={() =>
+          props.onSave(
+            {
+              id: "draft",
+              name: "New bot",
+              description: "Checks arithmetic",
+              prompt: "Check arithmetic carefully.",
+            },
+            { startChat: true },
+          )
+        }
+      >
+        Create and start chat
+      </button>
+    ),
     ChatView: forwardRef(function MockChatView() {
       return <div>Chat view</div>;
     }),
@@ -354,6 +391,41 @@ describe("App navigation from agent screens", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(screen.getByTestId("composer")).toBe(composer);
     expect(mocks.createThread).not.toHaveBeenCalled();
+  });
+
+  it("creates and opens a bot using the saved defaults before the roster refreshes", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "New bot" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create and start chat" }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.createAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "New bot",
+          prompt: "Check arithmetic carefully.",
+        }),
+      );
+      expect(mocks.createThread).toHaveBeenCalledWith(
+        "New chat",
+        undefined,
+        "/bot-workspace",
+        "codex",
+      );
+      expect(mocks.updateThread).toHaveBeenCalledWith(
+        "new-thread",
+        expect.objectContaining({
+          agentId: "new-bot",
+          model: "gpt-5.6-sol",
+          mode: "default",
+        }),
+      );
+      expect(mocks.setActiveThreadId).toHaveBeenCalledWith("new-thread");
+      expect(
+        screen.queryByRole("button", { name: "Create and start chat" }),
+      ).toBeNull();
+    });
   });
 
   it("loads a saved design and keeps it when saving another design fails", async () => {

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS } from "../common/ipc-channels";
 import type {
   AgentDefinition,
+  CreateAgentInput,
   AgentMode,
   ContextUsage,
   Folder,
@@ -720,6 +721,9 @@ const api = {
 
   agentsGet: (id: string): Promise<AgentDefinition | null> =>
     ipcRenderer.invoke(IPC_CHANNELS.AGENTS_GET, id),
+
+  agentsCreate: (input: CreateAgentInput): Promise<AgentDefinition> =>
+    ipcRenderer.invoke(IPC_CHANNELS.AGENTS_CREATE, input),
 
   agentsSave: (def: AgentDefinition): Promise<AgentDefinition> =>
     ipcRenderer.invoke(IPC_CHANNELS.AGENTS_SAVE, def),

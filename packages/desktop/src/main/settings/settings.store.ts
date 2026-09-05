@@ -73,10 +73,14 @@ export interface AppSettings {
 export const DEFAULT_OPENCODE_MODEL_ALLOWLIST = ["anthropic", "openai"];
 
 const STORE_FILE = "app-settings.json";
-const GLOBAL_CONFIG_DIR = join(homedir(), ".stratos");
+// Allow an isolated development/test profile without changing provider login
+// discovery (which still uses the real home directory).
+function getConfigDir(): string {
+  return process.env.STRATOS_SETTINGS_DIR || join(homedir(), ".stratos");
+}
 
 function getStorePath(): string {
-  return join(GLOBAL_CONFIG_DIR, STORE_FILE);
+  return join(getConfigDir(), STORE_FILE);
 }
 
 function getDefaults(): AppSettings {
@@ -101,8 +105,9 @@ export function loadSettings(): AppSettings {
 }
 
 export function saveSettings(settings: AppSettings): void {
-  if (!existsSync(GLOBAL_CONFIG_DIR)) {
-    mkdirSync(GLOBAL_CONFIG_DIR, { recursive: true });
+  const configDir = getConfigDir();
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
   }
   writeFileSync(getStorePath(), JSON.stringify(settings, null, 2), "utf-8");
 }

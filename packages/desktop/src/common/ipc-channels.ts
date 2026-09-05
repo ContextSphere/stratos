@@ -187,6 +187,7 @@ export const IPC_CHANNELS = {
   // Agents
   AGENTS_LIST: "agents:list",
   AGENTS_GET: "agents:get",
+  AGENTS_CREATE: "agents:create",
   AGENTS_SAVE: "agents:save",
   AGENTS_DELETE: "agents:delete",
   AGENTS_CHANGED: "agents:changed",

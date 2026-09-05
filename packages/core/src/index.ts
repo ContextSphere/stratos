@@ -44,6 +44,7 @@ export type {
   AgentMcpServer,
   AgentTelegramBinding,
   AgentValidationError,
+  CreateAgentInput,
 } from "./types/agent";
 export {
   AGENT_ACCENTS,
@@ -65,6 +66,8 @@ export {
 } from "./storage/agents.store";
 export type { AgentSeed } from "./storage/agent-seeds";
 export { AGENT_SEEDS } from "./storage/agent-seeds";
+export { AgentService } from "./agents/agent-service";
+export type { AgentServiceOptions } from "./agents/agent-service";
 
 // Providers
 export type {

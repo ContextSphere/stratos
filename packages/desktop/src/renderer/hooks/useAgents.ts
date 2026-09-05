@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import type { AgentDefinition } from "@stratosapp/core";
+import type { AgentDefinition, CreateAgentInput } from "@stratosapp/core";
 
 interface UseAgentsReturn {
   agents: AgentDefinition[];
   refresh: () => Promise<void>;
+  create: (input: CreateAgentInput) => Promise<AgentDefinition>;
   save: (def: AgentDefinition) => Promise<AgentDefinition | null>;
   remove: (id: string) => Promise<boolean>;
   get: (id: string) => Promise<AgentDefinition | null>;
@@ -12,7 +13,7 @@ interface UseAgentsReturn {
 /**
  * Loads agent definitions and keeps them in sync with the main process.
  *
- * The `agentsList`/`agentsGet`/`agentsSave`/`agentsDelete`/`onAgentsChanged`
+ * The `agentsList`/`agentsGet`/`agentsCreate`/`agentsSave`/`agentsDelete`/`onAgentsChanged`
  * preload methods are owned by a parallel workstream and called defensively
  * (`?.()`) with a `[]` fallback so the app still runs if they land after
  * this hook does.
@@ -32,6 +33,18 @@ export function useAgents(): UseAgentsReturn {
     });
     return cleanup;
   }, [refresh]);
+
+  const create = useCallback(
+    async (input: CreateAgentInput) => {
+      if (!window.api.agentsCreate) {
+        throw new Error("Bot creation is unavailable. Please restart Stratos.");
+      }
+      const created = await window.api.agentsCreate(input);
+      await refresh();
+      return created;
+    },
+    [refresh],
+  );
 
   const save = useCallback(
     async (def: AgentDefinition) => {
@@ -55,5 +68,5 @@ export function useAgents(): UseAgentsReturn {
     return (await window.api.agentsGet?.(id)) ?? null;
   }, []);
 
-  return { agents, refresh, save, remove, get };
+  return { agents, refresh, create, save, remove, get };
 }

@@ -72,7 +72,7 @@ export function AgentOverview({
       <div className="flex-shrink-0 flex items-center justify-between px-6 border-b border-[var(--border)] py-2.5">
         <div className="flex min-w-0 items-center gap-1.5 text-[13px] text-[var(--text-secondary)]">
           <>
-            <span className="truncate">Agents</span>
+            <span className="truncate">Bots</span>
             <span aria-hidden="true" className="text-[var(--text-faint)]">
               /
             </span>
@@ -224,9 +224,7 @@ export function AgentOverview({
 
         {/* Configuration */}
         <div>
-          <h2
-            className="mb-1 border-b border-[var(--border)] pb-2 text-[13px] font-medium text-[var(--text-secondary)]"
-          >
+          <h2 className="mb-1 border-b border-[var(--border)] pb-2 text-[13px] font-medium text-[var(--text-secondary)]">
             Configuration
           </h2>
           <dl className="grid grid-cols-[130px_1fr] text-[13px]">
@@ -254,7 +252,7 @@ export function AgentOverview({
                   : "text-[13px] text-[var(--text-secondary)]"
               }`}
             >
-              {agent.cwd ?? "Uses the last folder this agent ran in"}
+              {agent.cwd ?? "Uses the last folder this bot ran in"}
             </dd>
 
             <dt className="border-b border-[var(--border)] py-2 text-[var(--text-muted)]">

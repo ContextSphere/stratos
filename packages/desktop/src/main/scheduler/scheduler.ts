@@ -377,7 +377,10 @@ export class SchedulerManager {
 
   /** Watch scheduled-prompts.json for external changes (e.g. from CLI). */
   private watchStoreFile(): void {
-    const storePath = join(homedir(), ".stratos", "scheduled-prompts.json");
+    const storePath = join(
+      process.env.STRATOS_DATA_DIR || join(homedir(), ".stratos"),
+      "scheduled-prompts.json",
+    );
     // Ensure the file exists so we can watch it
     if (!existsSync(storePath)) return;
 
