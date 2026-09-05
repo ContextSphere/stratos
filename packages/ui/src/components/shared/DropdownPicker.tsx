@@ -154,7 +154,7 @@ export default function DropdownPicker({
   const currentItem = items.find((item) => item.value === selectedValue);
 
   return (
-    <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-lg px-2 py-0.5">
+    <div className="dropdown-picker bg-[var(--bg-surface)] border border-[var(--border)] rounded-lg px-2 py-0.5">
       <div className="relative" ref={ref}>
         <button
           onClick={() => setIsOpen(!isOpen)}

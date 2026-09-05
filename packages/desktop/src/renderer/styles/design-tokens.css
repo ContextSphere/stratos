@@ -80,3 +80,44 @@
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.25);
 }
 
+/* Compact native-style controls in the schedule editor. */
+:root[data-design="refined"] .schedule-form input,
+:root[data-design="refined"] .schedule-form textarea {
+  border-color: var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 20px;
+  padding: 7px 10px;
+  color-scheme: dark;
+}
+:root[data-design="refined"][data-theme="light"] .schedule-form input {
+  color-scheme: light;
+}
+:root[data-design="refined"] .schedule-form input:focus,
+:root[data-design="refined"] .schedule-form textarea:focus {
+  border-color: var(--text-muted);
+}
+:root[data-design="refined"] .schedule-form button {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+:root[data-design="refined"] [role="dialog"],
+:root[data-design="refined"] .composer-command-menu {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+:root[data-design="refined"] .schedule-form .dropdown-picker > .relative > button {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--bg-overlay);
+  justify-content: space-between;
+}
+
+:root[data-design="refined"] .schedule-form .dropdown-picker {
+  padding: 0;
+  border-radius: 6px;
+  background: var(--bg-overlay);
+}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useDesignVariant } from "../context/DesignContext";
 
 export interface SlashCommandInfo {
   name: string;
@@ -8,7 +9,7 @@ export interface SlashCommandInfo {
 interface Props {
   commands: SlashCommandInfo[];
   filter: string;
-  position: { bottom: number; left: number };
+  position: { bottom: number | string; left: number };
   onSelect: (command: string) => void;
   onClose: () => void;
 }
@@ -20,6 +21,7 @@ export function SlashCommandMenu({
   onSelect,
   onClose,
 }: Props): React.ReactElement | null {
+  const refined = useDesignVariant() === "refined";
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -54,7 +56,7 @@ export function SlashCommandMenu({
         case "Tab":
           e.preventDefault();
           e.stopPropagation();
-          onSelect(filtered[selectedIndex].name);
+          if (filtered[selectedIndex]) onSelect(filtered[selectedIndex].name);
           break;
         case "Escape":
           e.preventDefault();
@@ -76,7 +78,7 @@ export function SlashCommandMenu({
 
   return (
     <div
-      className="absolute z-50 w-72 max-h-48 overflow-y-auto bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-lg shadow-xl"
+      className={`composer-command-menu absolute z-50 ${refined ? "w-full" : "w-80"} max-w-full max-h-60 overflow-y-auto bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-xl p-1 shadow-lg`}
       style={{ bottom: position.bottom, left: position.left }}
       ref={listRef}
     >
@@ -88,15 +90,30 @@ export function SlashCommandMenu({
             onSelect(cmd.name);
           }}
           onMouseEnter={() => setSelectedIndex(i)}
-          className={`w-full text-left px-3 py-2 text-sm flex items-center gap-3 ${
+          className={`w-full text-left rounded-md px-2.5 py-1.5 text-[13px] leading-5 flex items-center gap-3 ${
             i === selectedIndex
-              ? "bg-[var(--border)] text-gray-200"
-              : "text-gray-400 hover:bg-[var(--border)]"
+              ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+              : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
           }`}
         >
-          <span className="font-mono text-blue-400">{cmd.name}</span>
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4 shrink-0 text-[var(--text-muted)]"
+          >
+            <path d="m12 3 9 5v8l-9 5-9-5V8l9-5Z" />
+            <path d="m3 8 9 5 9-5M12 13v8M7.5 5.5l9 5" />
+          </svg>
+          <span className="min-w-0 font-normal text-[var(--text-primary)] truncate">
+            {cmd.name}
+          </span>
           {cmd.description && (
-            <span className="text-gray-500 text-xs truncate">
+            <span className="min-w-0 text-[var(--text-muted)] text-xs truncate">
               {cmd.description}
             </span>
           )}

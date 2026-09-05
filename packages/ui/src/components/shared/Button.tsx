@@ -1,3 +1,4 @@
+import { useDesignVariant } from "../../context/DesignContext";
 import { ButtonHTMLAttributes, ReactNode } from "react";
 
 export interface ButtonProps extends Omit<
@@ -27,8 +28,9 @@ export function Button({
   children,
   ...props
 }: ButtonProps): React.ReactElement {
+  const refined = useDesignVariant() === "refined";
   const baseStyles =
-    "font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500";
+    "font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--text-muted)] focus:ring-offset-[var(--bg-surface)]";
 
   const variantStyles = {
     primary:
@@ -39,6 +41,12 @@ export function Button({
       "bg-red-600/20 border border-red-500/30 text-red-400 hover:bg-red-600/30",
     icon: "bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed",
   };
+
+  if (refined) {
+    variantStyles.primary =
+      "bg-[var(--text-primary)] text-[var(--bg-main)] hover:opacity-85 disabled:opacity-50 disabled:cursor-not-allowed";
+    variantStyles.icon = `${variantStyles.primary} flex items-center justify-center`;
+  }
 
   const sizeStyles = {
     sm:

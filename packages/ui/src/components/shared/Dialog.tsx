@@ -1,4 +1,5 @@
-import { ReactNode, useCallback, useEffect } from "react";
+import { useDesignVariant } from "../../context/DesignContext";
+import { ReactNode, useCallback, useEffect, useId } from "react";
 
 export interface DialogProps {
   isOpen: boolean;
@@ -36,6 +37,8 @@ export function Dialog({
   maxWidth = "md",
   children,
 }: DialogProps): React.ReactElement | null {
+  const refined = useDesignVariant() === "refined";
+  const titleId = useId();
   const maxWidthStyles = {
     sm: "max-w-sm",
     md: "max-w-md",
@@ -61,30 +64,43 @@ export function Dialog({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center ${refined ? "bg-black/40" : "bg-black/60 backdrop-blur-sm"}`}
+    >
       <div
-        className={`no-drag bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-2xl shadow-2xl w-full ${maxWidthStyles[maxWidth]} mx-4 flex flex-col max-h-[90vh]`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className={`no-drag bg-[var(--bg-surface)] border border-[var(--border-mid)] ${refined ? "rounded-xl shadow-xl" : "rounded-2xl shadow-2xl"} w-full ${maxWidthStyles[maxWidth]} mx-4 flex flex-col max-h-[90vh]`}
       >
         {/* Header */}
-        <div className="flex-shrink-0 flex items-center justify-between px-6 pt-6 pb-2">
+        <div
+          className={`flex-shrink-0 flex items-start justify-between ${refined ? "px-5 pt-5 pb-1" : "px-6 pt-6 pb-2"}`}
+        >
           <div className="flex items-center gap-3">
             {icon && (
               <div
-                className={`w-8 h-8 rounded-lg bg-gradient-to-br ${iconGradient} flex items-center justify-center`}
+                className={`${refined ? "mt-0.5 text-[var(--text-muted)] [&_svg]:text-current" : `w-8 h-8 rounded-lg bg-gradient-to-br ${iconGradient}`} flex items-center justify-center`}
               >
                 {icon}
               </div>
             )}
             <div>
-              <h2 className="text-base font-semibold text-[var(--text-primary)]">
+              <h2
+                id={titleId}
+                className={`${refined ? "text-[15px] leading-5 tracking-[-0.015em]" : "text-base"} font-semibold text-[var(--text-primary)]`}
+              >
                 {title}
               </h2>
               {subtitle && (
-                <p className="text-xs text-[var(--text-muted)]">{subtitle}</p>
+                <p className="text-xs leading-5 mt-0.5 text-[var(--text-muted)]">
+                  {subtitle}
+                </p>
               )}
             </div>
           </div>
           <button
+            aria-label="Close dialog"
             onClick={onClose}
             className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors p-1"
           >
@@ -100,7 +116,11 @@ export function Dialog({
         </div>
 
         {/* Body */}
-        <div className="px-6 pb-6 overflow-y-auto">{children}</div>
+        <div
+          className={`${refined ? "px-5 pb-5" : "px-6 pb-6"} overflow-y-auto`}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

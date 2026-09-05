@@ -326,7 +326,7 @@ export function ScheduledPromptsDialog({
         </svg>
       }
       iconGradient="from-violet-500 to-blue-600"
-      maxWidth="lg"
+      maxWidth="md"
     >
       <DialogBody>
         {mode === "list" ? (
@@ -382,9 +382,14 @@ function ScheduleList({
   return (
     <div>
       {prompts.length === 0 ? (
-        <p className="text-sm text-[var(--text-muted)] py-6 text-center">
-          No scheduled prompts yet.
-        </p>
+        <div className="py-5">
+          <p className="text-sm font-medium text-[var(--text-primary)]">
+            No scheduled prompts yet
+          </p>
+          <p className="mt-1 max-w-xs text-xs leading-5 text-[var(--text-muted)]">
+            Run a prompt once, or set it to repeat.
+          </p>
+        </div>
       ) : (
         <div className="space-y-2 mb-4 max-h-[400px] overflow-y-auto">
           {prompts.map((p) => (
@@ -396,12 +401,14 @@ function ScheduleList({
               <button
                 onClick={() => onToggle(p.id, !p.enabled)}
                 className={`mt-0.5 w-8 h-[18px] rounded-full flex-shrink-0 transition-colors relative ${
-                  p.enabled ? "bg-blue-500" : "bg-[var(--border-mid)]"
+                  p.enabled
+                    ? "bg-[var(--text-primary)]"
+                    : "bg-[var(--border-mid)]"
                 }`}
                 title={p.enabled ? "Disable" : "Enable"}
               >
                 <div
-                  className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${
+                  className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-[var(--bg-main)] transition-transform ${
                     p.enabled ? "left-[16px]" : "left-[2px]"
                   }`}
                 />
@@ -519,9 +526,11 @@ function ScheduleList({
           ))}
         </div>
       )}
-      <Button variant="primary" size="sm" onClick={onNew}>
-        New Schedule
-      </Button>
+      <div className="flex justify-end border-t border-[var(--border)] pt-4">
+        <Button variant="primary" size="sm" onClick={onNew}>
+          New Schedule
+        </Button>
+      </div>
     </div>
   );
 }
@@ -550,17 +559,19 @@ function ScheduleForm({
   isEdit: boolean;
 }) {
   return (
-    <div className="space-y-4">
+    <div className="schedule-form grid grid-cols-1 gap-3 sm:grid-cols-2">
       {/* Name */}
-      <Input
-        label="Name"
-        value={form.name}
-        onChange={(e) => onChange({ name: e.target.value })}
-        placeholder="e.g. Daily code review"
-      />
+      <div className="sm:col-span-2">
+        <Input
+          label="Name"
+          value={form.name}
+          onChange={(e) => onChange({ name: e.target.value })}
+          placeholder="e.g. Daily code review"
+        />
+      </div>
 
       {/* Prompt */}
-      <div>
+      <div className="sm:col-span-2">
         <label className="block text-xs text-[var(--text-muted)] mb-1.5">
           Prompt
         </label>
@@ -569,12 +580,12 @@ function ScheduleForm({
           onChange={(e) => onChange({ prompt: e.target.value })}
           placeholder="What should the agent do?"
           rows={3}
-          className="w-full bg-[var(--bg-overlay)] border border-[var(--border-mid)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus:outline-none focus:border-blue-500 transition-colors resize-y"
+          className="w-full bg-[var(--bg-overlay)] border border-[var(--border-mid)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus:outline-none focus:border-[var(--text-muted)] transition-colors resize-y"
         />
       </div>
 
       {/* Schedule type toggle */}
-      <div>
+      <div className="sm:col-span-2">
         <label className="block text-xs text-[var(--text-muted)] mb-1.5">
           Run
         </label>
@@ -583,7 +594,7 @@ function ScheduleForm({
             onClick={() => onChange({ scheduleType: "recurring" })}
             className={`flex-1 px-3 py-2 text-sm transition-colors ${
               form.scheduleType === "recurring"
-                ? "bg-blue-500/20 text-blue-400 font-medium"
+                ? "bg-[var(--bg-hover)] text-[var(--text-primary)] font-medium"
                 : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
             }`}
           >
@@ -593,7 +604,7 @@ function ScheduleForm({
             onClick={() => onChange({ scheduleType: "once" })}
             className={`flex-1 px-3 py-2 text-sm transition-colors border-l border-[var(--border-mid)] ${
               form.scheduleType === "once"
-                ? "bg-blue-500/20 text-blue-400 font-medium"
+                ? "bg-[var(--bg-hover)] text-[var(--text-primary)] font-medium"
                 : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
             }`}
           >
@@ -604,7 +615,7 @@ function ScheduleForm({
 
       {/* Schedule details */}
       {form.scheduleType === "once" ? (
-        <div className="flex gap-2">
+        <div className="flex gap-3 sm:col-span-2">
           <div className="flex-1">
             <Input
               label="Date"
@@ -633,7 +644,7 @@ function ScheduleForm({
           </div>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3 sm:col-span-2">
           <div>
             <label className="block text-xs text-[var(--text-muted)] mb-1.5">
               Frequency
@@ -648,7 +659,9 @@ function ScheduleForm({
           </div>
           {(form.interval === "every-day" ||
             form.interval === "every-week") && (
-            <div className="flex gap-2">
+            <div
+              className={`flex gap-3 ${form.interval === "every-week" ? "col-span-2" : ""}`}
+            >
               {form.interval === "every-week" && (
                 <div className="flex-1">
                   <label className="block text-xs text-[var(--text-muted)] mb-1.5">
@@ -685,7 +698,7 @@ function ScheduleForm({
       )}
 
       {/* Folder */}
-      <div>
+      <div className="sm:col-span-2">
         <label className="block text-xs text-[var(--text-muted)] mb-1.5">
           Folder
         </label>
@@ -702,55 +715,64 @@ function ScheduleForm({
         )}
       </div>
 
-      {/* Provider */}
-      <div>
-        <label className="block text-xs text-[var(--text-muted)] mb-1.5">
-          Provider
-        </label>
-        <DropdownPicker
-          items={PROVIDER_OPTIONS}
-          selectedValue={form.provider}
-          onSelect={(val) =>
-            onChange({ provider: val as ProviderType, model: "" })
-          }
-        />
-      </div>
+      <details className="sm:col-span-2 border-t border-[var(--border)] pt-3">
+        <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">
+          Agent &amp; notifications
+        </summary>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {/* Provider */}
+          <div>
+            <label className="block text-xs text-[var(--text-muted)] mb-1.5">
+              Provider
+            </label>
+            <DropdownPicker
+              items={PROVIDER_OPTIONS}
+              selectedValue={form.provider}
+              onSelect={(val) =>
+                onChange({ provider: val as ProviderType, model: "" })
+              }
+            />
+          </div>
 
-      {/* Model */}
-      {modelItems.length > 0 && (
-        <div>
-          <label className="block text-xs text-[var(--text-muted)] mb-1.5">
-            Model
-          </label>
-          <DropdownPicker
-            items={[{ value: "", label: "Default" }, ...modelItems]}
-            selectedValue={form.model}
-            onSelect={(val) => onChange({ model: val })}
-          />
+          {/* Model */}
+          {modelItems.length > 0 && (
+            <div>
+              <label className="block text-xs text-[var(--text-muted)] mb-1.5">
+                Model
+              </label>
+              <DropdownPicker
+                items={[{ value: "", label: "Default" }, ...modelItems]}
+                selectedValue={form.model}
+                onSelect={(val) => onChange({ model: val })}
+              />
+            </div>
+          )}
+
+          {/* Notify */}
+          <div className="sm:col-span-2">
+            <label className="block text-xs text-[var(--text-muted)] mb-1.5">
+              Notify on completion
+            </label>
+            <DropdownPicker
+              items={NOTIFY_OPTIONS}
+              selectedValue={form.notify}
+              onSelect={(val) =>
+                onChange({ notify: val as FormState["notify"] })
+              }
+            />
+            <p className="text-[11px] text-[var(--text-faint)] mt-1.5">
+              When set, the Manager wakes up after the run and pings you on
+              WhatsApp. Reply on WhatsApp to ask follow-ups.
+            </p>
+          </div>
         </div>
-      )}
-
-      {/* Notify */}
-      <div>
-        <label className="block text-xs text-[var(--text-muted)] mb-1.5">
-          Notify on completion
-        </label>
-        <DropdownPicker
-          items={NOTIFY_OPTIONS}
-          selectedValue={form.notify}
-          onSelect={(val) => onChange({ notify: val as FormState["notify"] })}
-        />
-        <p className="text-[11px] text-[var(--text-faint)] mt-1.5">
-          When set, the Manager wakes up after the run and pings you on
-          WhatsApp. Reply on WhatsApp to ask follow-ups.
-        </p>
-      </div>
+      </details>
 
       {/* Error */}
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="sm:col-span-2 text-xs text-red-400">{error}</p>}
 
       {/* Actions */}
-      <div className="flex gap-2 pt-2">
+      <div className="sm:col-span-2 mt-1 flex flex-row-reverse gap-2 border-t border-[var(--border)] pt-4">
         <Button variant="primary" size="sm" onClick={onSave}>
           {isEdit ? "Save Changes" : "Create Schedule"}
         </Button>
