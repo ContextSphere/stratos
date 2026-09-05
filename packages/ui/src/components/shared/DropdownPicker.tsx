@@ -14,7 +14,17 @@ interface DropdownPickerProps {
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   minWidth?: string;
+  /**
+   * Show a type-to-filter box. Defaults to auto: enabled once the list is long
+   * enough that blind-scrolling a ~5-row viewport becomes the only way to find
+   * an entry (provider model lists routinely exceed this).
+   */
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }
+
+/** Lists longer than this get a filter box when `searchable` is unset. */
+const SEARCHABLE_ITEM_THRESHOLD = 8;
 
 export default function DropdownPicker({
   items,
@@ -23,6 +33,8 @@ export default function DropdownPicker({
   isOpen: controlledIsOpen,
   onOpenChange,
   minWidth = "min-w-36",
+  searchable,
+  searchPlaceholder = "Filter…",
 }: DropdownPickerProps): React.ReactElement {
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   const isOpen = controlledIsOpen ?? internalIsOpen;
@@ -32,8 +44,22 @@ export default function DropdownPicker({
   };
 
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const showSearch = searchable ?? items.length > SEARCHABLE_ITEM_THRESHOLD;
+  const trimmedQuery = query.trim().toLowerCase();
+  // Match on the human label *and* the raw value so users can type either the
+  // display name ("GPT-6 Astra") or the model id ("gpt-6-astra").
+  const visibleItems = trimmedQuery
+    ? items.filter(
+        (item) =>
+          item.label.toLowerCase().includes(trimmedQuery) ||
+          item.value.toLowerCase().includes(trimmedQuery),
+      )
+    : items;
 
   // Sync controlled open state
   useEffect(() => {
@@ -42,13 +68,31 @@ export default function DropdownPicker({
     }
   }, [controlledIsOpen]);
 
-  // Sync highlight to current selection when opening
+  // Latest items without retriggering the open effect: `items` is rebuilt by
+  // callers on every render, so depending on it directly would re-run the
+  // effect continuously and snap the highlight back off the user's selection.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  // Sync highlight to current selection when opening; clear the filter on
+  // close (clearing on open would race the query-reset effect below and
+  // clobber the restored highlight).
   useEffect(() => {
-    if (isOpen) {
-      const idx = items.findIndex((item) => item.value === selectedValue);
-      setHighlightedIndex(idx >= 0 ? idx : 0);
+    if (!isOpen) {
+      setQuery("");
+      return;
     }
-  }, [isOpen, items, selectedValue]);
+    const idx = itemsRef.current.findIndex(
+      (item) => item.value === selectedValue,
+    );
+    setHighlightedIndex(idx >= 0 ? idx : 0);
+    searchRef.current?.focus();
+  }, [isOpen, selectedValue]);
+
+  // Filtering reorders the list, so any prior highlight index is meaningless.
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [query]);
 
   // Click-outside to close
   useEffect(() => {
@@ -69,17 +113,24 @@ export default function DropdownPicker({
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
-          setHighlightedIndex((i) => (i + 1) % items.length);
+          if (visibleItems.length === 0) return;
+          setHighlightedIndex((i) => (i + 1) % visibleItems.length);
           break;
         case "ArrowUp":
           e.preventDefault();
-          setHighlightedIndex((i) => (i - 1 + items.length) % items.length);
+          if (visibleItems.length === 0) return;
+          setHighlightedIndex(
+            (i) => (i - 1 + visibleItems.length) % visibleItems.length,
+          );
           break;
-        case "Enter":
+        case "Enter": {
           e.preventDefault();
-          onSelect(items[highlightedIndex].value);
+          const picked = visibleItems[highlightedIndex];
+          if (!picked) return;
+          onSelect(picked.value);
           setIsOpen(false);
           break;
+        }
         case "Escape":
           e.preventDefault();
           setIsOpen(false);
@@ -89,7 +140,7 @@ export default function DropdownPicker({
     document.addEventListener("keydown", handler, { capture: true });
     return () =>
       document.removeEventListener("keydown", handler, { capture: true });
-  }, [isOpen, items, highlightedIndex, onSelect]);
+  }, [isOpen, visibleItems, highlightedIndex, onSelect]);
 
   // Auto-scroll highlighted item into view during keyboard navigation
   useEffect(() => {
@@ -127,32 +178,49 @@ export default function DropdownPicker({
 
         {isOpen && (
           <div
-            ref={listRef}
-            className={`absolute bottom-full mb-1 left-0 z-50 ${minWidth} bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-lg shadow-xl overflow-y-auto max-h-64`}
+            className={`absolute bottom-full mb-1 left-0 z-50 ${minWidth} bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-lg shadow-xl overflow-hidden`}
           >
-            {items.map((item, i) => (
-              <button
-                key={item.value}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onSelect(item.value);
-                  setIsOpen(false);
-                }}
-                onMouseEnter={() => setHighlightedIndex(i)}
-                className={`w-full text-left px-3 py-2 text-xs flex flex-col gap-0.5 ${
-                  i === highlightedIndex
-                    ? "bg-[var(--border)] text-[var(--text-primary)]"
-                    : "text-[var(--text-control)] hover:bg-[var(--border)]"
-                }`}
-              >
-                <span>{item.label}</span>
-                {item.description && (
-                  <span className="text-[var(--text-muted)] text-[11px]">
-                    {item.description}
-                  </span>
-                )}
-              </button>
-            ))}
+            {showSearch && (
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
+                className="w-full bg-transparent border-b border-[var(--border)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
+              />
+            )}
+            <div ref={listRef} className="overflow-y-auto max-h-64">
+              {visibleItems.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-[var(--text-muted)]">
+                  No matches
+                </div>
+              ) : (
+                visibleItems.map((item, i) => (
+                  <button
+                    key={item.value}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onSelect(item.value);
+                      setIsOpen(false);
+                    }}
+                    onMouseEnter={() => setHighlightedIndex(i)}
+                    className={`w-full text-left px-3 py-2 text-xs flex flex-col gap-0.5 ${
+                      i === highlightedIndex
+                        ? "bg-[var(--border)] text-[var(--text-primary)]"
+                        : "text-[var(--text-control)] hover:bg-[var(--border)]"
+                    }`}
+                  >
+                    <span>{item.label}</span>
+                    {item.description && (
+                      <span className="text-[var(--text-muted)] text-[11px]">
+                        {item.description}
+                      </span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
           </div>
         )}
       </div>
