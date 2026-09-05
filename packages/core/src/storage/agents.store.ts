@@ -17,7 +17,9 @@ import {
 import { AGENT_SEEDS } from "./agent-seeds";
 
 export function getAgentsDir(): string {
-  return join(homedir(), ".stratos", "agents");
+  return (
+    process.env.STRATOS_AGENTS_DIR || join(homedir(), ".stratos", "agents")
+  );
 }
 
 function getAgentPath(id: string): string {

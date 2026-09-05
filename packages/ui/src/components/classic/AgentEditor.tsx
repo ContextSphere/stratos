@@ -41,11 +41,17 @@ interface McpServerRow {
   type: "http" | "sse" | "stdio";
   url: string;
   command: string;
+  /** Retained because this compact editor does not expose process args/env. */
+  original?: AgentMcpServer;
 }
 
 export interface Props {
   agent?: AgentDefinition | null;
-  onSave: (agent: AgentDefinition) => void;
+  /** Resolves only after persistence so the editor retains its draft after an error. */
+  onSave: (
+    agent: AgentDefinition,
+    options: { startChat: boolean },
+  ) => void | Promise<void>;
   onCancel: () => void;
   onDelete?: (agentId: string) => void;
   /**
@@ -93,6 +99,7 @@ export function AgentEditor({
   onFetchModels,
 }: Props): React.ReactElement {
   const isBuiltIn = agent?.builtIn ?? false;
+  const isNew = !agent;
 
   const [name, setName] = useState(agent?.name ?? "");
   const [description, setDescription] = useState(agent?.description ?? "");
@@ -163,8 +170,15 @@ export function AgentEditor({
       type: server.type,
       url: server.url ?? "",
       command: server.command ?? "",
+      original: server,
     })),
   );
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [nameTouched, setNameTouched] = useState(false);
+  const [instructionsTouched, setInstructionsTouched] = useState(false);
+  const [hasAttemptedSave, setHasAttemptedSave] = useState(false);
 
   const id = agent?.id ?? slugify(name);
 
@@ -174,10 +188,11 @@ export function AgentEditor({
       const trimmedName = row.name.trim();
       if (!trimmedName) continue;
       mcpServers[trimmedName] = {
+        ...row.original,
         type: row.type,
         ...(row.type === "stdio"
-          ? { command: row.command.trim() || undefined }
-          : { url: row.url.trim() || undefined }),
+          ? { command: row.command.trim() || undefined, url: undefined }
+          : { url: row.url.trim() || undefined, command: undefined }),
       };
     }
 
@@ -190,6 +205,7 @@ export function AgentEditor({
           : undefined;
 
     return {
+      ...(agent ?? {}),
       id,
       name,
       description,
@@ -220,7 +236,7 @@ export function AgentEditor({
     promptText,
     promptFiles,
     mcpRows,
-    agent?.createdAt,
+    agent,
   ]);
 
   const errors = useMemo(() => validateAgentDefinition(candidate), [candidate]);
@@ -234,7 +250,13 @@ export function AgentEditor({
   const accentErrors = errorsForField("accent");
   const mcpErrors = errorsForField("mcpServers");
 
-  const canSave = !isBuiltIn && errors.length === 0;
+  const hasInstructions =
+    promptMode === "inline"
+      ? Boolean(promptText.trim())
+      : promptFiles.some((path) => Boolean(path.trim()));
+  const instructionsError =
+    isNew && !hasInstructions ? "Operational instructions are required." : null;
+  const canSave = !isBuiltIn && errors.length === 0 && !instructionsError;
 
   const updateMcpRow = (key: string, patch: Partial<McpServerRow>) => {
     setMcpRows((rows) =>
@@ -242,39 +264,66 @@ export function AgentEditor({
     );
   };
 
+  const save = async (startChat: boolean) => {
+    setHasAttemptedSave(true);
+    if (!canSave || isSaving) return;
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await onSave(candidate, { startChat });
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Could not save this bot.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full overflow-y-auto bg-[var(--bg-main)]">
       <div className="flex-1 px-6 py-6 max-w-2xl w-full mx-auto space-y-6">
         <h1 className="text-xl font-semibold text-[var(--text-primary)]">
-          {agent ? `Edit ${agent.name || "agent"}` : "New agent"}
+          {agent ? `Edit ${agent.name || "bot"}` : "Create a bot"}
         </h1>
+        {isNew && (
+          <p className="-mt-4 text-sm text-[var(--text-secondary)]">
+            Give your bot a name and clear instructions. You can refine its
+            setup later.
+          </p>
+        )}
 
         {isBuiltIn && (
           <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-3 text-sm text-[var(--text-muted)]">
-            This is a built-in agent and can&apos;t be edited.
+            This is a built-in bot and can&apos;t be edited.
           </div>
         )}
 
         {/* Name */}
         <div>
-          <label className="text-xs font-medium text-[var(--text-secondary)]">
+          <label
+            htmlFor="agent-name"
+            className="text-xs font-medium text-[var(--text-secondary)]"
+          >
             Name
           </label>
           <input
+            id="agent-name"
             type="text"
             value={name}
             disabled={isBuiltIn}
             onChange={(e) => setName(e.target.value)}
+            onBlur={() => setNameTouched(true)}
             className={fieldLabel("")}
             placeholder="e.g. Release Manager"
           />
-          {nameErrors.length > 0 && (
+          {nameErrors.length > 0 && (nameTouched || hasAttemptedSave) && (
             <p className="text-xs text-red-400 mt-1">{nameErrors.join(", ")}</p>
           )}
         </div>
 
         {/* Description */}
-        <div>
+        <div hidden={isNew && !advancedOpen}>
           <label className="text-xs font-medium text-[var(--text-secondary)]">
             Description
           </label>
@@ -289,7 +338,7 @@ export function AgentEditor({
         </div>
 
         {/* Icon + Accent */}
-        <div className="flex gap-6">
+        <div hidden={isNew && !advancedOpen} className="flex gap-6">
           <div>
             <label className="text-xs font-medium text-[var(--text-secondary)]">
               Icon
@@ -339,12 +388,16 @@ export function AgentEditor({
         </div>
 
         {/* Provider / Model / Mode */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-medium text-[var(--text-secondary)]">
+            <label
+              htmlFor="agent-provider"
+              className="text-xs font-medium text-[var(--text-secondary)]"
+            >
               Provider
             </label>
             <select
+              id="agent-provider"
               value={provider}
               disabled={isBuiltIn}
               onChange={(e) => setProvider(e.target.value as ProviderType | "")}
@@ -359,10 +412,14 @@ export function AgentEditor({
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-[var(--text-secondary)]">
+            <label
+              htmlFor="agent-model"
+              className="text-xs font-medium text-[var(--text-secondary)]"
+            >
               Model
             </label>
             <select
+              id="agent-model"
               value={model}
               disabled={isBuiltIn}
               onChange={(e) => setModel(e.target.value)}
@@ -378,7 +435,7 @@ export function AgentEditor({
               ))}
             </select>
           </div>
-          <div>
+          <div hidden={isNew && !advancedOpen}>
             <label className="text-xs font-medium text-[var(--text-secondary)]">
               Mode
             </label>
@@ -399,7 +456,7 @@ export function AgentEditor({
         </div>
 
         {/* Working directory */}
-        <div>
+        <div hidden={isNew && !advancedOpen}>
           <label className="text-xs font-medium text-[var(--text-secondary)]">
             Working directory
           </label>
@@ -416,8 +473,11 @@ export function AgentEditor({
         {/* Prompt */}
         <div>
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-[var(--text-secondary)]">
-              Prompt
+            <label
+              htmlFor="agent-instructions"
+              className="text-xs font-medium text-[var(--text-secondary)]"
+            >
+              {isNew ? "Operational instructions" : "Prompt"}
             </label>
             <div className="flex items-center gap-1 text-xs">
               <button
@@ -449,12 +509,14 @@ export function AgentEditor({
 
           {promptMode === "inline" ? (
             <textarea
+              id="agent-instructions"
               value={promptText}
               disabled={isBuiltIn}
               onChange={(e) => setPromptText(e.target.value)}
+              onBlur={() => setInstructionsTouched(true)}
               rows={5}
               className={fieldLabel("resize-none font-mono text-xs")}
-              placeholder="Instructions for this agent..."
+              placeholder="Operational instructions for this bot..."
             />
           ) : (
             <div className="mt-1 space-y-1.5">
@@ -497,10 +559,13 @@ export function AgentEditor({
               )}
             </div>
           )}
+          {instructionsError && (instructionsTouched || hasAttemptedSave) && (
+            <p className="text-xs text-red-400 mt-1">{instructionsError}</p>
+          )}
         </div>
 
         {/* MCP servers */}
-        <div>
+        <div hidden={isNew && !advancedOpen}>
           <label className="text-xs font-medium text-[var(--text-secondary)]">
             MCP servers
           </label>
@@ -597,6 +662,19 @@ export function AgentEditor({
           )}
         </div>
 
+        {isNew && (
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((open) => !open)}
+            aria-expanded={advancedOpen}
+            className="text-left text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          >
+            {advancedOpen
+              ? "Hide advanced configuration"
+              : "Advanced configuration"}
+          </button>
+        )}
+
         {/* Actions */}
         <div className="flex items-center gap-2 pt-2 border-t border-[var(--border)]">
           <button
@@ -609,11 +687,21 @@ export function AgentEditor({
           {!isBuiltIn && (
             <button
               type="button"
-              disabled={!canSave}
-              onClick={() => canSave && onSave(candidate)}
+              disabled={!canSave || isSaving}
+              onClick={() => void save(false)}
               className="px-3 py-1.5 rounded-lg text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
             >
-              Save
+              {isSaving ? "Saving…" : isNew ? "Create" : "Save changes"}
+            </button>
+          )}
+          {!isBuiltIn && isNew && (
+            <button
+              type="button"
+              disabled={!canSave || isSaving}
+              onClick={() => void save(true)}
+              className="px-3 py-1.5 rounded-lg text-sm border border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--bg-surface)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Create and start chat
             </button>
           )}
           {!isBuiltIn && agent && onDelete && (
@@ -622,10 +710,15 @@ export function AgentEditor({
               onClick={() => onDelete(agent.id)}
               className="ml-auto px-3 py-1.5 rounded-lg text-sm text-red-400 hover:bg-red-500/10 transition-colors"
             >
-              Delete
+              Delete bot
             </button>
           )}
         </div>
+        {saveError && (
+          <p role="alert" className="text-xs text-red-400">
+            {saveError}
+          </p>
+        )}
       </div>
     </div>
   );

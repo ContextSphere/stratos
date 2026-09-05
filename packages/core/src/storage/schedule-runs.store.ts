@@ -17,7 +17,10 @@ const STORE_FILE = "schedule-runs.json";
 const MAX_RECORDS = 500;
 
 function getStorePath(): string {
-  const dir = join(homedir(), ".stratos", "manager");
+  const dir = join(
+    process.env.STRATOS_DATA_DIR || join(homedir(), ".stratos"),
+    "manager",
+  );
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return join(dir, STORE_FILE);
 }

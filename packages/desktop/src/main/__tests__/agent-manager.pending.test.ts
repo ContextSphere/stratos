@@ -16,7 +16,12 @@ vi.mock("electron", () => ({
 
 vi.mock("@stratosapp/core", async (importOriginal) => {
   const original = await importOriginal<typeof import("@stratosapp/core")>();
-  return { ...original, ClaudeCodeProvider: vi.fn() };
+  return {
+    ...original,
+    ClaudeCodeProvider: vi.fn(),
+    createProvider: vi.fn(),
+    getAgent: vi.fn(),
+  };
 });
 
 vi.mock("../settings/settings.store", () => ({
@@ -67,6 +72,63 @@ describe("AgentManager — mid-turn messages", () => {
     };
     AgentManager = (await import("../agent-manager")).AgentManager;
   });
+
+  it.each(["chat", "schedule"])(
+    "passes a saved Codex bot's instructions into a new %s session",
+    async (entry) => {
+      const { createProvider, getAgent } = await import("@stratosapp/core");
+      vi.mocked(getAgent).mockReturnValue({
+        id: "math",
+        name: "Math",
+        description: "Arithmetic checks",
+        icon: "🤖",
+        accent: "blue",
+        builtIn: false,
+        prompt:
+          "Begin every answer with Pocket check: and include a cross-check.",
+        model: "gpt-5.6-sol",
+      });
+      // Stop at the provider boundary: the regression is lost configuration,
+      // so this test must not launch a model, tools, or a real conversation.
+      const initialized = new Error("provider configuration captured");
+      const initialize = vi.fn().mockRejectedValue(initialized);
+      vi.mocked(createProvider).mockReturnValue({ initialize } as any);
+      const manager = new AgentManager(mockWindow);
+      manager.storage = {
+        getThread: vi.fn().mockResolvedValue({
+          id: "math-thread",
+          provider: "codex",
+          agentId: "math",
+          cwd: "/tmp",
+        }),
+      };
+      try {
+        const run =
+          entry === "schedule"
+            ? manager.runScheduledPrompt("math-thread", "23 × 17")
+            : manager.runStreamInternal(
+                "math-thread",
+                "23 × 17",
+                undefined,
+                {
+                  origin: "user",
+                  userMessagePresentation: "already-present",
+                },
+                "math-run",
+              );
+        await expect(run).rejects.toBe(initialized);
+        expect(initialize).toHaveBeenCalledWith(
+          expect.objectContaining({
+            systemPrompt:
+              "Begin every answer with Pocket check: and include a cross-check.",
+            model: "gpt-5.6-sol",
+          }),
+        );
+      } finally {
+        manager.dispose();
+      }
+    },
+  );
 
   /** Manager with runStream stubbed so no provider/subprocess is needed. */
   function makeManager() {

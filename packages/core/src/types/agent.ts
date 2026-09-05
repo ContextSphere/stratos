@@ -92,6 +92,21 @@ export interface AgentDefinition {
   updatedAt?: number;
 }
 
+/** Create-only input from the agent editor. The host assigns the saved identity. */
+export interface CreateAgentInput {
+  name: string;
+  description: string;
+  prompt: string | string[];
+  icon?: string;
+  accent?: AgentAccent;
+  provider?: ProviderType;
+  model?: string;
+  mode?: AgentMode;
+  cwd?: string | null;
+  mcpServers?: Record<string, AgentMcpServer>;
+  telegram?: AgentTelegramBinding;
+}
+
 /**
  * The agent a thread belongs to when `Thread.agentId` is absent.
  * Its realization must reproduce today's hard-coded config exactly, so that

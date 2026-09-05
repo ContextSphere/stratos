@@ -182,8 +182,7 @@ export function AgentOverview({
 
             <dt className="text-[var(--text-muted)]">Working directory</dt>
             <dd className="text-[var(--text-primary)] truncate">
-              {agent.cwd ??
-                "Not pinned — uses the last folder this agent ran in"}
+              {agent.cwd ?? "Not pinned — uses the last folder this bot ran in"}
             </dd>
 
             <dt className="text-[var(--text-muted)]">Provider</dt>

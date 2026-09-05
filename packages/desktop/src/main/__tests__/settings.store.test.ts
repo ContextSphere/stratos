@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 
 vi.mock("fs");
@@ -9,10 +9,29 @@ const mockReadFileSync = vi.mocked(readFileSync);
 const mockWriteFileSync = vi.mocked(writeFileSync);
 
 describe("settings.store", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
     mockExistsSync.mockReturnValue(false);
+  });
+
+  it("keeps an isolated preview's reads and writes out of the global settings", async () => {
+    vi.stubEnv("STRATOS_SETTINGS_DIR", "/tmp/stratos-preview-settings");
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ managerEnabled: false }));
+    const { updateSettings } = await import("../settings/settings.store");
+    updateSettings({ theme: "light" });
+    expect(mockReadFileSync).toHaveBeenCalledWith(
+      "/tmp/stratos-preview-settings/app-settings.json",
+      "utf-8",
+    );
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      "/tmp/stratos-preview-settings/app-settings.json",
+      expect.stringContaining('"managerEnabled": false'),
+      "utf-8",
+    );
   });
 
   describe("getProviderSettings", () => {

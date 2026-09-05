@@ -49,11 +49,16 @@ interface McpServerRow {
   env: string;
   initialArgs?: string[];
   initialEnv?: Record<string, string>;
+  original?: AgentMcpServer;
 }
 
 export interface Props {
   agent?: AgentDefinition | null;
-  onSave: (agent: AgentDefinition) => void;
+  /** Resolves only after persistence so the editor retains its draft after an error. */
+  onSave: (
+    agent: AgentDefinition,
+    options: { startChat: boolean },
+  ) => void | Promise<void>;
   onCancel: () => void;
   onDelete?: (agentId: string) => void;
   /**
@@ -127,13 +132,20 @@ function Section({
   title,
   description,
   children,
+  className,
+  hidden,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
+  className?: string;
+  hidden?: boolean;
 }): React.ReactElement {
   return (
-    <section className="border-t border-[var(--border)] pt-4">
+    <section
+      hidden={hidden}
+      className={`border-t border-[var(--border)] pt-4 ${className ?? ""}`}
+    >
       <div className="mb-3">
         <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
           {title}
@@ -174,6 +186,7 @@ export function AgentEditor({
   onFetchModels,
 }: Props): React.ReactElement {
   const isBuiltIn = agent?.builtIn ?? false;
+  const isNew = !agent;
 
   const [name, setName] = useState(agent?.name ?? "");
   const [description, setDescription] = useState(agent?.description ?? "");
@@ -250,8 +263,15 @@ export function AgentEditor({
       env: serializeEnv(server.env),
       initialArgs: server.args,
       initialEnv: server.env,
+      original: server,
     })),
   );
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [nameTouched, setNameTouched] = useState(false);
+  const [instructionsTouched, setInstructionsTouched] = useState(false);
+  const [hasAttemptedSave, setHasAttemptedSave] = useState(false);
 
   const id = agent?.id ?? slugify(name);
 
@@ -263,10 +283,11 @@ export function AgentEditor({
       const args = readArgs(row);
       const env = readEnv(row);
       mcpServers[trimmedName] = {
+        ...row.original,
         type: row.type,
         ...(row.type === "stdio"
-          ? { command: row.command.trim() || undefined }
-          : { url: row.url.trim() || undefined }),
+          ? { command: row.command.trim() || undefined, url: undefined }
+          : { url: row.url.trim() || undefined, command: undefined }),
         ...(args !== undefined ? { args } : {}),
         ...(env !== undefined ? { env } : {}),
       };
@@ -281,6 +302,7 @@ export function AgentEditor({
           : undefined;
 
     return {
+      ...(agent ?? {}),
       id,
       name,
       description,
@@ -293,7 +315,6 @@ export function AgentEditor({
       cwd: cwd.trim() || undefined,
       prompt,
       mcpServers: Object.keys(mcpServers).length ? mcpServers : undefined,
-      telegram: agent?.telegram,
       createdAt: agent?.createdAt,
       updatedAt: Date.now(),
     };
@@ -312,8 +333,7 @@ export function AgentEditor({
     promptText,
     promptFiles,
     mcpRows,
-    agent?.createdAt,
-    agent?.telegram,
+    agent,
   ]);
 
   const errors = useMemo(() => validateAgentDefinition(candidate), [candidate]);
@@ -340,11 +360,19 @@ export function AgentEditor({
       ),
   );
 
+  const hasInstructions =
+    promptMode === "inline"
+      ? Boolean(promptText.trim())
+      : promptFiles.some((path) => Boolean(path.trim()));
+  const instructionsError =
+    isNew && !hasInstructions ? "Operational instructions are required." : null;
+
   const canSave =
     !isBuiltIn &&
     errors.length === 0 &&
     mcpFormatErrors.length === 0 &&
-    !glyphError;
+    !glyphError &&
+    !instructionsError;
 
   const updateMcpRow = (key: string, patch: Partial<McpServerRow>) => {
     setMcpRows((rows) =>
@@ -352,18 +380,40 @@ export function AgentEditor({
     );
   };
 
+  const save = async (startChat: boolean) => {
+    setHasAttemptedSave(true);
+    if (!canSave || isSaving) return;
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await onSave(candidate, { startChat });
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Could not save this bot.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full overflow-y-auto bg-[var(--bg-main)]">
       <div className="flex-1 w-full mx-auto px-6 max-w-[620px] py-7">
         <div className="mb-7">
           <h1 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">
-            {agent ? `Edit ${agent.name || "agent"}` : "New agent"}
+            {agent ? `Edit ${agent.name || "bot"}` : "Create a bot"}
           </h1>
+          {isNew && (
+            <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
+              Give your bot a name and clear instructions. You can refine its
+              setup later.
+            </p>
+          )}
         </div>
 
         {isBuiltIn && (
           <div className="mb-7 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 text-[13px] leading-5 text-[var(--text-secondary)]">
-            This built-in agent is read-only. Its settings are shown here for
+            This built-in bot is read-only. Its settings are shown here for
             reference.
           </div>
         )}
@@ -379,16 +429,17 @@ export function AgentEditor({
                   value={name}
                   disabled={isBuiltIn}
                   onChange={(e) => setName(e.target.value)}
+                  onBlur={() => setNameTouched(true)}
                   className={fieldLabel("")}
                   placeholder="e.g. Release Manager"
                 />
-                {nameErrors.length > 0 && (
+                {nameErrors.length > 0 && (nameTouched || hasAttemptedSave) && (
                   <p className="mt-1 text-[13px] text-[var(--text-danger)]">
                     {nameErrors.join(", ")}
                   </p>
                 )}
               </div>
-              <div>
+              <div hidden={isNew && !advancedOpen}>
                 <Label htmlFor="agent-icon">Glyph</Label>
                 <input
                   id="agent-icon"
@@ -414,7 +465,7 @@ export function AgentEditor({
                 )}
               </div>
             </div>
-            <div className="mt-3">
+            <div hidden={isNew && !advancedOpen} className="mt-3">
               <Label htmlFor="agent-description">Description</Label>
               <textarea
                 id="agent-description"
@@ -426,7 +477,7 @@ export function AgentEditor({
                 placeholder="What this agent is for"
               />
             </div>
-            <div className="mt-3">
+            <div hidden={isNew && !advancedOpen} className="mt-3">
               <fieldset>
                 <legend className="text-[13px] font-medium text-[var(--text-secondary)]">
                   Accent
@@ -495,7 +546,7 @@ export function AgentEditor({
                   ))}
                 </select>
               </div>
-              <div>
+              <div hidden={isNew && !advancedOpen}>
                 <Label htmlFor="agent-permissions">Permissions</Label>
                 <select
                   id="agent-permissions"
@@ -515,7 +566,7 @@ export function AgentEditor({
                 </select>
               </div>
             </div>
-            <div className="mt-3">
+            <div hidden={isNew && !advancedOpen} className="mt-3">
               <Label htmlFor="agent-cwd">Working directory</Label>
               <input
                 id="agent-cwd"
@@ -532,10 +583,12 @@ export function AgentEditor({
           <Section title="Behaviour">
             <div className="flex items-center justify-between gap-3">
               {promptMode === "inline" ? (
-                <Label htmlFor="agent-instructions">Instructions</Label>
+                <Label htmlFor="agent-instructions">
+                  {isNew ? "Operational instructions" : "Instructions"}
+                </Label>
               ) : (
                 <span className="text-[13px] font-medium text-[var(--text-secondary)]">
-                  Instructions
+                  {isNew ? "Operational instructions" : "Instructions"}
                 </span>
               )}
               <div className="flex rounded-md border border-[var(--border)] p-0.5 text-[13px]">
@@ -558,9 +611,10 @@ export function AgentEditor({
                 value={promptText}
                 disabled={isBuiltIn}
                 onChange={(e) => setPromptText(e.target.value)}
+                onBlur={() => setInstructionsTouched(true)}
                 rows={6}
                 className={fieldLabel("resize-y text-[13px] leading-5")}
-                placeholder="Instructions for this agent..."
+                placeholder="Operational instructions for this bot..."
               />
             ) : (
               <div className="mt-2 space-y-2">
@@ -613,9 +667,27 @@ export function AgentEditor({
                 )}
               </div>
             )}
+            {instructionsError && (instructionsTouched || hasAttemptedSave) && (
+              <p className="mt-1 text-[13px] text-[var(--text-danger)]">
+                {instructionsError}
+              </p>
+            )}
           </Section>
 
-          <Section title="Tools">
+          {isNew && (
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen((open) => !open)}
+              aria-expanded={advancedOpen}
+              className="rounded px-2 py-1 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              {advancedOpen
+                ? "Hide advanced configuration"
+                : "Advanced configuration"}
+            </button>
+          )}
+
+          <Section title="Tools" hidden={isNew && !advancedOpen}>
             <div className="space-y-3">
               {mcpRows.map((row) => (
                 <div
@@ -791,11 +863,21 @@ export function AgentEditor({
           {!isBuiltIn && (
             <button
               type="button"
-              disabled={!canSave}
-              onClick={() => canSave && onSave(candidate)}
+              disabled={!canSave || isSaving}
+              onClick={() => void save(false)}
               className="rounded-lg bg-[var(--text-primary)] px-3 py-1.5 text-sm font-medium text-[var(--bg-root)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
             >
-              Save
+              {isSaving ? "Saving…" : isNew ? "Create" : "Save changes"}
+            </button>
+          )}
+          {!isBuiltIn && isNew && (
+            <button
+              type="button"
+              disabled={!canSave || isSaving}
+              onClick={() => void save(true)}
+              className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
+            >
+              Create and start chat
             </button>
           )}
           {!isBuiltIn && agent && onDelete && (
@@ -804,8 +886,13 @@ export function AgentEditor({
               onClick={() => onDelete(agent.id)}
               className="ml-auto rounded-lg border border-[var(--border-danger)] bg-[var(--bg-danger)] px-3 py-1.5 text-sm font-medium text-[var(--text-danger)] hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-danger)]"
             >
-              Delete agent
+              Delete bot
             </button>
+          )}
+          {saveError && (
+            <p role="alert" className="text-[13px] text-[var(--text-danger)]">
+              {saveError}
+            </p>
           )}
         </div>
       </footer>

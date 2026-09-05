@@ -118,7 +118,12 @@ function AppInner(): React.ReactElement {
   } = useThreads();
 
   const { folders, addFolder, removeFolder, updateFolder } = useFolders();
-  const { agents, save: saveAgent, remove: removeAgent } = useAgents();
+  const {
+    agents,
+    create: createAgent,
+    save: saveAgent,
+    remove: removeAgent,
+  } = useAgents();
 
   // Sidebar grouping switch (Folders | Agents). Defaults to "folders" so
   // existing users see no change.
@@ -576,15 +581,6 @@ function AppInner(): React.ReactElement {
     setEditingAgentId(agentId);
   }, []);
 
-  const handleSaveAgent = useCallback(
-    async (def: AgentDefinition) => {
-      await saveAgent(def);
-      setEditingAgentId(null);
-      setViewingAgentId(def.id);
-    },
-    [saveAgent],
-  );
-
   const handleCancelEditAgent = useCallback(() => {
     const wasNew = editingAgentId === "new";
     setEditingAgentId(null);
@@ -607,11 +603,11 @@ function AppInner(): React.ReactElement {
   );
 
   /** Creates a thread for the given agent, inheriting its cwd/provider/mode
-   *  defaults. Falls back to the folder-picker flow when the agent has no
-   *  pinned cwd, exactly like starting a thread with no active folder does. */
+   * defaults and using its last folder or the home directory when unpinned. */
   const handleCreateThreadForAgent = useCallback(
-    async (agentId: string) => {
+    async (agentId: string, agentOverride?: AgentDefinition) => {
       const agent =
+        agentOverride ??
         agents.find((a) => a.id === agentId) ??
         (agentId === DEFAULT_AGENT_ID ? DEFAULT_AGENT : undefined);
 
@@ -633,10 +629,13 @@ function AppInner(): React.ReactElement {
       // Agent threads are shown under Agents; Folders stays exactly as it was.
       const isGit = (await settingsBridge.checkIsGitRepo?.(cwd)) ?? false;
 
-      const provider = agent?.provider ?? pendingProvider;
+      // A newly created bot should inherit the provider the user is already
+      // working with. Its own explicit provider still wins.
+      const provider = agent?.provider ?? activeProvider;
       const thread = await createThread("New chat", undefined, cwd, provider);
       await threadsBridge.update(thread.id, {
         agentId,
+        ...(agent?.model ? { model: agent.model } : {}),
         ...(agent?.mode ? { mode: agent.mode } : {}),
         ...(isGit ? { isGitRepo: true, worktreeMode: "local" as const } : {}),
       });
@@ -654,20 +653,55 @@ function AppInner(): React.ReactElement {
     },
     [
       agents,
-      folders,
       threads,
       homeDir,
-      addFolder,
-      updateFolder,
       createThread,
       threadsBridge,
       refreshThreads,
       setActiveThreadId,
       settingsBridge,
-      pendingProvider,
+      activeProvider,
       leaveAgentScreen,
       focusComposerAfterMount,
     ],
+  );
+
+  const handleSaveAgent = useCallback(
+    async (
+      definition: AgentDefinition,
+      { startChat }: { startChat: boolean },
+    ) => {
+      let saved: AgentDefinition | null;
+      if (editingAgentId === "new") {
+        saved = await createAgent({
+          name: definition.name,
+          // Description remains optional in the compact UI, while the shared
+          // service keeps a useful roster label for every created bot.
+          description:
+            definition.description.trim() || `${definition.name.trim()} bot`,
+          prompt: definition.prompt ?? "",
+          icon: definition.icon,
+          accent: definition.accent,
+          provider: definition.provider,
+          model: definition.model,
+          mode: definition.mode,
+          cwd: definition.cwd,
+          mcpServers: definition.mcpServers,
+          telegram: definition.telegram,
+        });
+      } else {
+        saved = await saveAgent(definition);
+      }
+      if (!saved) throw new Error("Could not save this bot.");
+
+      if (startChat) {
+        await handleCreateThreadForAgent(saved.id, saved);
+        return;
+      }
+      setEditingAgentId(null);
+      setViewingAgentId(saved.id);
+    },
+    [createAgent, editingAgentId, handleCreateThreadForAgent, saveAgent],
   );
 
   const handleAddFolder = useCallback(async () => {

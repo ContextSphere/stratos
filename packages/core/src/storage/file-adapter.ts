@@ -30,7 +30,8 @@ export class FileStorageAdapter implements StorageAdapter {
   private baseDir: string;
 
   constructor(baseDir?: string) {
-    this.baseDir = baseDir ?? DEFAULT_BASE_DIR;
+    this.baseDir =
+      baseDir ?? (process.env.STRATOS_DATA_DIR || DEFAULT_BASE_DIR);
   }
 
   private getThreadsDir(): string {

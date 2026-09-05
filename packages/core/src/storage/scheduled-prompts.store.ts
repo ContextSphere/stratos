@@ -6,7 +6,7 @@ import type { ScheduledPrompt } from "../types/scheduled-prompt";
 const STORE_FILE = "scheduled-prompts.json";
 
 function getConfigDir(): string {
-  return join(homedir(), ".stratos");
+  return process.env.STRATOS_DATA_DIR || join(homedir(), ".stratos");
 }
 
 function getStorePath(): string {
