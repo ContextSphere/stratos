@@ -696,36 +696,32 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
-      {slashMenu !== null && slashCommands.length > 0 && (
-        <SlashCommandMenu
-          commands={slashCommands}
-          filter={getPlainText().slice(slashMenu.triggerPos)}
-          position={{
-            bottom: containerRef.current
-              ? containerRef.current.offsetHeight
-              : 60,
-            left: 16,
-          }}
-          onSelect={handleSlashSelect}
-          onClose={() => setSlashMenu(null)}
-        />
-      )}
-      {mentionMenu !== null && (
-        <FileMentionMenu
-          files={mentionFiles}
-          query={mentionMenu.query}
-          position={{
-            bottom: containerRef.current
-              ? containerRef.current.offsetHeight
-              : 60,
-            left: 16,
-          }}
-          onSelect={handleMentionSelect}
-          onClose={() => setMentionMenu(null)}
-          loading={mentionLoading}
-        />
-      )}
-      <div className="mx-auto flex w-full max-w-[720px] flex-col gap-2">
+      <div className="relative mx-auto flex w-full max-w-[720px] flex-col gap-2">
+        {slashMenu !== null && slashCommands.length > 0 && (
+          <SlashCommandMenu
+            commands={slashCommands}
+            filter={getPlainText().slice(slashMenu.triggerPos)}
+            position={{
+              bottom: "calc(100% + 8px)",
+              left: 0,
+            }}
+            onSelect={handleSlashSelect}
+            onClose={() => setSlashMenu(null)}
+          />
+        )}
+        {mentionMenu !== null && (
+          <FileMentionMenu
+            files={mentionFiles}
+            query={mentionMenu.query}
+            position={{
+              bottom: "calc(100% + 8px)",
+              left: 0,
+            }}
+            onSelect={handleMentionSelect}
+            onClose={() => setMentionMenu(null)}
+            loading={mentionLoading}
+          />
+        )}
         <PendingMessages
           pending={pendingMessages}
           isStreaming={isStreaming}

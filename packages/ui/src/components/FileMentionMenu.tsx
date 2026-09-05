@@ -11,7 +11,7 @@ import { FileIcon } from "./FileIcon";
 interface Props {
   files: string[];
   query: string;
-  position: { bottom: number; left: number };
+  position: { bottom: number | string; left: number };
   onSelect: (path: string) => void;
   onClose: () => void;
   loading: boolean;
@@ -92,12 +92,12 @@ export function FileMentionMenu({
 
   return (
     <div
-      className="absolute z-50 w-72 max-h-48 overflow-y-auto bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-lg shadow-xl"
+      className="absolute z-50 w-80 max-w-full max-h-60 overflow-y-auto bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-xl p-1 shadow-lg"
       style={{ bottom: position.bottom, left: position.left }}
       ref={listRef}
     >
       {loading ? (
-        <div className="px-3 py-2 text-sm text-gray-400 flex items-center gap-2">
+        <div className="rounded-lg px-2.5 py-2 text-[13px] text-[var(--text-secondary)] flex items-center gap-2">
           <span className="animate-spin inline-block">⟳</span>
           Loading files…
         </div>
@@ -115,10 +115,10 @@ export function FileMentionMenu({
                 onSelect(filePath);
               }}
               onMouseEnter={() => setSelectedIndex(i)}
-              className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-3 ${
+              className={`w-full text-left rounded-lg px-2.5 py-2 text-[13px] flex items-center justify-between gap-3 ${
                 i === selectedIndex
-                  ? "bg-[var(--border)] text-gray-200"
-                  : "text-gray-400 hover:bg-[var(--border)]"
+                  ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
               }`}
             >
               <span className="flex items-center gap-2 min-w-0">
@@ -128,7 +128,7 @@ export function FileMentionMenu({
                 </span>
               </span>
               {dir && (
-                <span className="text-gray-500 text-xs truncate font-mono flex-shrink-0 max-w-[40%]">
+                <span className="text-[var(--text-muted)] text-xs truncate font-mono flex-shrink-0 max-w-[40%]">
                   {dir}
                 </span>
               )}
