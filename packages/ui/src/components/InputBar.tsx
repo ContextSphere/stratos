@@ -4,7 +4,9 @@ import {
   useCallback,
   forwardRef,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
+  type ReactNode,
 } from "react";
 import type { ImageAttachment, FileAttachment } from "../types";
 import { SlashCommandMenu, type SlashCommandInfo } from "./SlashCommandMenu";
@@ -15,6 +17,7 @@ import {
   useFileMentions,
   type FileMentionsBridge,
 } from "../hooks/useFileMentions";
+import { useDesignVariant } from "../context/DesignContext";
 
 export type InteractiveMode =
   | { type: "none" }
@@ -28,7 +31,7 @@ export type InteractiveMode =
  */
 export type SendDelivery = "queue" | "steer";
 
-interface Props {
+export interface Props {
   onSend: (
     prompt: string,
     images?: ImageAttachment[],
@@ -46,6 +49,8 @@ interface Props {
   onCancelPending?: (id: string) => void;
   onPromotePending?: (id: string, to: "steer" | "break") => void;
   onEditPending?: (message: PendingMessageView) => void;
+  /** Runtime, permission, and context controls rendered inside the composer. */
+  toolbar?: ReactNode;
 }
 
 export interface InputBarRef {
@@ -75,9 +80,11 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
     onCancelPending,
     onPromotePending,
     onEditPending,
+    toolbar,
   },
   ref,
 ): React.ReactElement {
+  const classic = useDesignVariant() === "classic";
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -95,6 +102,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
   const [hasContent, setHasContent] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const editableRef = useRef<HTMLDivElement>(null);
+  const draftTextRef = useRef("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
@@ -106,6 +114,16 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
     if (!el) return "";
     return (el.textContent ?? "").replace(/\u00A0/g, " ");
   }
+
+  useLayoutEffect(() => {
+    if (editableRef.current) {
+      editableRef.current.textContent = draftTextRef.current;
+    }
+    setSlashMenu(null);
+    setMentionMenu(null);
+    setIsDragging(false);
+    dragCounterRef.current = 0;
+  }, [classic]);
 
   function getTextBeforeCursor(): string {
     const selection = window.getSelection();
@@ -122,6 +140,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
     () => ({
       focus: () => editableRef.current?.focus(),
       prefill: (text: string) => {
+        draftTextRef.current = text;
         if (editableRef.current) {
           editableRef.current.textContent = text;
           setHasContent(text.trim().length > 0);
@@ -142,6 +161,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
         imgs: ImageAttachment[],
         files?: FileAttachment[],
       ) => {
+        draftTextRef.current = text;
         if (editableRef.current) {
           editableRef.current.textContent = text;
           setHasContent(
@@ -175,6 +195,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       if (interactiveMode && interactiveMode.type !== "none") {
         onInteractiveResponse?.(trimmed);
         if (editableRef.current) editableRef.current.innerHTML = "";
+        draftTextRef.current = "";
         setHasContent(false);
         setImages([]);
         setFileAttachments([]);
@@ -201,6 +222,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       }
 
       if (editableRef.current) editableRef.current.innerHTML = "";
+      draftTextRef.current = "";
       setHasContent(false);
       setImages([]);
       setFileAttachments([]);
@@ -251,7 +273,9 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
   );
 
   const handleInput = useCallback(() => {
-    setHasContent(getPlainText().trim().length > 0);
+    const text = getPlainText();
+    draftTextRef.current = text;
+    setHasContent(text.trim().length > 0);
 
     const textBefore = getTextBeforeCursor();
 
@@ -336,7 +360,9 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       selection.addRange(newRange);
 
       setSlashMenu(null);
-      setHasContent(getPlainText().trim().length > 0);
+      const text = getPlainText();
+      draftTextRef.current = text;
+      setHasContent(text.trim().length > 0);
       el.focus();
     },
     [slashMenu],
@@ -383,7 +409,9 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
       selection.addRange(newRange);
 
       setMentionMenu(null);
-      setHasContent(getPlainText().trim().length > 0);
+      const text = getPlainText();
+      draftTextRef.current = text;
+      setHasContent(text.trim().length > 0);
       el.focus();
     },
     [mentionMenu],
@@ -455,14 +483,213 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
     return "Type a message...";
   }, [isDragging, interactiveMode]);
 
+  if (classic) {
+    return (
+      <div
+        ref={containerRef}
+        className={`relative flex-shrink-0 border-t transition-colors ${isDragging ? "border-blue-500 bg-blue-950/20" : "border-[var(--border)] bg-[var(--bg-main)]"} p-4`}
+        data-testid="input-bar"
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        {slashMenu !== null && slashCommands.length > 0 && (
+          <SlashCommandMenu
+            commands={slashCommands}
+            filter={getPlainText().slice(slashMenu.triggerPos)}
+            position={{
+              bottom: containerRef.current
+                ? containerRef.current.offsetHeight
+                : 60,
+              left: 16,
+            }}
+            onSelect={handleSlashSelect}
+            onClose={() => setSlashMenu(null)}
+          />
+        )}
+        {mentionMenu !== null && (
+          <FileMentionMenu
+            files={mentionFiles}
+            query={mentionMenu.query}
+            position={{
+              bottom: containerRef.current
+                ? containerRef.current.offsetHeight
+                : 60,
+              left: 16,
+            }}
+            onSelect={handleMentionSelect}
+            onClose={() => setMentionMenu(null)}
+            loading={mentionLoading}
+          />
+        )}
+        <div className="flex flex-col gap-2">
+          <PendingMessages
+            pending={pendingMessages}
+            isStreaming={isStreaming}
+            onCancel={onCancelPending ?? (() => {})}
+            onPromote={onPromotePending ?? (() => {})}
+            onEdit={onEditPending ?? (() => {})}
+          />
+          {isDragging && (
+            <div className="text-center text-blue-400 text-xs py-1">
+              Drop files here
+            </div>
+          )}
+          {(images.length > 0 || fileAttachments.length > 0) && (
+            <div className="flex flex-wrap gap-2">
+              {images.map((img) => (
+                <div key={img.id} className="relative group flex-shrink-0">
+                  <img
+                    src={img.dataUrl}
+                    alt={img.name}
+                    className="w-12 h-12 object-cover rounded-lg border border-[var(--border-mid)]"
+                    title={img.name}
+                  />
+                  <button
+                    onClick={() => removeImage(img.id)}
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-gray-700 hover:bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] leading-none"
+                    title={`Remove ${img.name}`}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {fileAttachments.map((file) => (
+                <div
+                  key={file.id}
+                  className="relative group flex-shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-lg border border-[var(--border-mid)] bg-[var(--bg-surface)] text-[var(--text-secondary)] text-xs max-w-[180px]"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="w-3 h-3 flex-shrink-0"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span className="truncate" title={file.path}>
+                    {file.name}
+                  </span>
+                  <button
+                    onClick={() => removeFileAttachment(file.id)}
+                    className="flex-shrink-0 w-3.5 h-3.5 rounded-full bg-gray-700 hover:bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[9px] leading-none"
+                    title={`Remove ${file.name}`}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {sendError && (
+            <p role="alert" className="text-xs text-red-400">
+              {sendError}
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={handleFileInputChange}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="no-drag flex-shrink-0 w-10 h-10 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-mid)] hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center justify-center transition-colors"
+              title="Attach file"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-4 h-4"
+              >
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
+            <div
+              ref={editableRef}
+              contentEditable
+              suppressContentEditableWarning
+              onInput={handleInput}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              data-placeholder={placeholder}
+              className="no-drag flex-1 min-h-[44px] max-h-[200px] overflow-y-auto bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] focus:outline-none focus:border-blue-500 transition-colors empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--text-muted)] empty:before:pointer-events-none whitespace-pre-wrap"
+              role="textbox"
+              aria-multiline="true"
+            />
+            {isStreaming && !isInteractive && (
+              <button
+                onClick={() => onInterrupt()}
+                className="no-drag flex-shrink-0 w-10 h-10 rounded-xl bg-red-600 hover:bg-red-500 text-white flex items-center justify-center transition-colors"
+                title="Stop current turn"
+                aria-label="Stop current turn"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  className="w-4 h-4"
+                >
+                  <rect x="6" y="6" width="12" height="12" rx="1" />
+                </svg>
+              </button>
+            )}
+            <button
+              onClick={() =>
+                handleSend(isStreaming && !isInteractive ? "queue" : "steer")
+              }
+              disabled={!canSend}
+              className={`no-drag flex-shrink-0 h-10 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-[var(--border-mid)] disabled:cursor-not-allowed text-white flex items-center justify-center gap-1.5 transition-colors ${isStreaming && !isInteractive ? "px-3" : "w-10"}`}
+              title={
+                isStreaming && !isInteractive
+                  ? "Queue for the next turn (Enter)"
+                  : "Send"
+              }
+              aria-label={
+                isStreaming && !isInteractive
+                  ? "Queue for the next turn"
+                  : "Send"
+              }
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                className="w-4 h-4"
+              >
+                <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+              </svg>
+              {isStreaming && !isInteractive && (
+                <span className="text-xs font-medium">
+                  Queue <span className="text-blue-100/70">Enter</span>
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={containerRef}
-      className={`relative flex-shrink-0 border-t transition-colors ${
-        isDragging
-          ? "border-blue-500 bg-blue-950/20"
-          : "border-[var(--border)] bg-[var(--bg-main)]"
-      } p-4`}
+      className={`relative flex-shrink-0 px-4 pb-4 pt-2 transition-colors ${
+        isDragging ? "bg-[var(--bg-overlay)]" : "bg-[var(--bg-main)]"
+      }`}
       data-testid="input-bar"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -498,7 +725,7 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
           loading={mentionLoading}
         />
       )}
-      <div className="flex flex-col gap-2">
+      <div className="mx-auto flex w-full max-w-[720px] flex-col gap-2">
         <PendingMessages
           pending={pendingMessages}
           isStreaming={isStreaming}
@@ -513,65 +740,74 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
           </div>
         )}
 
-        {(images.length > 0 || fileAttachments.length > 0) && (
-          <div className="flex flex-wrap gap-2">
-            {images.map((img) => (
-              <div key={img.id} className="relative group flex-shrink-0">
-                <img
-                  src={img.dataUrl}
-                  alt={img.name}
-                  className="w-12 h-12 object-cover rounded-lg border border-[var(--border-mid)]"
-                  title={img.name}
-                />
-                <button
-                  onClick={() => removeImage(img.id)}
-                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-gray-700 hover:bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] leading-none"
-                  title={`Remove ${img.name}`}
+        <div
+          className={`overflow-visible rounded-[14px] border bg-[var(--bg-surface)] transition-colors ${
+            isDragging
+              ? "border-[var(--text-muted)]"
+              : "border-[var(--border)] focus-within:border-[var(--border-mid)]"
+          }`}
+        >
+          {(images.length > 0 || fileAttachments.length > 0) && (
+            <div className="flex flex-wrap gap-2 px-3 pt-3">
+              {images.map((img) => (
+                <div key={img.id} className="relative group flex-shrink-0">
+                  <img
+                    src={img.dataUrl}
+                    alt={img.name}
+                    className="w-12 h-12 object-cover rounded-lg border border-[var(--border-mid)]"
+                    title={img.name}
+                  />
+                  <button
+                    onClick={() => removeImage(img.id)}
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-gray-700 hover:bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] leading-none"
+                    title={`Remove ${img.name}`}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {fileAttachments.map((file) => (
+                <div
+                  key={file.id}
+                  className="relative group flex-shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-lg border border-[var(--border-mid)] bg-[var(--bg-surface)] text-[var(--text-secondary)] text-xs max-w-[180px]"
                 >
-                  ✕
-                </button>
-              </div>
-            ))}
-            {fileAttachments.map((file) => (
-              <div
-                key={file.id}
-                className="relative group flex-shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-lg border border-[var(--border-mid)] bg-[var(--bg-surface)] text-[var(--text-secondary)] text-xs max-w-[180px]"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="w-3 h-3 flex-shrink-0"
-                >
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
-                <span className="truncate" title={file.path}>
-                  {file.name}
-                </span>
-                <button
-                  onClick={() => removeFileAttachment(file.id)}
-                  className="flex-shrink-0 w-3.5 h-3.5 rounded-full bg-gray-700 hover:bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[9px] leading-none"
-                  title={`Remove ${file.name}`}
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="w-3 h-3 flex-shrink-0"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span className="truncate" title={file.path}>
+                    {file.name}
+                  </span>
+                  <button
+                    onClick={() => removeFileAttachment(file.id)}
+                    className="flex-shrink-0 w-3.5 h-3.5 rounded-full bg-gray-700 hover:bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[9px] leading-none"
+                    title={`Remove ${file.name}`}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
-        {sendError && (
-          <p role="alert" className="text-xs text-red-400">
-            {sendError}
-          </p>
-        )}
+          {sendError && (
+            <p
+              role="alert"
+              className="px-3 pt-2 text-xs text-[var(--text-danger)]"
+            >
+              {sendError}
+            </p>
+          )}
 
-        <div className="flex items-center gap-2">
           <input
             ref={fileInputRef}
             type="file"
@@ -579,25 +815,6 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
             className="hidden"
             onChange={handleFileInputChange}
           />
-
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="no-drag flex-shrink-0 w-10 h-10 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-mid)] hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center justify-center transition-colors"
-            title="Attach file"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="w-4 h-4"
-            >
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-            </svg>
-          </button>
 
           <div
             ref={editableRef}
@@ -607,61 +824,93 @@ export const InputBar = forwardRef<InputBarRef, Props>(function InputBar(
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             data-placeholder={placeholder}
-            className="no-drag flex-1 min-h-[44px] max-h-[200px] overflow-y-auto bg-[var(--bg-surface)] border border-[var(--border-mid)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] focus:outline-none focus:border-blue-500 transition-colors empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--text-muted)] empty:before:pointer-events-none whitespace-pre-wrap"
+            className="no-drag min-h-[70px] max-h-[220px] w-full overflow-y-auto whitespace-pre-wrap bg-transparent px-4 pb-2 pt-3.5 text-[15px] leading-6 text-[var(--text-primary)] empty:before:pointer-events-none empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--text-muted)] focus:outline-none"
             role="textbox"
             aria-multiline="true"
           />
 
-          {/* Stop remains distinct from sending. While streaming, sending
-              queues safely; the pending row offers "Steer now" afterward. */}
-          {isStreaming && !isInteractive && (
-            <button
-              onClick={() => onInterrupt()}
-              className="no-drag flex-shrink-0 w-10 h-10 rounded-xl bg-red-600 hover:bg-red-500 text-white flex items-center justify-center transition-colors"
-              title="Stop current turn"
-              aria-label="Stop current turn"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                className="w-4 h-4"
+          <div className="flex min-h-11 items-center justify-between gap-3 px-2.5 pb-2 pt-1">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="no-drag flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--text-muted)]"
+                title="Attach file"
+                aria-label="Attach file"
               >
-                <rect x="6" y="6" width="12" height="12" rx="1" />
-              </svg>
-            </button>
-          )}
-          <button
-            onClick={() =>
-              handleSend(isStreaming && !isInteractive ? "queue" : "steer")
-            }
-            disabled={!canSend}
-            className={`no-drag flex-shrink-0 h-10 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-[var(--border-mid)] disabled:cursor-not-allowed text-white flex items-center justify-center gap-1.5 transition-colors ${
-              isStreaming && !isInteractive ? "px-3" : "w-10"
-            }`}
-            title={
-              isStreaming && !isInteractive
-                ? "Queue for the next turn (Enter)"
-                : "Send"
-            }
-            aria-label={
-              isStreaming && !isInteractive ? "Queue for the next turn" : "Send"
-            }
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              className="w-4 h-4"
-            >
-              <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-            </svg>
-            {isStreaming && !isInteractive && (
-              <span className="text-xs font-medium">
-                Queue <span className="text-blue-100/70">Enter</span>
-              </span>
-            )}
-          </button>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-4 w-4"
+                >
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              </button>
+              <div className="flex min-w-0 items-center gap-1.5">{toolbar}</div>
+            </div>
+
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              {/* Stop remains distinct from sending. While streaming, sending
+                  queues safely; the pending row offers "Steer now" afterward. */}
+              {isStreaming && !isInteractive && (
+                <button
+                  onClick={() => onInterrupt()}
+                  className="no-drag flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-[var(--bg-danger)] text-[var(--text-danger)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--text-danger)]"
+                  title="Stop current turn"
+                  aria-label="Stop current turn"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    className="w-4 h-4"
+                  >
+                    <rect x="6" y="6" width="12" height="12" rx="1" />
+                  </svg>
+                </button>
+              )}
+              <button
+                onClick={() =>
+                  handleSend(isStreaming && !isInteractive ? "queue" : "steer")
+                }
+                disabled={!canSend}
+                className={`no-drag flex h-8 flex-shrink-0 items-center justify-center gap-1.5 rounded-md bg-[var(--text-primary)] text-[var(--bg-main)] transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--text-muted)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-surface)] disabled:cursor-not-allowed disabled:bg-[var(--border-mid)] disabled:text-[var(--text-muted)] ${
+                  isStreaming && !isInteractive ? "px-2.5" : "w-8"
+                }`}
+                title={
+                  isStreaming && !isInteractive
+                    ? "Queue for the next turn (Enter)"
+                    : "Send"
+                }
+                aria-label={
+                  isStreaming && !isInteractive
+                    ? "Queue for the next turn"
+                    : "Send"
+                }
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.25"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-4 w-4"
+                >
+                  <path d="M12 19V5" />
+                  <path d="m5 12 7-7 7 7" />
+                </svg>
+                {isStreaming && !isInteractive && (
+                  <span className="text-xs font-medium">Queue</span>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

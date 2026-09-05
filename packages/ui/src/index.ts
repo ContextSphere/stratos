@@ -103,6 +103,14 @@ export {
 } from "./context/ThemeContext";
 export type { AppTheme } from "./context/ThemeContext";
 
+// Design
+export {
+  DesignContext,
+  DesignProvider,
+  useDesignVariant,
+} from "./context/DesignContext";
+export type { DesignVariant } from "./context/DesignContext";
+
 // Hooks
 export { useTodoData } from "./hooks/useTodoData";
 export { useFileMentions } from "./hooks/useFileMentions";

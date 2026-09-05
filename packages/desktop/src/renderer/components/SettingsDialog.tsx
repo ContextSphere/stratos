@@ -5,6 +5,7 @@ import {
   Button,
   WhatsAppSettings,
   TelegramSettings,
+  type DesignVariant,
 } from "@stratosapp/ui";
 import type { ElectronAPI } from "../../preload/index";
 
@@ -23,9 +24,9 @@ const THEMES: ThemeOption[] = [
     id: "dark",
     label: "Dark",
     preview: {
-      bg: "var(--bg-root)",
-      surface: "var(--bg-surface)",
-      border: "var(--border)",
+      bg: "#0a0a0a",
+      surface: "#1a1a1a",
+      border: "#2a2a2a",
       text: "#e0e0e0",
     },
   },
@@ -36,7 +37,7 @@ const THEMES: ThemeOption[] = [
       bg: "#ececec",
       surface: "#ffffff",
       border: "#d0d0d0",
-      text: "var(--bg-surface)",
+      text: "#1a1a1a",
     },
   },
 ];
@@ -46,6 +47,10 @@ interface Props {
   onClose: () => void;
   theme: AppTheme;
   onThemeChange: (theme: AppTheme) => void;
+  designVariant: DesignVariant;
+  onDesignChange: (variant: DesignVariant) => void;
+  designSaving?: boolean;
+  designError?: string | null;
 }
 
 export function SettingsDialog({
@@ -53,6 +58,10 @@ export function SettingsDialog({
   onClose,
   theme,
   onThemeChange,
+  designVariant,
+  onDesignChange,
+  designSaving = false,
+  designError,
 }: Props): React.ReactElement | null {
   const [whatsappEnabled, setWhatsappEnabled] = useState(false);
   const [telegramEnabled, setTelegramEnabled] = useState(false);
@@ -115,13 +124,84 @@ export function SettingsDialog({
             >
               Appearance
             </h3>
+            <fieldset className="mb-5" disabled={designSaving}>
+              <legend className="mb-2 text-sm font-medium text-[var(--text-primary)]">
+                Design
+              </legend>
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    {
+                      id: "classic",
+                      label: "Classic",
+                      description: "Original design and controls.",
+                    },
+                    {
+                      id: "refined",
+                      label: "Refined",
+                      description: "Warm neutrals and compact controls.",
+                    },
+                  ] as const
+                ).map((option) => (
+                  <label
+                    key={option.id}
+                    className={`flex cursor-pointer items-start gap-2 rounded-lg border p-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--text-muted)] ${designVariant === option.id ? "border-[var(--text-muted)] bg-[var(--bg-surface)]" : "border-[var(--border)] hover:bg-[var(--bg-hover)]"} ${designSaving ? "opacity-60" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="design-variant"
+                      value={option.id}
+                      checked={designVariant === option.id}
+                      onChange={() => onDesignChange(option.id)}
+                      className="mt-1 accent-[var(--text-primary)]"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-[var(--text-primary)]">
+                        {option.label}
+                      </span>
+                      <span className="mt-1 block text-xs leading-relaxed text-[var(--text-secondary)]">
+                        {option.description}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-[var(--text-muted)]">
+                Applies immediately. Your threads and drafts stay in place.
+              </p>
+            </fieldset>
+            {designError && (
+              <p role="alert" className="mb-3 text-xs text-red-400">
+                {designError}
+              </p>
+            )}
+            <p className="mb-2 text-sm font-medium text-[var(--text-primary)]">
+              Color mode
+            </p>
             <div className="flex gap-3">
               {THEMES.map((t) => {
                 const active = theme === t.id;
+                const preview =
+                  designVariant === "classic"
+                    ? t.preview
+                    : t.id === "dark"
+                      ? {
+                          bg: "#121211",
+                          surface: "#232321",
+                          border: "#3b3a36",
+                          text: "#e7e6e2",
+                        }
+                      : {
+                          bg: "#f2f1ee",
+                          surface: "#fcfbf9",
+                          border: "#dfded8",
+                          text: "#252522",
+                        };
                 return (
                   <button
                     key={t.id}
                     type="button"
+                    aria-pressed={active}
                     onClick={() => onThemeChange(t.id)}
                     className={`relative flex flex-col items-center gap-2 rounded-xl p-1 transition-all focus:outline-none ${
                       active
@@ -133,28 +213,28 @@ export function SettingsDialog({
                     <div
                       className="w-24 h-16 rounded-lg overflow-hidden flex"
                       style={{
-                        background: t.preview.bg,
-                        border: `1px solid ${t.preview.border}`,
+                        background: preview.bg,
+                        border: `1px solid ${preview.border}`,
                       }}
                     >
                       {/* Sidebar strip */}
                       <div
                         className="w-5 h-full flex-shrink-0"
                         style={{
-                          background: t.preview.bg,
-                          borderRight: `1px solid ${t.preview.border}`,
+                          background: preview.bg,
+                          borderRight: `1px solid ${preview.border}`,
                         }}
                       />
                       {/* Content area */}
                       <div className="flex-1 p-1.5 flex flex-col gap-1">
                         <div
                           className="h-1.5 w-8 rounded-full"
-                          style={{ background: t.preview.surface }}
+                          style={{ background: preview.text, opacity: 0.7 }}
                         />
                         <div
                           className="h-1 w-10 rounded-full"
                           style={{
-                            background: t.preview.surface,
+                            background: preview.text,
                             opacity: 0.6,
                           }}
                         />
@@ -162,8 +242,8 @@ export function SettingsDialog({
                         <div
                           className="h-3 rounded"
                           style={{
-                            background: t.preview.surface,
-                            border: `1px solid ${t.preview.border}`,
+                            background: preview.surface,
+                            border: `1px solid ${preview.border}`,
                           }}
                         />
                       </div>

@@ -1,4 +1,10 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useMemo,
+} from "react";
 import {
   getAgentModes,
   normalizeMode,
@@ -38,11 +44,13 @@ import {
   ContextUsageIndicator,
   ToolsBadge,
   useTodoData,
+  ProviderToggle,
   ModelSelector,
   ModeToggle,
   WorktreeToggle,
-  ProviderToggle,
   ThemeContext,
+  DesignProvider,
+  type DesignVariant,
   DiagnosticsProvider,
   useDiagnostics,
   DiagnosticToastContainer,
@@ -262,6 +270,9 @@ function AppInner(): React.ReactElement {
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [showSchedulesDialog, setShowSchedulesDialog] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [designVariant, setDesignVariant] = useState<DesignVariant>("classic");
+  const [designSaving, setDesignSaving] = useState(false);
+  const [designError, setDesignError] = useState<string | null>(null);
   const [pendingMode, setPendingMode] = useState<AgentMode>();
   const [pendingProvider, setPendingProvider] =
     useState<ProviderType>(DEFAULT_PROVIDER);
@@ -282,6 +293,7 @@ function AppInner(): React.ReactElement {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [showNewThreadDialog, setShowNewThreadDialog] = useState(false);
   const inputRef = useRef<InputBarRef | null>(null);
+  const focusComposerOnMountRef = useRef(false);
   const draftsRef = useRef<
     Map<
       string,
@@ -317,13 +329,16 @@ function AppInner(): React.ReactElement {
     settingsBridge.getHomeDirectory().then(setHomeDir);
   }, [settingsBridge]);
 
-  // Load persisted theme on startup
+  // Color mode and visual design are independent preferences.
   useEffect(() => {
     settingsBridge.getSettings?.().then((s) => {
       if (!s) return;
       const t = (s.theme as "dark" | "light") ?? "dark";
       setTheme(t);
       document.documentElement.setAttribute("data-theme", t);
+      const design = s.designVariant === "refined" ? "refined" : "classic";
+      setDesignVariant(design);
+      document.documentElement.setAttribute("data-design", design);
     });
   }, [settingsBridge]);
 
@@ -336,11 +351,30 @@ function AppInner(): React.ReactElement {
     [settingsBridge],
   );
 
+  const handleDesignChange = async (next: DesignVariant) => {
+    if (designSaving || next === designVariant) return;
+    setDesignSaving(true);
+    setDesignError(null);
+    try {
+      await settingsBridge.updateSettings?.({ designVariant: next });
+      setDesignVariant(next);
+      document.documentElement.setAttribute("data-design", next);
+    } catch {
+      setDesignError("Couldn’t save the design. Please try again.");
+    } finally {
+      setDesignSaving(false);
+    }
+  };
+
   // Helper: save the current InputBar draft for a given threadId
   const saveDraft = useCallback((threadId: string) => {
-    const text = inputRef.current?.getText() ?? "";
-    const images = inputRef.current?.getImages() ?? [];
-    const fileAttachments = inputRef.current?.getFileAttachments() ?? [];
+    const input = inputRef.current;
+    // Agent screens unmount the composer. Navigating away from one must not
+    // mistake the missing input for an empty draft and erase a saved draft.
+    if (!input) return;
+    const text = input.getText();
+    const images = input.getImages();
+    const fileAttachments = input.getFileAttachments();
     if (text || images.length > 0 || fileAttachments.length > 0) {
       draftsRef.current.set(threadId, { text, images, fileAttachments });
       setDraftThreadIds((prev) => new Set([...prev, threadId]));
@@ -352,6 +386,26 @@ function AppInner(): React.ReactElement {
         return next;
       });
     }
+  }, []);
+
+  const leaveAgentScreen = useCallback(() => {
+    setViewingAgentId(null);
+    setEditingAgentId(null);
+  }, []);
+
+  const focusComposerAfterMount = useCallback(() => {
+    focusComposerOnMountRef.current = true;
+    const tryFocus = (attempt: number) => {
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          focusComposerOnMountRef.current = false;
+        } else if (focusComposerOnMountRef.current && attempt < 4) {
+          tryFocus(attempt + 1);
+        }
+      });
+    };
+    tryFocus(0);
   }, []);
 
   // Restore draft when activeThreadId changes
@@ -371,6 +425,27 @@ function AppInner(): React.ReactElement {
       );
     }
   }, [activeThreadId]);
+
+  // Returning from an Agent overview/editor does not change the active thread,
+  // so restore its draft once the composer has mounted again.
+  useEffect(() => {
+    if (!activeThreadId || viewingAgentId !== null || editingAgentId !== null) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      const draft = draftsRef.current.get(activeThreadId);
+      inputRef.current?.prefillDraft(
+        draft?.text ?? "",
+        draft?.images ?? [],
+        draft?.fileAttachments,
+      );
+      if (focusComposerOnMountRef.current && inputRef.current) {
+        inputRef.current.focus();
+        focusComposerOnMountRef.current = false;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeThreadId, editingAgentId, viewingAgentId]);
 
   // Apply pending cross-thread scroll once the new thread's messages have loaded.
   // We skip the first effect fire after a thread switch because messages may still
@@ -399,6 +474,7 @@ function AppInner(): React.ReactElement {
   /** Called by useNavHistory when the user presses back/forward */
   const handleNavigation = useCallback(
     (entry: NavEntry) => {
+      leaveAgentScreen();
       isNavigatingRef.current = true;
       currentAnchorRef.current = entry.anchor;
 
@@ -427,7 +503,7 @@ function AppInner(): React.ReactElement {
         });
       }
     },
-    [saveDraft, closePreview, setActiveThreadId],
+    [saveDraft, closePreview, setActiveThreadId, leaveAgentScreen],
   );
 
   const navHistory = useNavHistory(handleNavigation);
@@ -460,20 +536,23 @@ function AppInner(): React.ReactElement {
       }
       closePreview();
       // Opening a thread always drops out of the Agent overview/editor overlay.
-      setViewingAgentId(null);
-      setEditingAgentId(null);
+      leaveAgentScreen();
       currentAnchorRef.current = { type: "latest" };
       await setActiveThreadId(threadId);
       // Record the landing location in the new thread
       navHistory.push({ threadId, anchor: { type: "latest" } });
     },
-    [setActiveThreadId, closePreview, saveDraft, navHistory],
+    [setActiveThreadId, closePreview, saveDraft, navHistory, leaveAgentScreen],
   );
 
-  const handleAgentClick = useCallback((agentId: string) => {
-    setEditingAgentId(null);
-    setViewingAgentId(agentId);
-  }, []);
+  const handleAgentClick = useCallback(
+    (agentId: string) => {
+      if (activeThreadIdRef.current) saveDraft(activeThreadIdRef.current);
+      setEditingAgentId(null);
+      setViewingAgentId(agentId);
+    },
+    [saveDraft],
+  );
 
   const handleToggleAgent = useCallback(
     (agentId: string, collapsed: boolean) => {
@@ -488,9 +567,10 @@ function AppInner(): React.ReactElement {
   );
 
   const handleCreateAgent = useCallback(() => {
+    if (activeThreadIdRef.current) saveDraft(activeThreadIdRef.current);
     setViewingAgentId(null);
     setEditingAgentId("new");
-  }, []);
+  }, [saveDraft]);
 
   const handleEditAgent = useCallback((agentId: string) => {
     setEditingAgentId(agentId);
@@ -562,10 +642,15 @@ function AppInner(): React.ReactElement {
       });
       await refreshThreads();
 
-      setViewingAgentId(null);
-      setEditingAgentId(null);
+      setCollapsedAgentIds((prev) => {
+        if (!prev.has(agentId)) return prev;
+        const next = new Set(prev);
+        next.delete(agentId);
+        return next;
+      });
+      leaveAgentScreen();
       await setActiveThreadId(thread.id);
-      inputRef.current?.focus();
+      focusComposerAfterMount();
     },
     [
       agents,
@@ -580,6 +665,8 @@ function AppInner(): React.ReactElement {
       setActiveThreadId,
       settingsBridge,
       pendingProvider,
+      leaveAgentScreen,
+      focusComposerAfterMount,
     ],
   );
 
@@ -604,6 +691,9 @@ function AppInner(): React.ReactElement {
     async (folderId: string) => {
       const folder = folders.find((f) => f.id === folderId);
       if (!folder) return;
+      if (folder.collapsed) {
+        await updateFolder(folder.id, { collapsed: false });
+      }
       const thread = await createThread(
         "New chat",
         undefined,
@@ -618,8 +708,9 @@ function AppInner(): React.ReactElement {
         });
         await refreshThreads();
       }
+      leaveAgentScreen();
       await setActiveThreadId(thread.id);
-      inputRef.current?.focus();
+      focusComposerAfterMount();
     },
     [
       folders,
@@ -628,12 +719,18 @@ function AppInner(): React.ReactElement {
       refreshThreads,
       pendingProvider,
       threadsBridge,
+      updateFolder,
+      leaveAgentScreen,
+      focusComposerAfterMount,
     ],
   );
 
   const handleNewThreadFromFolder = useCallback(
     async (folder: (typeof folders)[0]) => {
       setShowNewThreadDialog(false);
+      if (folder.collapsed) {
+        await updateFolder(folder.id, { collapsed: false });
+      }
       const thread = await createThread(
         "New chat",
         undefined,
@@ -647,8 +744,9 @@ function AppInner(): React.ReactElement {
         });
         await refreshThreads();
       }
+      leaveAgentScreen();
       await setActiveThreadId(thread.id);
-      inputRef.current?.focus();
+      focusComposerAfterMount();
     },
     [
       createThread,
@@ -656,6 +754,9 @@ function AppInner(): React.ReactElement {
       refreshThreads,
       pendingProvider,
       threadsBridge,
+      updateFolder,
+      leaveAgentScreen,
+      focusComposerAfterMount,
     ],
   );
 
@@ -1089,13 +1190,14 @@ function AppInner(): React.ReactElement {
         const direction = e.shiftKey ? -1 : 1;
         const nextIndex =
           (currentIndex + direction + threads.length) % threads.length;
+        leaveAgentScreen();
         setActiveThreadId(threads[nextIndex].id);
       }
     };
     document.addEventListener("keydown", handler, { capture: true });
     return () =>
       document.removeEventListener("keydown", handler, { capture: true });
-  }, [threads, activeThreadId, setActiveThreadId]);
+  }, [threads, activeThreadId, setActiveThreadId, leaveAgentScreen]);
 
   // Handle notification click -> activate thread
   useEffect(() => {
@@ -1210,582 +1312,793 @@ function AppInner(): React.ReactElement {
     [],
   );
 
+  const connections = [
+    {
+      label: "Claude Code",
+      connected: claude.isConnected,
+      detail: claude.isConnected ? "Connected" : "Set up connection",
+      onClick: () => setShowClaudeDialog(true),
+    },
+    ...(codexEnabled
+      ? [
+          {
+            label: "Codex",
+            connected: codex.isConnected,
+            detail: codex.isConnected ? "Connected" : "Set up connection",
+            onClick: () => setShowCodexDialog(true),
+          },
+        ]
+      : []),
+    {
+      label: "OpenCode",
+      connected: opencode.configured,
+      detail: opencode.configured
+        ? opencode.providerLabels.join(", ") || "Configured"
+        : "No providers configured",
+      onClick: () => setShowOpencodeDialog(true),
+    },
+    {
+      label: "GitHub",
+      connected: github.isConnected,
+      detail: github.isConnected ? "Connected" : "Set up connection",
+      onClick: () => setShowGitHubDialog(true),
+    },
+  ];
+
   return (
     <ThemeContext.Provider value={theme}>
-      <div className="flex h-screen">
-        <div
-          className="overflow-hidden transition-[width] duration-200 ease-in-out flex-shrink-0"
-          style={{ width: sidebarCollapsed ? 0 : 232 }}
-        >
-          <Sidebar
-            threads={visibleThreads}
-            folders={folders}
-            activeThreadId={activeThreadId}
-            onThreadClick={handleThreadClick}
-            onCreateThreadInFolder={handleCreateThreadInFolder}
-            onAddFolder={handleAddFolder}
-            onRemoveFolder={async (folderId: string) => {
-              await removeFolder(folderId);
-              await refreshThreads();
+      <DesignProvider variant={designVariant}>
+        <div className="flex h-screen">
+          <div
+            className="overflow-hidden transition-[width] duration-200 ease-in-out flex-shrink-0"
+            style={{
+              width: sidebarCollapsed
+                ? 0
+                : designVariant === "refined"
+                  ? 220
+                  : 256,
             }}
-            onToggleFolderCollapsed={handleToggleFolderCollapsed}
-            onDeleteThread={handleDeleteThread}
-            onRenameThread={handleRenameThread}
-            onToggleSidebar={toggleSidebar}
-            onSettingsClick={() => setShowSettingsDialog(true)}
-            onSchedulesClick={() => setShowSchedulesDialog(true)}
-            runningThreadIds={runningThreadIds}
-            threadNotifications={threadNotifications}
-            pendingPermissionThreadIds={pendingPermissionThreadIds}
-            draftThreadIds={draftThreadIds}
-            grouping={sidebarGrouping}
-            onGroupingChange={setSidebarGrouping}
-            agents={agents}
-            activeAgentId={viewingAgentId ?? editingAgentId}
-            collapsedAgentIds={collapsedAgentIds}
-            onToggleAgent={handleToggleAgent}
-            onAgentClick={handleAgentClick}
-            onCreateThreadForAgent={handleCreateThreadForAgent}
-            onCreateAgent={handleCreateAgent}
-            onDeleteAgent={handleDeleteAgent}
-          />
-        </div>
+            inert={sidebarCollapsed ? true : undefined}
+          >
+            <Sidebar
+              threads={visibleThreads}
+              folders={folders}
+              activeThreadId={activeThreadId}
+              onThreadClick={handleThreadClick}
+              onCreateThreadInFolder={handleCreateThreadInFolder}
+              onAddFolder={handleAddFolder}
+              onRemoveFolder={async (folderId: string) => {
+                await removeFolder(folderId);
+                await refreshThreads();
+              }}
+              onToggleFolderCollapsed={handleToggleFolderCollapsed}
+              onDeleteThread={handleDeleteThread}
+              onRenameThread={handleRenameThread}
+              onToggleSidebar={toggleSidebar}
+              onSettingsClick={() => setShowSettingsDialog(true)}
+              onSchedulesClick={() => setShowSchedulesDialog(true)}
+              runningThreadIds={runningThreadIds}
+              threadNotifications={threadNotifications}
+              pendingPermissionThreadIds={pendingPermissionThreadIds}
+              draftThreadIds={draftThreadIds}
+              grouping={sidebarGrouping}
+              onGroupingChange={setSidebarGrouping}
+              agents={agents}
+              activeAgentId={viewingAgentId ?? editingAgentId}
+              collapsedAgentIds={collapsedAgentIds}
+              onToggleAgent={handleToggleAgent}
+              onAgentClick={handleAgentClick}
+              onCreateThreadForAgent={handleCreateThreadForAgent}
+              onCreateAgent={handleCreateAgent}
+              onDeleteAgent={handleDeleteAgent}
+            />
+          </div>
 
-        <Group orientation="horizontal" className="flex-1 min-h-0">
-          <Panel defaultSize={preview.isOpen ? 70 : 100} minSize={30}>
-            <div className="flex flex-col h-full overflow-hidden">
-              <div className="flex-1 min-h-0">
-                <div className="flex flex-col h-full bg-[var(--bg-main)] rounded-l-xl overflow-hidden">
-                  {sidebarCollapsed && (
-                    <div className="drag-region h-7 flex-shrink-0" />
-                  )}
-
-                  {editingAgentId !== null ? (
-                    <AgentEditor
-                      agent={editingAgent}
-                      onSave={handleSaveAgent}
-                      onCancel={handleCancelEditAgent}
-                      onDelete={
-                        editingAgent && !editingAgent.builtIn
-                          ? handleDeleteAgent
-                          : undefined
-                      }
-                      onFetchModels={(p) =>
-                        settingsBridge.getAvailableModels?.(p) ??
-                        Promise.resolve([])
-                      }
-                    />
-                  ) : viewingAgent ? (
-                    <AgentOverview
-                      agent={viewingAgent}
-                      threads={visibleThreads.filter(
-                        (t) =>
-                          !t.isManagerThread &&
-                          (t.agentId ?? DEFAULT_AGENT_ID) === viewingAgent.id,
-                      )}
-                      activeThreadId={activeThreadId}
-                      onThreadClick={handleThreadClick}
-                      onCreateThread={() =>
-                        handleCreateThreadForAgent(viewingAgent.id)
-                      }
-                      onEdit={() => handleEditAgent(viewingAgent.id)}
-                    />
-                  ) : (
-                    <>
-                      {/* Top bar */}
-                      <div
-                        className={`drag-region flex-shrink-0 flex items-end justify-between px-4 pb-1.5 ${sidebarCollapsed ? "" : "h-11"}`}
-                      >
-                        <div className="flex items-center">
-                          {sidebarCollapsed && (
-                            <button
-                              onClick={toggleSidebar}
-                              className="no-drag p-1 rounded-md text-[var(--text-control)] hover:text-[var(--text-primary)] hover:bg-[var(--border)] transition-colors"
-                              title="Expand sidebar"
-                            >
-                              <svg
-                                className="w-4 h-4"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth={2}
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  d="M13 5l7 7-7 7M5 5l7 7-7 7"
-                                />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => setShowClaudeDialog(true)}
-                            className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                            title={
-                              claude.isConnected
-                                ? "Claude connected"
-                                : "Connect Claude"
-                            }
+          <Group orientation="horizontal" className="flex-1 min-h-0">
+            <Panel defaultSize={preview.isOpen ? 70 : 100} minSize={30}>
+              <div className="flex flex-col h-full overflow-hidden">
+                <div className="flex-1 min-h-0">
+                  <div className="flex flex-col h-full bg-[var(--bg-main)] rounded-l-xl overflow-hidden">
+                    {/* hiddenInset traffic lights occupy the leading 80px. */}
+                    {sidebarCollapsed && (
+                      <div className="drag-region flex h-11 flex-shrink-0 items-end pl-[88px] pr-4 pb-1.5">
+                        <button
+                          onClick={toggleSidebar}
+                          className="no-drag rounded-md p-1 text-[var(--text-control)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--text-muted)]"
+                          title="Expand sidebar"
+                          aria-label="Expand sidebar"
+                        >
+                          <svg
+                            className="h-4 w-4"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                            viewBox="0 0 24 24"
                           >
-                            <div
-                              className={`w-1.5 h-1.5 rounded-full ${claude.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M13 5l7 7-7 7M5 5l7 7-7 7"
                             />
-                            <span
-                              className={
-                                claude.isConnected
-                                  ? "text-[var(--text-control)]"
-                                  : "text-[var(--text-muted)]"
-                              }
-                            >
-                              Claude
-                            </span>
-                          </button>
-                          {codexEnabled && (
-                            <button
-                              onClick={() => setShowCodexDialog(true)}
-                              className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                              title={
-                                codex.isConnected
-                                  ? "Codex connected"
-                                  : "Connect Codex"
-                              }
-                            >
-                              <div
-                                className={`w-1.5 h-1.5 rounded-full ${codex.isConnected ? "bg-green-500" : "bg-gray-600"}`}
-                              />
-                              <span
-                                className={
-                                  codex.isConnected
-                                    ? "text-[var(--text-control)]"
-                                    : "text-[var(--text-muted)]"
-                                }
-                              >
-                                Codex
-                              </span>
-                            </button>
-                          )}
-                          <button
-                            onClick={() => setShowOpencodeDialog(true)}
-                            className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                            title={
-                              opencode.configured
-                                ? `Opencode — ${opencode.providerLabels.join(", ")}`
-                                : "Opencode — no providers configured. Click to add."
-                            }
-                          >
-                            <div
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                opencode.configured
-                                  ? "bg-green-500"
-                                  : "bg-gray-600"
-                              }`}
-                            />
-                            <span
-                              className={
-                                opencode.configured
-                                  ? "text-[var(--text-control)]"
-                                  : "text-[var(--text-muted)]"
-                              }
-                            >
-                              Opencode
-                            </span>
-                          </button>
-                          <button
-                            onClick={() => setShowGitHubDialog(true)}
-                            className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
-                            title={
-                              github.isConnected
-                                ? "GitHub connected"
-                                : "Connect GitHub"
-                            }
-                          >
-                            <div
-                              className={`w-1.5 h-1.5 rounded-full ${github.isConnected ? "bg-green-500" : "bg-gray-600"}`}
-                            />
-                            <span
-                              className={
-                                github.isConnected
-                                  ? "text-[var(--text-control)]"
-                                  : "text-[var(--text-muted)]"
-                              }
-                            >
-                              GitHub
-                            </span>
-                          </button>
-                        </div>
+                          </svg>
+                        </button>
                       </div>
+                    )}
 
-                      {/* Chat info bar */}
-                      <ChatInfoBar
-                        primaryCwd={activeThread?.cwd}
-                        sessionStats={sessionStats}
-                        homeDir={homeDir}
-                        sessionTools={sessionTools ?? undefined}
-                        todoData={latestTodoData}
-                        showTaskPanel={showTaskPanel}
-                        onToggleTaskPanel={() => setShowTaskPanel((s) => !s)}
-                        worktreeMode={activeThread?.worktreeMode}
-                        isGitRepo={activeThread?.isGitRepo}
-                        hasMessages={messages.length > 0}
-                        onWorktreeModeChange={handleWorktreeModeChange}
-                        onToggleFileExplorer={handleToggleFileExplorer}
-                        onToggleTerminal={handleToggleTerminal}
-                        mcpServers={mcpServers ?? undefined}
-                        onToggleMcpServer={
-                          activeThreadId
-                            ? async (serverName: string, enabled: boolean) => {
-                                try {
-                                  await chatBridge.toggleMcpServer?.(
-                                    activeThreadId,
-                                    serverName,
-                                    enabled,
-                                  );
-                                } catch (err) {
-                                  console.error("[MCP] toggle failed:", err);
-                                }
-                              }
+                    {editingAgentId !== null ? (
+                      <AgentEditor
+                        agent={editingAgent}
+                        onSave={handleSaveAgent}
+                        onCancel={handleCancelEditAgent}
+                        onDelete={
+                          editingAgent && !editingAgent.builtIn
+                            ? handleDeleteAgent
                             : undefined
                         }
-                        onOpenMcpConfig={(configPath: string) =>
-                          chatBridge.openMcpConfig?.(configPath)
+                        onFetchModels={(p) =>
+                          settingsBridge.getAvailableModels?.(p) ??
+                          Promise.resolve([])
                         }
-                        onReconnectMcpServer={
-                          activeThreadId
-                            ? (serverName: string) => {
-                                chatBridge
-                                  .reconnectMcpServer?.(
-                                    activeThreadId,
-                                    serverName,
-                                  )
-                                  ?.catch((err: unknown) =>
-                                    console.error(
-                                      "[MCP] reconnect failed:",
-                                      err,
-                                    ),
-                                  );
-                              }
-                            : undefined
-                        }
-                        sessionChanges={sessionChanges}
-                        onOpenSessionChanges={openFileChanges}
                       />
-
-                      {/* Chat messages */}
-                      <ChatView
-                        key={activeThreadId ?? "new"}
-                        ref={chatViewRef}
-                        provider={activeProvider}
-                        messages={messages}
-                        isStreaming={isStreaming}
-                        onLinkClick={handleLinkClick}
-                        onSendMessage={handleSend}
-                        onQuestionAnswer={respondQuestion}
-                        onPlanReviewDecision={respondPlanReview}
-                        onViewPlan={openMarkdown}
-                        onUpdateTaskExpanded={updateTaskExpanded}
-                        onViewFile={handleViewFile}
-                        onAnchorChange={handleAnchorChange}
-                        emptyState={
-                          isManagerActive ? (
-                            <div className="text-center px-6 max-w-sm">
-                              <h1 className="text-2xl font-semibold text-gray-300 mb-3">
-                                Manager
-                              </h1>
-                              <p className="text-sm text-gray-400 leading-relaxed">
-                                Orchestrates your agent sessions. Dispatch
-                                tasks, check progress, and relay messages to
-                                agents running in any workspace.
-                              </p>
-                            </div>
-                          ) : isFolderOnboarding ? (
-                            <div className="text-center px-6 max-w-md">
-                              <h1 className="text-2xl font-semibold text-gray-300 mb-3">
-                                Welcome to Stratos
-                              </h1>
-                              <p className="text-sm text-gray-400 leading-relaxed mb-6">
-                                Add a folder to get started. Each folder becomes
-                                a workspace where you can start threads with
-                                your agents.
-                              </p>
+                    ) : viewingAgent ? (
+                      <AgentOverview
+                        agent={viewingAgent}
+                        threads={visibleThreads.filter(
+                          (t) =>
+                            !t.isManagerThread &&
+                            (t.agentId ?? DEFAULT_AGENT_ID) === viewingAgent.id,
+                        )}
+                        activeThreadId={activeThreadId}
+                        runningThreadIds={runningThreadIds}
+                        pendingPermissionThreadIds={pendingPermissionThreadIds}
+                        threadNotifications={threadNotifications}
+                        onThreadClick={handleThreadClick}
+                        onCreateThread={() =>
+                          handleCreateThreadForAgent(viewingAgent.id)
+                        }
+                        onEdit={() => handleEditAgent(viewingAgent.id)}
+                      />
+                    ) : (
+                      <>
+                        {/* Top bar */}
+                        <div
+                          className={`drag-region flex flex-shrink-0 items-end justify-between px-4 pb-1.5 ${sidebarCollapsed ? "pointer-events-none -mt-11 h-11" : "h-11"}`}
+                        >
+                          <div />
+                          {designVariant === "classic" ? (
+                            <div className="pointer-events-auto flex items-center gap-2">
                               <button
-                                onClick={handleAddFolder}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
+                                onClick={() => setShowClaudeDialog(true)}
+                                className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                                title={
+                                  claude.isConnected
+                                    ? "Claude connected"
+                                    : "Connect Claude"
+                                }
                               >
+                                <div
+                                  className={`w-1.5 h-1.5 rounded-full ${claude.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                                />
+                                <span
+                                  className={
+                                    claude.isConnected
+                                      ? "text-[var(--text-control)]"
+                                      : "text-[var(--text-muted)]"
+                                  }
+                                >
+                                  Claude
+                                </span>
+                              </button>
+                              {codexEnabled && (
+                                <button
+                                  onClick={() => setShowCodexDialog(true)}
+                                  className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                                  title={
+                                    codex.isConnected
+                                      ? "Codex connected"
+                                      : "Connect Codex"
+                                  }
+                                >
+                                  <div
+                                    className={`w-1.5 h-1.5 rounded-full ${codex.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                                  />
+                                  <span
+                                    className={
+                                      codex.isConnected
+                                        ? "text-[var(--text-control)]"
+                                        : "text-[var(--text-muted)]"
+                                    }
+                                  >
+                                    Codex
+                                  </span>
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setShowOpencodeDialog(true)}
+                                className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                                title={
+                                  opencode.configured
+                                    ? `Opencode — ${opencode.providerLabels.join(", ")}`
+                                    : "Opencode — no providers configured. Click to add."
+                                }
+                              >
+                                <div
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    opencode.configured
+                                      ? "bg-green-500"
+                                      : "bg-gray-600"
+                                  }`}
+                                />
+                                <span
+                                  className={
+                                    opencode.configured
+                                      ? "text-[var(--text-control)]"
+                                      : "text-[var(--text-muted)]"
+                                  }
+                                >
+                                  Opencode
+                                </span>
+                              </button>
+                              <button
+                                onClick={() => setShowGitHubDialog(true)}
+                                className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
+                                title={
+                                  github.isConnected
+                                    ? "GitHub connected"
+                                    : "Connect GitHub"
+                                }
+                              >
+                                <div
+                                  className={`w-1.5 h-1.5 rounded-full ${github.isConnected ? "bg-green-500" : "bg-gray-600"}`}
+                                />
+                                <span
+                                  className={
+                                    github.isConnected
+                                      ? "text-[var(--text-control)]"
+                                      : "text-[var(--text-muted)]"
+                                  }
+                                >
+                                  GitHub
+                                </span>
+                              </button>
+                            </div>
+                          ) : (
+                            <details
+                              className="no-drag group relative pointer-events-auto"
+                              onBlur={(event) => {
+                                const next = event.relatedTarget as Node | null;
+                                if (!event.currentTarget.contains(next)) {
+                                  event.currentTarget.open = false;
+                                }
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Escape") {
+                                  event.preventDefault();
+                                  event.currentTarget.open = false;
+                                  (
+                                    event.currentTarget.querySelector(
+                                      "summary",
+                                    ) as HTMLElement | null
+                                  )?.focus();
+                                }
+                              }}
+                            >
+                              <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full ${
+                                    claude.isConnected ||
+                                    codex.isConnected ||
+                                    opencode.configured ||
+                                    github.isConnected
+                                      ? "bg-emerald-400"
+                                      : "bg-[var(--text-faint)]"
+                                  }`}
+                                />
+                                Connections
+                                <span className="text-[var(--text-muted)]">
+                                  {
+                                    [
+                                      claude.isConnected,
+                                      codexEnabled && codex.isConnected,
+                                      opencode.configured,
+                                      github.isConnected,
+                                    ].filter(Boolean).length
+                                  }
+                                  /{codexEnabled ? 4 : 3}
+                                </span>
                                 <svg
-                                  className="w-4 h-4"
+                                  className="h-3 w-3 transition-transform group-open:rotate-180"
                                   fill="none"
                                   stroke="currentColor"
-                                  strokeWidth={1.5}
+                                  strokeWidth={2}
                                   viewBox="0 0 24 24"
                                 >
                                   <path
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
-                                    d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+                                    d="m19 9-7 7-7-7"
                                   />
                                 </svg>
-                                Add folder
-                              </button>
-                            </div>
-                          ) : undefined
-                        }
-                        completionStatus={
-                          !isStreaming &&
-                          activeThread?.spawnedBy === "manager" &&
-                          activeThread?.lastCompletionStatus
-                            ? activeThread.lastCompletionStatus
-                            : undefined
-                        }
-                        completionError={activeThread?.lastCompletionError}
-                      />
-
-                      {/* Input + toolbar (hidden during first-run folder onboarding) */}
-                      {!isFolderOnboarding && (
-                        <>
-                          <InputBar
-                            ref={inputRef}
-                            onSend={handleSend}
-                            onInterrupt={handleInterrupt}
-                            isStreaming={isStreaming}
-                            interactiveMode={interactiveMode}
-                            onInteractiveResponse={handleInteractiveResponse}
-                            slashCommands={slashCommands}
-                            cwd={activeThread?.cwd}
-                            filesBridge={filesBridge}
-                            pendingMessages={pendingMessages}
-                            onCancelPending={(id) => void cancelPending(id)}
-                            onPromotePending={(id, to) =>
-                              void promotePending(id, to)
-                            }
-                            onEditPending={(message) =>
-                              void handleEditPending(message)
-                            }
-                          />
-
-                          <div className="flex-shrink-0 bg-[var(--bg-main)] px-4 pb-2">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <ProviderToggle
-                                  provider={activeProvider}
-                                  onProviderChange={handleProviderChange}
-                                  enabledProviders={
-                                    enabledProviders ?? undefined
-                                  }
-                                  disabled={
-                                    isStreaming ||
-                                    // Lock the provider once a regular thread has
-                                    // messages (switching mid-conversation breaks
-                                    // the transcript). The Manager thread is the
-                                    // exception: switching resets it cleanly, so
-                                    // users can toggle freely.
-                                    (activeThreadId !== managerThreadId &&
-                                      messages.length > 0)
-                                  }
-                                />
-                                <span className="text-xs text-[var(--text-muted)]">
-                                  |
-                                </span>
-                                <ModelSelector
-                                  selectedModel={activeThread?.model}
-                                  onModelChange={handleModelChange}
-                                  thinkingEffort={activeThread?.thinkingEffort}
-                                  onThinkingEffortChange={
-                                    handleThinkingEffortChange
-                                  }
-                                  fetchScope={activeProvider}
-                                  onFetchModels={() =>
-                                    settingsBridge.getAvailableModels?.(
-                                      activeProvider,
-                                    ) ?? Promise.resolve([])
-                                  }
-                                  isOpen={modelPickerOpen}
-                                  onOpenChange={setModelPickerOpen}
-                                />
+                              </summary>
+                              <div className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-xl border border-[var(--border-mid)] bg-[var(--bg-surface)] p-1.5 shadow-2xl">
+                                {connections.map((connection) => (
+                                  <button
+                                    key={connection.label}
+                                    type="button"
+                                    onClick={(event) => {
+                                      connection.onClick();
+                                      const details =
+                                        event.currentTarget.closest("details");
+                                      if (details) details.open = false;
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                                  >
+                                    <span
+                                      className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${connection.connected ? "bg-emerald-400" : "bg-[var(--text-faint)]"}`}
+                                    />
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block text-sm text-[var(--text-primary)]">
+                                        {connection.label}
+                                      </span>
+                                      <span className="block truncate text-xs text-[var(--text-muted)]">
+                                        {connection.detail}
+                                      </span>
+                                    </span>
+                                    <svg
+                                      className="h-3.5 w-3.5 flex-shrink-0 text-[var(--text-faint)]"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth={2}
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="m9 18 6-6-6-6"
+                                      />
+                                    </svg>
+                                  </button>
+                                ))}
                               </div>
-                              <div className="flex items-center gap-2">
-                                {contextUsage && (
-                                  <ContextUsageIndicator
-                                    usage={contextUsage}
-                                    onRefresh={refreshContextUsage}
-                                  />
-                                )}
-                                {!isManagerActive && (
-                                  <ModeToggle
-                                    provider={activeProvider}
-                                    mode={
-                                      activeThread?.mode
-                                        ? normalizeMode(
-                                            activeThread.mode,
-                                            activeProvider,
-                                          )
-                                        : pendingMode
-                                    }
-                                    onModeChange={handleModeChange}
-                                    disabled={isStreaming}
-                                  />
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
+                            </details>
+                          )}
+                        </div>
 
-              {showBottomTerminal && activeThread?.cwd && (
-                <>
-                  <div
-                    onMouseDown={handleTerminalResizeMouseDown}
-                    className="h-1.5 flex-shrink-0 bg-[var(--bg-surface)] hover:bg-blue-600 transition-colors cursor-row-resize"
-                  />
-                  <div
-                    ref={terminalContainerRef}
-                    className="flex flex-col flex-shrink-0"
-                    style={{ height: terminalHeight }}
-                  >
-                    <div className="flex items-center justify-between px-3 py-1 bg-[var(--bg-surface)] border-t border-[var(--border)] flex-shrink-0">
-                      <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
-                        Terminal
-                      </span>
-                      <button
-                        onClick={handleToggleTerminal}
-                        className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                        title="Close terminal (⌘J)"
-                      >
-                        <svg
-                          className="w-3.5 h-3.5"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                    <TerminalPane cwd={activeThread.cwd} />
+                        {/* Chat info bar */}
+                        <ChatInfoBar
+                          primaryCwd={activeThread?.cwd}
+                          sessionStats={sessionStats}
+                          homeDir={homeDir}
+                          sessionTools={sessionTools ?? undefined}
+                          todoData={latestTodoData}
+                          showTaskPanel={showTaskPanel}
+                          onToggleTaskPanel={() => setShowTaskPanel((s) => !s)}
+                          worktreeMode={activeThread?.worktreeMode}
+                          isGitRepo={activeThread?.isGitRepo}
+                          hasMessages={messages.length > 0}
+                          onWorktreeModeChange={handleWorktreeModeChange}
+                          onToggleFileExplorer={handleToggleFileExplorer}
+                          onToggleTerminal={handleToggleTerminal}
+                          mcpServers={mcpServers ?? undefined}
+                          onToggleMcpServer={
+                            activeThreadId
+                              ? async (
+                                  serverName: string,
+                                  enabled: boolean,
+                                ) => {
+                                  try {
+                                    await chatBridge.toggleMcpServer?.(
+                                      activeThreadId,
+                                      serverName,
+                                      enabled,
+                                    );
+                                  } catch (err) {
+                                    console.error("[MCP] toggle failed:", err);
+                                  }
+                                }
+                              : undefined
+                          }
+                          onOpenMcpConfig={(configPath: string) =>
+                            chatBridge.openMcpConfig?.(configPath)
+                          }
+                          onReconnectMcpServer={
+                            activeThreadId
+                              ? (serverName: string) => {
+                                  chatBridge
+                                    .reconnectMcpServer?.(
+                                      activeThreadId,
+                                      serverName,
+                                    )
+                                    ?.catch((err: unknown) =>
+                                      console.error(
+                                        "[MCP] reconnect failed:",
+                                        err,
+                                      ),
+                                    );
+                                }
+                              : undefined
+                          }
+                          sessionChanges={sessionChanges}
+                          onOpenSessionChanges={openFileChanges}
+                        />
+
+                        {/* Chat messages */}
+                        <ChatView
+                          key={activeThreadId ?? "new"}
+                          ref={chatViewRef}
+                          provider={activeProvider}
+                          messages={messages}
+                          isStreaming={isStreaming}
+                          onLinkClick={handleLinkClick}
+                          onSendMessage={handleSend}
+                          onQuestionAnswer={respondQuestion}
+                          onPlanReviewDecision={respondPlanReview}
+                          onViewPlan={openMarkdown}
+                          onUpdateTaskExpanded={updateTaskExpanded}
+                          onViewFile={handleViewFile}
+                          onAnchorChange={handleAnchorChange}
+                          emptyState={
+                            isManagerActive ? (
+                              <div className="text-center px-6 max-w-sm">
+                                <h1 className="text-2xl font-semibold text-gray-300 mb-3">
+                                  Manager
+                                </h1>
+                                <p className="text-sm text-gray-400 leading-relaxed">
+                                  Orchestrates your agent sessions. Dispatch
+                                  tasks, check progress, and relay messages to
+                                  agents running in any workspace.
+                                </p>
+                              </div>
+                            ) : isFolderOnboarding ? (
+                              <div className="text-center px-6 max-w-md">
+                                <h1 className="text-2xl font-semibold text-gray-300 mb-3">
+                                  Welcome to Stratos
+                                </h1>
+                                <p className="text-sm text-gray-400 leading-relaxed mb-6">
+                                  Add a folder to get started. Each folder
+                                  becomes a workspace where you can start
+                                  threads with your agents.
+                                </p>
+                                <button
+                                  onClick={handleAddFolder}
+                                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
+                                >
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth={1.5}
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+                                    />
+                                  </svg>
+                                  Add folder
+                                </button>
+                              </div>
+                            ) : undefined
+                          }
+                          completionStatus={
+                            !isStreaming &&
+                            activeThread?.spawnedBy === "manager" &&
+                            activeThread?.lastCompletionStatus
+                              ? activeThread.lastCompletionStatus
+                              : undefined
+                          }
+                          completionError={activeThread?.lastCompletionError}
+                        />
+
+                        {/* Input + toolbar (hidden during first-run folder onboarding) */}
+                        {!isFolderOnboarding && (
+                          <>
+                            <InputBar
+                              ref={inputRef}
+                              onSend={handleSend}
+                              onInterrupt={handleInterrupt}
+                              isStreaming={isStreaming}
+                              interactiveMode={interactiveMode}
+                              onInteractiveResponse={handleInteractiveResponse}
+                              slashCommands={slashCommands}
+                              cwd={activeThread?.cwd}
+                              filesBridge={filesBridge}
+                              pendingMessages={pendingMessages}
+                              onCancelPending={(id) => void cancelPending(id)}
+                              onPromotePending={(id, to) =>
+                                void promotePending(id, to)
+                              }
+                              onEditPending={(message) =>
+                                void handleEditPending(message)
+                              }
+                              toolbar={
+                                designVariant === "refined" ? (
+                                  <>
+                                    <ModelSelector
+                                      provider={activeProvider}
+                                      onProviderChange={handleProviderChange}
+                                      enabledProviders={
+                                        enabledProviders ?? undefined
+                                      }
+                                      providerDisabled={
+                                        isStreaming ||
+                                        (activeThreadId !== managerThreadId &&
+                                          messages.length > 0)
+                                      }
+                                      selectedModel={activeThread?.model}
+                                      onModelChange={handleModelChange}
+                                      thinkingEffort={
+                                        activeThread?.thinkingEffort
+                                      }
+                                      onThinkingEffortChange={
+                                        handleThinkingEffortChange
+                                      }
+                                      fetchScope={activeProvider}
+                                      onFetchModels={() =>
+                                        settingsBridge.getAvailableModels?.(
+                                          activeProvider,
+                                        ) ?? Promise.resolve([])
+                                      }
+                                      isOpen={modelPickerOpen}
+                                      onOpenChange={setModelPickerOpen}
+                                    />
+                                    {!isManagerActive && (
+                                      <ModeToggle
+                                        provider={activeProvider}
+                                        mode={
+                                          activeThread?.mode
+                                            ? normalizeMode(
+                                                activeThread.mode,
+                                                activeProvider,
+                                              )
+                                            : pendingMode
+                                        }
+                                        onModeChange={handleModeChange}
+                                        disabled={isStreaming}
+                                      />
+                                    )}
+                                    {contextUsage && (
+                                      <ContextUsageIndicator
+                                        usage={contextUsage}
+                                        onRefresh={refreshContextUsage}
+                                      />
+                                    )}
+                                  </>
+                                ) : undefined
+                              }
+                            />
+                            {designVariant === "classic" && (
+                              <div className="flex-shrink-0 bg-[var(--bg-main)] px-4 pb-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <ProviderToggle
+                                      provider={activeProvider}
+                                      onProviderChange={handleProviderChange}
+                                      enabledProviders={
+                                        enabledProviders ?? undefined
+                                      }
+                                      disabled={
+                                        isStreaming ||
+                                        // Lock the provider once a regular thread has
+                                        // messages (switching mid-conversation breaks
+                                        // the transcript). The Manager thread is the
+                                        // exception: switching resets it cleanly, so
+                                        // users can toggle freely.
+                                        (activeThreadId !== managerThreadId &&
+                                          messages.length > 0)
+                                      }
+                                    />
+                                    <span className="text-xs text-[var(--text-muted)]">
+                                      |
+                                    </span>
+                                    <ModelSelector
+                                      selectedModel={activeThread?.model}
+                                      onModelChange={handleModelChange}
+                                      thinkingEffort={
+                                        activeThread?.thinkingEffort
+                                      }
+                                      onThinkingEffortChange={
+                                        handleThinkingEffortChange
+                                      }
+                                      fetchScope={activeProvider}
+                                      onFetchModels={() =>
+                                        settingsBridge.getAvailableModels?.(
+                                          activeProvider,
+                                        ) ?? Promise.resolve([])
+                                      }
+                                      isOpen={modelPickerOpen}
+                                      onOpenChange={setModelPickerOpen}
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {contextUsage && (
+                                      <ContextUsageIndicator
+                                        usage={contextUsage}
+                                        onRefresh={refreshContextUsage}
+                                      />
+                                    )}
+                                    {!isManagerActive && (
+                                      <ModeToggle
+                                        provider={activeProvider}
+                                        mode={
+                                          activeThread?.mode
+                                            ? normalizeMode(
+                                                activeThread.mode,
+                                                activeProvider,
+                                              )
+                                            : pendingMode
+                                        }
+                                        onModeChange={handleModeChange}
+                                        disabled={isStreaming}
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
-                </>
-              )}
-            </div>
-          </Panel>
+                </div>
 
-          {preview.isOpen && (
-            <>
-              <Separator className="w-1.5 bg-[var(--bg-surface)] hover:bg-blue-600 transition-colors cursor-col-resize" />
-              <Panel
-                defaultSize={preview.type === "file-changes" ? 40 : 30}
-                minSize={preview.type === "file-changes" ? 32 : 20}
-              >
-                <PreviewPane
-                  preview={preview}
-                  onClose={closePreview}
-                  filesBridge={filesBridge}
-                  sessionChanges={sessionChanges}
-                  gitStatus={gitStatus}
-                  onOpenArtifact={openArtifactEditor}
-                />
-              </Panel>
-            </>
+                {showBottomTerminal && activeThread?.cwd && (
+                  <>
+                    <div
+                      onMouseDown={handleTerminalResizeMouseDown}
+                      className="h-1.5 flex-shrink-0 bg-[var(--bg-surface)] hover:bg-blue-600 transition-colors cursor-row-resize"
+                    />
+                    <div
+                      ref={terminalContainerRef}
+                      className="flex flex-col flex-shrink-0"
+                      style={{ height: terminalHeight }}
+                    >
+                      <div className="flex items-center justify-between px-3 py-1 bg-[var(--bg-surface)] border-t border-[var(--border)] flex-shrink-0">
+                        <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                          Terminal
+                        </span>
+                        <button
+                          onClick={handleToggleTerminal}
+                          className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                          title="Close terminal (⌘J)"
+                        >
+                          <svg
+                            className="w-3.5 h-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                      <TerminalPane cwd={activeThread.cwd} />
+                    </div>
+                  </>
+                )}
+              </div>
+            </Panel>
+
+            {preview.isOpen && (
+              <>
+                <Separator className="w-1.5 bg-[var(--bg-surface)] hover:bg-blue-600 transition-colors cursor-col-resize" />
+                <Panel
+                  defaultSize={preview.type === "file-changes" ? 40 : 30}
+                  minSize={preview.type === "file-changes" ? 32 : 20}
+                >
+                  <PreviewPane
+                    preview={preview}
+                    onClose={closePreview}
+                    filesBridge={filesBridge}
+                    sessionChanges={sessionChanges}
+                    gitStatus={gitStatus}
+                    onOpenArtifact={openArtifactEditor}
+                  />
+                </Panel>
+              </>
+            )}
+          </Group>
+
+          {/* Permission dialog */}
+          {permissionRequest && (
+            <PermissionDialog
+              request={permissionRequest}
+              onRespond={respondPermission}
+            />
           )}
-        </Group>
 
-        {/* Permission dialog */}
-        {permissionRequest && (
-          <PermissionDialog
-            request={permissionRequest}
-            onRespond={respondPermission}
+          {/* Claude connect dialog */}
+          <ConnectClaudeDialog
+            isOpen={showClaudeDialog}
+            isConnected={claude.isConnected}
+            cliInstalled={claude.cliInstalled}
+            email={claude.email}
+            subscriptionType={claude.subscriptionType}
+            loading={claude.loading}
+            error={claude.error}
+            onClose={() => setShowClaudeDialog(false)}
+            onConnect={claude.connect}
+            onDisconnect={claude.disconnect}
           />
-        )}
 
-        {/* Claude connect dialog */}
-        <ConnectClaudeDialog
-          isOpen={showClaudeDialog}
-          isConnected={claude.isConnected}
-          cliInstalled={claude.cliInstalled}
-          email={claude.email}
-          subscriptionType={claude.subscriptionType}
-          loading={claude.loading}
-          error={claude.error}
-          onClose={() => setShowClaudeDialog(false)}
-          onConnect={claude.connect}
-          onDisconnect={claude.disconnect}
-        />
+          {/* Codex connect dialog */}
+          <ConnectCodexDialog
+            isOpen={codexEnabled && showCodexDialog}
+            isConnected={codex.isConnected}
+            cliInstalled={codex.cliInstalled}
+            email={codex.email}
+            planType={codex.planType}
+            authMode={codex.authMode}
+            loading={codex.loading}
+            error={codex.error}
+            onClose={() => setShowCodexDialog(false)}
+            onConnect={codex.connect}
+            onDisconnect={codex.disconnect}
+          />
 
-        {/* Codex connect dialog */}
-        <ConnectCodexDialog
-          isOpen={codexEnabled && showCodexDialog}
-          isConnected={codex.isConnected}
-          cliInstalled={codex.cliInstalled}
-          email={codex.email}
-          planType={codex.planType}
-          authMode={codex.authMode}
-          loading={codex.loading}
-          error={codex.error}
-          onClose={() => setShowCodexDialog(false)}
-          onConnect={codex.connect}
-          onDisconnect={codex.disconnect}
-        />
+          {/* Opencode settings dialog (also hosts Ollama) */}
+          <OpencodeSettingsDialog
+            isOpen={showOpencodeDialog}
+            onClose={() => {
+              setShowOpencodeDialog(false);
+              opencode.refresh();
+            }}
+          />
 
-        {/* Opencode settings dialog (also hosts Ollama) */}
-        <OpencodeSettingsDialog
-          isOpen={showOpencodeDialog}
-          onClose={() => {
-            setShowOpencodeDialog(false);
-            opencode.refresh();
-          }}
-        />
+          {/* GitHub connect dialog */}
+          <ConnectGitHubDialog
+            isOpen={showGitHubDialog}
+            isConnected={github.isConnected}
+            cliInstalled={github.cliInstalled}
+            username={github.username}
+            displayName={github.displayName}
+            organizations={github.organizations}
+            loading={github.loading}
+            error={github.error}
+            onClose={() => setShowGitHubDialog(false)}
+            onConnect={github.connect}
+            onDisconnect={github.disconnect}
+          />
 
-        {/* GitHub connect dialog */}
-        <ConnectGitHubDialog
-          isOpen={showGitHubDialog}
-          isConnected={github.isConnected}
-          cliInstalled={github.cliInstalled}
-          username={github.username}
-          displayName={github.displayName}
-          organizations={github.organizations}
-          loading={github.loading}
-          error={github.error}
-          onClose={() => setShowGitHubDialog(false)}
-          onConnect={github.connect}
-          onDisconnect={github.disconnect}
-        />
+          {/* New thread dialog */}
+          <NewThreadDialog
+            isOpen={showNewThreadDialog}
+            onClose={() => setShowNewThreadDialog(false)}
+            folders={folders}
+            onSelectFolder={handleNewThreadFromFolder}
+            onBrowse={handleNewThreadBrowse}
+          />
 
-        {/* New thread dialog */}
-        <NewThreadDialog
-          isOpen={showNewThreadDialog}
-          onClose={() => setShowNewThreadDialog(false)}
-          folders={folders}
-          onSelectFolder={handleNewThreadFromFolder}
-          onBrowse={handleNewThreadBrowse}
-        />
+          {/* Scheduled prompts dialog */}
+          <ScheduledPromptsDialog
+            isOpen={showSchedulesDialog}
+            onClose={() => setShowSchedulesDialog(false)}
+            folders={folders}
+          />
 
-        {/* Scheduled prompts dialog */}
-        <ScheduledPromptsDialog
-          isOpen={showSchedulesDialog}
-          onClose={() => setShowSchedulesDialog(false)}
-          folders={folders}
-        />
+          {/* Settings dialog */}
+          <SettingsDialog
+            isOpen={showSettingsDialog}
+            onClose={() => setShowSettingsDialog(false)}
+            theme={theme}
+            onThemeChange={handleThemeChange}
+            designVariant={designVariant}
+            onDesignChange={handleDesignChange}
+            designSaving={designSaving}
+            designError={designError}
+          />
 
-        {/* Settings dialog */}
-        <SettingsDialog
-          isOpen={showSettingsDialog}
-          onClose={() => setShowSettingsDialog(false)}
-          theme={theme}
-          onThemeChange={handleThemeChange}
-        />
-
-        {/* Diagnostic toasts */}
-        <DiagnosticToastContainer toasts={toasts} onDismiss={dismiss} />
-      </div>
+          {/* Diagnostic toasts */}
+          <DiagnosticToastContainer toasts={toasts} onDismiss={dismiss} />
+        </div>
+      </DesignProvider>
     </ThemeContext.Provider>
   );
 }

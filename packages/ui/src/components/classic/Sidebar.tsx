@@ -1,0 +1,233 @@
+import type { Thread, Folder } from "@stratosapp/core";
+import type { AgentDefinition } from "@stratosapp/core";
+import { ThreadList } from "../ThreadList";
+import { AgentGroupList } from "./AgentGroupList";
+
+export type SidebarGrouping = "folders" | "agents";
+
+export interface Props {
+  threads: Thread[];
+  folders: Folder[];
+  activeThreadId: string | null;
+  onThreadClick: (threadId: string) => void;
+  onCreateThreadInFolder: (folderId: string) => void;
+  onAddFolder: () => void;
+  onRemoveFolder: (folderId: string) => void;
+  onToggleFolderCollapsed: (folderId: string, collapsed: boolean) => void;
+  onDeleteThread: (threadId: string) => void;
+  onRenameThread: (threadId: string, title: string) => void;
+  onToggleSidebar: () => void;
+  onSettingsClick: () => void;
+  onSchedulesClick?: () => void;
+  runningThreadIds: string[];
+  threadNotifications: Map<string, string>;
+  pendingPermissionThreadIds?: Set<string>;
+  draftThreadIds?: Set<string>;
+
+  // Grouping switch (Folders | Agents)
+  grouping?: SidebarGrouping;
+  onGroupingChange?: (grouping: SidebarGrouping) => void;
+
+  // Agents grouping — only needed when grouping === "agents"
+  agents?: AgentDefinition[];
+  activeAgentId?: string | null;
+  collapsedAgentIds?: Set<string>;
+  onToggleAgent?: (agentId: string, collapsed: boolean) => void;
+  onAgentClick?: (agentId: string) => void;
+  onCreateThreadForAgent?: (agentId: string) => void;
+  onCreateAgent?: () => void;
+  onDeleteAgent?: (agentId: string) => void;
+}
+
+export function Sidebar({
+  threads,
+  folders,
+  activeThreadId,
+  onThreadClick,
+  onCreateThreadInFolder,
+  onAddFolder,
+  onRemoveFolder,
+  onToggleFolderCollapsed,
+  onDeleteThread,
+  onRenameThread,
+  onToggleSidebar,
+  onSettingsClick,
+  onSchedulesClick,
+  runningThreadIds,
+  threadNotifications,
+  pendingPermissionThreadIds,
+  draftThreadIds,
+  grouping = "folders",
+  onGroupingChange,
+  agents = [],
+  activeAgentId = null,
+  collapsedAgentIds,
+  onToggleAgent,
+  onAgentClick,
+  onCreateThreadForAgent,
+  onCreateAgent,
+  onDeleteAgent,
+}: Props): React.ReactElement {
+  return (
+    <div className="flex-shrink-0 flex flex-col bg-[var(--bg-root)] overflow-hidden w-[232px] min-w-[232px] h-full">
+      <div className="flex flex-col h-full">
+        {/* Traffic-light clearance */}
+        <div className="drag-region h-7 flex-shrink-0" />
+        {/* Header with logo */}
+        <div className="flex-shrink-0 flex items-center justify-between px-3 pb-1">
+          <span className="font-semibold text-[var(--text-primary)]">
+            <span className="text-blue-500">Stratos</span>
+          </span>
+          <button
+            onClick={onToggleSidebar}
+            className="no-drag p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors"
+            title="Collapse sidebar"
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
+              />
+            </svg>
+          </button>
+        </div>
+
+        {/* Grouping switch */}
+        {onGroupingChange && (
+          <div
+            role="tablist"
+            aria-label="Sidebar grouping"
+            className="no-drag flex-shrink-0 mx-3 mb-1 flex items-center gap-0.5 rounded-lg bg-[var(--bg-surface)] p-0.5"
+          >
+            <button
+              role="tab"
+              aria-selected={grouping === "folders"}
+              onClick={() => onGroupingChange("folders")}
+              className={`flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                grouping === "folders"
+                  ? "bg-[var(--border)] text-[var(--text-primary)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Folders
+            </button>
+            <button
+              role="tab"
+              aria-selected={grouping === "agents"}
+              onClick={() => onGroupingChange("agents")}
+              className={`flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                grouping === "agents"
+                  ? "bg-[var(--border)] text-[var(--text-primary)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Agents
+            </button>
+          </div>
+        )}
+
+        {/* Thread list */}
+        <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] overflow-y-auto px-1 py-2">
+          {grouping === "agents" ? (
+            <AgentGroupList
+              agents={agents}
+              threads={threads}
+              activeThreadId={activeThreadId}
+              activeAgentId={activeAgentId}
+              collapsedAgentIds={collapsedAgentIds ?? new Set()}
+              onToggleAgent={onToggleAgent ?? (() => {})}
+              onAgentClick={onAgentClick ?? (() => {})}
+              onThreadClick={onThreadClick}
+              onCreateThreadForAgent={onCreateThreadForAgent ?? (() => {})}
+              onCreateAgent={onCreateAgent ?? (() => {})}
+              onDeleteAgent={onDeleteAgent ?? (() => {})}
+              onDeleteThread={onDeleteThread}
+              onRenameThread={onRenameThread}
+              runningThreadIds={runningThreadIds}
+              threadNotifications={threadNotifications}
+              pendingPermissionThreadIds={pendingPermissionThreadIds}
+            />
+          ) : (
+            <ThreadList
+              // Agent-owned threads live under their agent. Excluding them here
+              // makes the two groupings a partition rather than an overlap, and
+              // leaves Folders exactly as it was before agents existed.
+              threads={threads.filter((t) => !t.agentId)}
+              folders={folders}
+              activeThreadId={activeThreadId}
+              onThreadClick={onThreadClick}
+              onCreateThreadInFolder={onCreateThreadInFolder}
+              onAddFolder={onAddFolder}
+              onRemoveFolder={onRemoveFolder}
+              onToggleFolderCollapsed={onToggleFolderCollapsed}
+              onDeleteThread={onDeleteThread}
+              onRenameThread={onRenameThread}
+              runningThreadIds={runningThreadIds}
+              threadNotifications={threadNotifications}
+              pendingPermissionThreadIds={pendingPermissionThreadIds}
+              draftThreadIds={draftThreadIds}
+            />
+          )}
+        </div>
+
+        {/* Footer buttons */}
+        <div className="flex-shrink-0 border-t border-[var(--border)] px-3 py-2 space-y-0.5">
+          {onSchedulesClick && (
+            <button
+              onClick={onSchedulesClick}
+              className="no-drag w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[var(--text-control)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] transition-colors text-sm"
+              title="Scheduled Prompts"
+            >
+              <svg
+                className="w-4 h-4 flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z"
+                />
+              </svg>
+              <span>Schedules</span>
+            </button>
+          )}
+          <button
+            onClick={onSettingsClick}
+            className="no-drag w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[var(--text-control)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] transition-colors text-sm"
+            title="Settings"
+          >
+            <svg
+              className="w-4 h-4 flex-shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+            <span>Settings</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
