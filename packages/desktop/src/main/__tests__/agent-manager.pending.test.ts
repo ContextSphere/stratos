@@ -21,6 +21,7 @@ vi.mock("@stratosapp/core", async (importOriginal) => {
     ClaudeCodeProvider: vi.fn(),
     createProvider: vi.fn(),
     getAgent: vi.fn(),
+    appendTraceEntry: vi.fn(),
   };
 });
 
@@ -166,6 +167,83 @@ describe("AgentManager — mid-turn messages", () => {
       });
     }
   }
+
+  describe("Copilot terminal recovery", () => {
+    it.each(["error", "stop"])(
+      "sends the next message instead of queueing after %s without an idle event",
+      async (terminal) => {
+        const { CopilotProvider } = await import("@stratosapp/core");
+        // Match the provider's CommonJS SDK entry point.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const sdk: typeof import("@github/copilot-sdk") = require("@github/copilot-sdk");
+        const sdkSession = Object.assign(new sdk.CopilotSession(), {
+          sessionId: "recovery-session",
+        });
+        const send = vi.spyOn(sdkSession, "send").mockResolvedValue("message");
+        vi.spyOn(sdkSession, "abort").mockResolvedValue(undefined);
+        vi.spyOn(sdkSession, "disconnect").mockResolvedValue(undefined);
+        let emit!: NonNullable<
+          import("@github/copilot-sdk").SessionConfig["onEvent"]
+        >;
+        vi.spyOn(
+          sdk.CopilotClient.prototype,
+          "resumeSession",
+        ).mockImplementation(async (_id, config) => {
+          emit = config!.onEvent!;
+          return sdkSession;
+        });
+        const manager = new AgentManager(mockWindow);
+        const provider = new CopilotProvider();
+        manager.sessions.set("t1", {
+          provider,
+          sessionId: sdkSession.sessionId,
+        });
+        manager.storage = {
+          getThread: vi.fn().mockReturnValue({
+            id: "t1",
+            provider: "copilot",
+            mode: "default",
+            cwd: "/tmp",
+          }),
+          updateThread: vi.fn(),
+        };
+        try {
+          await manager.enqueueMessage("t1", "first");
+          await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+          expect(manager.isStreaming("t1")).toBe(true);
+          if (terminal === "stop") {
+            await manager.interruptSession("t1");
+          } else {
+            emit({
+              type: "session.error",
+              id: "error-event",
+              parentId: null,
+              timestamp: new Date().toISOString(),
+              data: {
+                errorType: "system",
+                message: "WebSocket receive failed [ECONNRESET]",
+              },
+            });
+          }
+          await vi.waitFor(() => expect(manager.isStreaming("t1")).toBe(false));
+
+          const result = await manager.enqueueMessage("t1", "continue");
+
+          expect(result).toEqual({ status: "sent", fellBack: false });
+          await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+          expect(manager.listPending("t1")).toEqual([]);
+          expect(send).toHaveBeenLastCalledWith(
+            expect.objectContaining({ prompt: "continue", mode: "immediate" }),
+          );
+          await manager.interruptSession("t1");
+          await vi.waitFor(() => expect(manager.isStreaming("t1")).toBe(false));
+        } finally {
+          manager.dispose();
+          vi.restoreAllMocks();
+        }
+      },
+    );
+  });
 
   describe("enqueueMessage", () => {
     it("emits a user message when a main-owned submission starts immediately", async () => {

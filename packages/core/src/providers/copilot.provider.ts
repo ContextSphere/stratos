@@ -1048,8 +1048,13 @@ export function* mapEvent(
       return;
     }
 
-    case "session.error":
-    case "model.call_failure": {
+    case "model.call_failure":
+      // Failed API calls can be retried by the runtime. Telemetry must not
+      // clear the renderer's running state before a terminal session event.
+      return;
+
+    case "session.error": {
+      if (ev.agentId) return;
       const d: any = ev.data ?? {};
       const message: string =
         typeof d.message === "string"
@@ -1085,7 +1090,7 @@ export function* mapEvent(
       return;
 
     case "session.idle": {
-      if (ctx.resultEmitted) return;
+      if (ev.agentId || ctx.resultEmitted) return;
       ctx.resultEmitted = true;
       // Emit the consolidated `result` once per turn.
       yield {
@@ -1205,6 +1210,10 @@ class EventQueue<T> {
   > = [];
   private closed = false;
 
+  get isClosed(): boolean {
+    return this.closed;
+  }
+
   push(v: T) {
     if (this.closed) return;
     const waiter = this.waiters.shift();
@@ -1256,6 +1265,7 @@ export class CopilotProvider implements AgentProvider {
   /** True while a turn is streaming, so pushMessage knows there is something
    *  to steer. The SDK session object outlives any single turn. */
   private turnActive = false;
+  private activeEventQueue?: EventQueue<SessionEvent>;
   private modelInfoCache?: ModelInfo[];
   private lastContextUsage: ContextUsage | null = null;
   private lastKnownMcpStatus: McpServerInfo[] = [];
@@ -1368,7 +1378,12 @@ export class CopilotProvider implements AgentProvider {
     content: string,
     images?: { dataUrl: string; mimeType: string }[],
   ): Promise<boolean> {
-    if (!this.currentSession || !this.turnActive) return false;
+    if (
+      !this.currentSession ||
+      !this.turnActive ||
+      this.activeEventQueue?.isClosed
+    )
+      return false;
 
     const attachments = imagesToAttachments(images);
     try {
@@ -1388,18 +1403,20 @@ export class CopilotProvider implements AgentProvider {
   }
 
   async interrupt(): Promise<void> {
-    if (this.currentSession) {
-      try {
-        await this.currentSession.abort();
-      } catch (err) {
-        console.warn(
-          `[copilot] abort error: ${(err as Error)?.message ?? err}`,
-        );
-      }
+    const queue = this.activeEventQueue;
+    try {
+      await this.currentSession?.abort();
+    } catch (err) {
+      console.warn(`[copilot] abort error: ${(err as Error)?.message ?? err}`);
+    } finally {
+      // An acknowledged abort (or a dead connection) need not emit idle.
+      // Capture the queue so a late abort cannot close a replacement turn.
+      queue?.close();
     }
   }
 
   async dispose(): Promise<void> {
+    this.activeEventQueue?.close();
     if (this.currentSession) {
       try {
         await this.currentSession.disconnect();
@@ -1411,7 +1428,23 @@ export class CopilotProvider implements AgentProvider {
   }
 
   async *sendMessage(params: SendMessageParams): AsyncGenerator<AgentMessage> {
-    const sdk = getSdk();
+    const queue = new EventQueue<SessionEvent>();
+    this.activeEventQueue = queue;
+    try {
+      yield* this.streamTurn(params, queue);
+    } finally {
+      queue.close();
+      if (this.activeEventQueue === queue) {
+        this.turnActive = false;
+        this.activeEventQueue = undefined;
+      }
+    }
+  }
+
+  private async *streamTurn(
+    params: SendMessageParams,
+    queue: EventQueue<SessionEvent>,
+  ): AsyncGenerator<AgentMessage> {
     const cwd =
       params.cwd ?? this.config.cwd ?? process.env.HOME ?? process.cwd();
     const client = await this.getClient(cwd);
@@ -1507,9 +1540,9 @@ export class CopilotProvider implements AgentProvider {
     };
 
     // ── Bridge queue ──
-    const queue = new EventQueue<SessionEvent>();
     const ctx = makeBridgeContext();
 
+    if (queue.isClosed) return;
     let session: CopilotSessionType;
     try {
       if (params.sessionId) {
@@ -1536,6 +1569,7 @@ export class CopilotProvider implements AgentProvider {
     this.sessionId = session.sessionId;
     ctx.sessionId = session.sessionId;
 
+    if (queue.isClosed) return;
     // OpenAI-family models hide reasoning unless we explicitly request a
     // reasoning summary. `setModel` is the only RPC that accepts the
     // `reasoningSummary` field; the SDK's TypeScript types don't expose
@@ -1567,9 +1601,7 @@ export class CopilotProvider implements AgentProvider {
     const init = emitInitIfReady(ctx);
     if (init) yield init;
 
-    // The onEvent config callback is already subscribed; do NOT also call
-    // session.on() — that would double-push every event into the queue.
-    const unsubscribe = () => {};
+    if (queue.isClosed) return;
 
     // Drive the send (don't await; events flow asynchronously into the queue).
     const attachments = imagesToAttachments(params.images);
@@ -1584,7 +1616,8 @@ export class CopilotProvider implements AgentProvider {
     };
     this.turnActive = true;
 
-    const sendPromise = session.send(messageOptions).catch((err) => {
+    // A terminal event must release the turn even if this RPC never settles.
+    void session.send(messageOptions).catch((err) => {
       queue.push({
         type: "session.error",
         data: {
@@ -1595,7 +1628,7 @@ export class CopilotProvider implements AgentProvider {
         parentId: null,
         timestamp: new Date().toISOString(),
         ephemeral: true,
-      } as any);
+      });
     });
 
     // Set up idle-close: when session.idle arrives, we still want to keep
@@ -1620,31 +1653,26 @@ export class CopilotProvider implements AgentProvider {
             /* tracing errors must not break streaming */
           }
         }
+        const terminal =
+          !ev.agentId &&
+          (ev.type === "session.error" ||
+            ev.type === "abort" ||
+            ev.type === "session.shutdown");
+        if (terminal || (!ev.agentId && ev.type === "session.idle")) {
+          this.turnActive = false;
+        }
         for (const m of mapEvent(ev, ctx)) {
           yield m;
         }
-        if (ev.type === "session.idle" && !idleSeen) {
+        if (terminal) break;
+        if (!ev.agentId && ev.type === "session.idle" && !idleSeen) {
           idleSeen = true;
           // Give a tiny window for any trailing usage/turn_end events.
           idleCloseTimer = setTimeout(() => queue.close(), 250);
         }
-        if (ev.type === "session.shutdown") {
-          queue.close();
-        }
       }
     } finally {
-      this.turnActive = false;
       if (idleCloseTimer) clearTimeout(idleCloseTimer);
-      try {
-        unsubscribe();
-      } catch {
-        /* */
-      }
-      try {
-        await sendPromise;
-      } catch {
-        /* already pushed as error */
-      }
     }
   }
 }

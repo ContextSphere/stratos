@@ -530,6 +530,38 @@ describe("useChat — respondPlanReview", () => {
 });
 
 describe("useChat — interrupt", () => {
+  it("does not clear a replacement turn when the stopped turn's timeout fires", async () => {
+    vi.useFakeTimers();
+    const { result, unmount } = renderUseChat("thread-1");
+    try {
+      await act(async () => {
+        await result.current.sendMessage("first");
+      });
+      const onState = mockApi.onThreadStreamState.mock.calls[0][0];
+      await act(async () => {
+        onState({ threadId: "thread-1", isRunning: true });
+      });
+      await act(async () => {
+        await result.current.interrupt();
+        onState({ threadId: "thread-1", isRunning: false });
+      });
+      await act(async () => {
+        await result.current.sendMessage("continue");
+        onState({ threadId: "thread-1", isRunning: true });
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(result.current.isStreaming).toBe(true);
+      expect(mockApi.sendMessage).toHaveBeenCalledTimes(2);
+      expect(mockApi.enqueueMessage).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it("calls window.api.interrupt with the active thread id", async () => {
     const { result } = renderUseChat("thread-1");
 

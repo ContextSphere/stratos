@@ -1691,7 +1691,7 @@ export function useChat(
       // hangs or the session is dead), force-clear the running indicator.
       const capturedTid = tid;
       setTimeout(() => {
-        if (streamingThreadsRef.current.has(capturedTid)) {
+        if (state && streamingThreadsRef.current.get(capturedTid) === state) {
           streamingThreadsRef.current.delete(capturedTid);
           setRunningThreadIds((prev) =>
             prev.filter((id) => id !== capturedTid),
