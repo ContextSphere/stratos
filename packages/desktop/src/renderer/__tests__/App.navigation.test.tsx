@@ -463,21 +463,62 @@ describe("App navigation from agent screens", () => {
     expect(mocks.inputFocus).toHaveBeenCalled();
   });
 
-  it("keeps an expand affordance available on a collapsed agent overview", () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: "View Penny" }));
-    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+  describe.each(["classic", "refined"])("%s sidebar", (designVariant) => {
+    it.each(["chat", "overview", "editor"])(
+      "reopens from the %s screen without an overlapping drag region",
+      async (view) => {
+        mocks.settings.designVariant = designVariant;
+        render(<App />);
+        await waitFor(() =>
+          expect(screen.getByTestId("design-provider").dataset.variant).toBe(
+            designVariant,
+          ),
+        );
+        if (view === "overview") {
+          fireEvent.click(screen.getByRole("button", { name: "View Penny" }));
+        } else if (view === "editor") {
+          fireEvent.click(screen.getByRole("button", { name: "New bot" }));
+        }
 
-    expect(
-      screen.getByRole("button", { name: "Expand sidebar" }),
-    ).not.toBeNull();
-    expect(screen.getByText("Penny overview")).not.toBeNull();
-    expect(
-      screen
-        .getByRole("button", { name: "Collapse sidebar", hidden: true })
-        .closest("div[style]")
-        ?.hasAttribute("inert"),
-    ).toBe(true);
+        const content =
+          view === "chat"
+            ? screen.getByTestId("composer")
+            : view === "overview"
+              ? screen.getByText("Penny overview")
+              : screen.getByRole("button", { name: "Create and start chat" });
+        const collapseButton = screen.getByRole("button", {
+          name: "Collapse sidebar",
+        });
+        const sidebar = collapseButton.closest("div[style]");
+
+        for (let cycle = 0; cycle < 2; cycle++) {
+          fireEvent.click(collapseButton);
+          expect(sidebar?.hasAttribute("inert")).toBe(true);
+
+          const expandButton = screen.getByRole("button", {
+            name: "Expand sidebar",
+          });
+          expect(expandButton.classList.contains("no-drag")).toBe(true);
+          // DOM clicks bypass Electron hit testing, so guard the drag-region
+          // structure too: an overlapping sibling can swallow native clicks.
+          expect(document.querySelectorAll(".drag-region")).toHaveLength(1);
+          expect(
+            document.querySelector(".drag-region")?.contains(expandButton),
+          ).toBe(true);
+          expect(content.isConnected).toBe(true);
+
+          fireEvent.click(expandButton);
+          expect(
+            screen.queryByRole("button", { name: "Expand sidebar" }),
+          ).toBeNull();
+          expect(sidebar?.hasAttribute("inert")).toBe(false);
+          expect(sidebar?.getAttribute("style")).toContain(
+            `width: ${designVariant === "refined" ? 220 : 256}px`,
+          );
+          expect(content.isConnected).toBe(true);
+        }
+      },
+    );
   });
 
   it("preserves the current draft while visiting an agent overview", async () => {

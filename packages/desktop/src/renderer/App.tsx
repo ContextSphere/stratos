@@ -1346,6 +1346,29 @@ function AppInner(): React.ReactElement {
     [],
   );
 
+  const sidebarExpandButton = sidebarCollapsed ? (
+    <button
+      onClick={toggleSidebar}
+      className="no-drag rounded-md p-1 text-[var(--text-control)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--text-muted)]"
+      title="Expand sidebar"
+      aria-label="Expand sidebar"
+    >
+      <svg
+        className="h-4 w-4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M13 5l7 7-7 7M5 5l7 7-7 7"
+        />
+      </svg>
+    </button>
+  ) : null;
+
   const connections = [
     {
       label: "Claude Code",
@@ -1434,30 +1457,12 @@ function AppInner(): React.ReactElement {
                 <div className="flex-1 min-h-0">
                   <div className="flex flex-col h-full bg-[var(--bg-main)] rounded-l-xl overflow-hidden">
                     {/* hiddenInset traffic lights occupy the leading 80px. */}
-                    {sidebarCollapsed && (
-                      <div className="drag-region flex h-11 flex-shrink-0 items-end pl-[88px] pr-4 pb-1.5">
-                        <button
-                          onClick={toggleSidebar}
-                          className="no-drag rounded-md p-1 text-[var(--text-control)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--text-muted)]"
-                          title="Expand sidebar"
-                          aria-label="Expand sidebar"
-                        >
-                          <svg
-                            className="h-4 w-4"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M13 5l7 7-7 7M5 5l7 7-7 7"
-                            />
-                          </svg>
-                        </button>
-                      </div>
-                    )}
+                    {sidebarCollapsed &&
+                      (editingAgentId !== null || viewingAgent) && (
+                        <div className="drag-region flex h-11 flex-shrink-0 items-end pl-[88px] pr-4 pb-1.5">
+                          {sidebarExpandButton}
+                        </div>
+                      )}
 
                     {editingAgentId !== null ? (
                       <AgentEditor
@@ -1496,11 +1501,11 @@ function AppInner(): React.ReactElement {
                       <>
                         {/* Top bar */}
                         <div
-                          className={`drag-region flex flex-shrink-0 items-end justify-between px-4 pb-1.5 ${sidebarCollapsed ? "pointer-events-none -mt-11 h-11" : "h-11"}`}
+                          className={`drag-region flex h-11 flex-shrink-0 items-end justify-between pr-4 pb-1.5 ${sidebarCollapsed ? "pl-[88px]" : "pl-4"}`}
                         >
-                          <div />
+                          {sidebarExpandButton ?? <div />}
                           {designVariant === "classic" ? (
-                            <div className="pointer-events-auto flex items-center gap-2">
+                            <div className="flex items-center gap-2">
                               <button
                                 onClick={() => setShowClaudeDialog(true)}
                                 className="no-drag flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs transition-colors hover:bg-[var(--border)]"
@@ -1598,7 +1603,7 @@ function AppInner(): React.ReactElement {
                             </div>
                           ) : (
                             <details
-                              className="no-drag group relative pointer-events-auto"
+                              className="no-drag group relative"
                               onBlur={(event) => {
                                 const next = event.relatedTarget as Node | null;
                                 if (!event.currentTarget.contains(next)) {
