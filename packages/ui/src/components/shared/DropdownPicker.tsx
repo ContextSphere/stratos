@@ -158,7 +158,7 @@ export default function DropdownPicker({
       <div className="relative" ref={ref}>
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center gap-1 text-xs text-[var(--text-control)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+          className="flex items-center gap-1 whitespace-nowrap text-xs text-[var(--text-control)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
         >
           {currentItem?.label ?? selectedValue}
           <svg
@@ -190,7 +190,7 @@ export default function DropdownPicker({
                 className="w-full bg-transparent border-b border-[var(--border)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
               />
             )}
-            <div ref={listRef} className="overflow-y-auto max-h-64">
+            <div ref={listRef} className="overflow-y-auto max-h-80">
               {visibleItems.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-[var(--text-muted)]">
                   No matches
@@ -205,18 +205,16 @@ export default function DropdownPicker({
                       setIsOpen(false);
                     }}
                     onMouseEnter={() => setHighlightedIndex(i)}
-                    className={`w-full text-left px-3 py-2 text-xs flex flex-col gap-0.5 ${
+                    // One line per row keeps long lists scannable; the
+                    // description is still reachable as a hover tooltip.
+                    title={item.description}
+                    className={`block w-full truncate whitespace-nowrap text-left px-3 py-1.5 text-xs ${
                       i === highlightedIndex
                         ? "bg-[var(--border)] text-[var(--text-primary)]"
                         : "text-[var(--text-control)] hover:bg-[var(--border)]"
                     }`}
                   >
-                    <span>{item.label}</span>
-                    {item.description && (
-                      <span className="text-[var(--text-muted)] text-[11px]">
-                        {item.description}
-                      </span>
-                    )}
+                    {item.label}
                   </button>
                 ))
               )}
