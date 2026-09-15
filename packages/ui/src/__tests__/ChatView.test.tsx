@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, act } from "@testing-library/react";
 import { ChatView } from "../components/ChatView";
+import { DesignProvider } from "../context/DesignContext";
 import type { ChatMessage } from "../types";
 
 describe("ChatView empty state", () => {
@@ -58,35 +59,48 @@ describe("ChatView empty state", () => {
     expect(screen.queryByText("Stratos")).not.toBeInTheDocument();
   });
 
-  it("reserves a gutter only when the transcript has multiple user turns", () => {
-    const { container, rerender } = render(
-      <ChatView
-        messages={[
-          { id: "m1", role: "user", content: "First", timestamp: 1 },
-          { id: "m2", role: "assistant", content: "Reply", timestamp: 2 },
-          { id: "m3", role: "user", content: "Second", timestamp: 3 },
-        ]}
-        isStreaming={false}
-      />,
-    );
+  it.each(["classic", "refined"] as const)(
+    "reserves a right gutter only when the %s transcript has multiple user turns",
+    (variant) => {
+      const { container, rerender } = render(
+        <DesignProvider variant={variant}>
+          <ChatView
+            messages={[
+              { id: "m1", role: "user", content: "First", timestamp: 1 },
+              { id: "m2", role: "assistant", content: "Reply", timestamp: 2 },
+              { id: "m3", role: "user", content: "Second", timestamp: 3 },
+            ]}
+            isStreaming={false}
+          />
+        </DesignProvider>,
+      );
 
-    expect(container.querySelector(".overflow-y-auto")).toHaveClass("pl-12");
-    expect(
-      screen.getByLabelText("Browse conversation turns"),
-    ).toBeInTheDocument();
+      const transcript = container.querySelector(".overflow-y-auto");
+      expect(transcript).toHaveClass("pl-4", "pr-12");
+      expect(transcript).not.toHaveClass("pl-12");
+      expect(transcript).not.toHaveClass("pr-4");
+      expect(
+        screen.getByLabelText("Browse conversation turns"),
+      ).toBeInTheDocument();
 
-    rerender(
-      <ChatView
-        messages={[{ id: "m1", role: "user", content: "First", timestamp: 1 }]}
-        isStreaming={false}
-      />,
-    );
+      rerender(
+        <DesignProvider variant={variant}>
+          <ChatView
+            messages={[
+              { id: "m1", role: "user", content: "First", timestamp: 1 },
+            ]}
+            isStreaming={false}
+          />
+        </DesignProvider>,
+      );
 
-    expect(container.querySelector(".overflow-y-auto")).toHaveClass("px-4");
-    expect(
-      screen.queryByLabelText("Browse conversation turns"),
-    ).not.toBeInTheDocument();
-  });
+      expect(transcript).toHaveClass("px-4");
+      expect(transcript).not.toHaveClass("pr-12");
+      expect(
+        screen.queryByLabelText("Browse conversation turns"),
+      ).not.toBeInTheDocument();
+    },
+  );
 });
 
 describe("ChatView typing indicator auto-scroll", () => {
