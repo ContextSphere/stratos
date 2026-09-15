@@ -104,13 +104,9 @@ describe("ModelSelector", () => {
       name: /Codex.*GPT-5.6-Luna/i,
     });
     await user.click(trigger);
-    expect(
-      screen.getByRole("button", { name: /GPT-5.6-Luna.*Fast everyday/ }),
-    ).toHaveFocus();
+    expect(screen.getByRole("button", { name: "GPT-5.6-Luna" })).toHaveFocus();
     await user.keyboard("{ArrowDown}");
-    expect(
-      screen.getByRole("button", { name: /GPT-5.5.*Previous generation/ }),
-    ).toHaveFocus();
+    expect(screen.getByRole("button", { name: "GPT-5.5" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(trigger).toHaveFocus();
   });

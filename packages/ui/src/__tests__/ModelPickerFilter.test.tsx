@@ -150,3 +150,51 @@ describe("DropdownPicker filtering", () => {
     expect(screen.queryByLabelText("Filter…")).toBeNull();
   });
 });
+
+/**
+ * Descriptions used to wrap under each name, so only ~4 models fit on screen.
+ * Rows are now a single line with the description moved to a hover tooltip.
+ */
+describe("compact one-line model rows", () => {
+  afterEach(cleanup);
+
+  it("refined picker keeps descriptions out of the row text", async () => {
+    const user = userEvent.setup();
+    render(
+      <RefinedModelSelector
+        provider="copilot"
+        selectedModel="gpt-5.5"
+        onModelChange={vi.fn()}
+        onThinkingEffortChange={vi.fn()}
+        models={manyModels}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /GitHub Copilot/i }));
+    const popover = screen.getByRole("dialog");
+    expect(within(popover).queryByText("1,000,000 ctx")).toBeNull();
+    expect(
+      within(popover).getByRole("button", { name: "GPT-6-ASTRA" }),
+    ).toHaveAttribute("title", "1,000,000 ctx");
+  });
+
+  it("DropdownPicker renders the description as a tooltip only", async () => {
+    const user = userEvent.setup();
+    render(
+      <DropdownPicker
+        items={manyModels.map((model) => ({
+          value: model.value,
+          label: model.displayName,
+          description: model.description,
+        }))}
+        selectedValue="gpt-5.5"
+        onSelect={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /GPT-5.5/ }));
+    expect(screen.queryByText("1,000,000 ctx")).toBeNull();
+    expect(screen.getByRole("button", { name: "GPT-6-ASTRA" })).toHaveAttribute(
+      "title",
+      "1,000,000 ctx",
+    );
+  });
+});
