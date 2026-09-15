@@ -323,8 +323,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className={`flex-1 overflow-y-auto py-4 pr-4 ${
-          hasTurnRail ? "pl-12" : "px-4"
+        className={`flex-1 overflow-y-auto py-4 ${
+          hasTurnRail ? "pl-4 pr-12" : "px-4"
         }`}
       >
         <div className="mx-auto w-full max-w-[900px] space-y-5">

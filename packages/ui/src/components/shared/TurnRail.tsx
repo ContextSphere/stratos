@@ -14,8 +14,8 @@ interface TurnRailProps {
 }
 
 /**
- * A compact left gutter for navigating user turns. Its outline is an anchored
- * popover: browsing it must not reflow the transcript beneath the pointer.
+ * A compact right gutter for navigating user turns, inset from the scrollbar.
+ * Its outline opens leftward without reflowing the transcript beneath the pointer.
  */
 export const TurnRail = memo(function TurnRail({
   turns,
@@ -46,7 +46,7 @@ export const TurnRail = memo(function TurnRail({
 
   return (
     <div
-      className="absolute inset-y-0 left-0 z-20 w-8"
+      className="absolute inset-y-0 right-2 z-20 w-8"
       onMouseEnter={() => setIsOpen(true)}
       onMouseLeave={() => setIsOpen(false)}
       onFocusCapture={() => setIsOpen(true)}
@@ -66,7 +66,7 @@ export const TurnRail = memo(function TurnRail({
       </button>
 
       <div
-        className="flex h-full w-8 flex-col items-start justify-center gap-1.5 pl-1"
+        className="flex h-full w-8 flex-col items-end justify-center gap-1.5 pr-1"
         aria-label="Conversation turn markers"
       >
         {turns.map((turn) => {
@@ -79,7 +79,7 @@ export const TurnRail = memo(function TurnRail({
               aria-label={`Jump to ${turn.label}`}
               aria-current={active ? "step" : undefined}
               onClick={() => selectTurn(turn.id)}
-              className="group flex h-3 w-6 items-center rounded-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--text-primary)]"
+              className="group flex h-3 w-6 items-center justify-end rounded-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--text-primary)]"
             >
               <span
                 className={`block h-0.5 rounded-full transition-opacity duration-150 ${
@@ -97,7 +97,7 @@ export const TurnRail = memo(function TurnRail({
         <div
           role="listbox"
           aria-label="Conversation turns"
-          className="absolute left-3 top-3 w-[22rem] max-h-[32rem] overflow-y-auto rounded-xl border border-[var(--border-mid)] bg-[var(--bg-root)] p-2 shadow-[0_18px_36px_rgba(0,0,0,0.34)]"
+          className="absolute right-3 top-3 w-[22rem] max-h-[32rem] overflow-y-auto rounded-xl border border-[var(--border-mid)] bg-[var(--bg-root)] p-2 shadow-[0_18px_36px_rgba(0,0,0,0.34)]"
         >
           {turns.map((turn) => {
             const active = turn.id === activeTurnId;

@@ -29,6 +29,17 @@ describe("TurnRail", () => {
     expect(screen.getByLabelText("Jump to Fix the tests")).toBeInTheDocument();
   });
 
+  it("anchors the rail on the right with clearance for the scrollbar", () => {
+    render(<TurnRail turns={turns} activeTurnId="a" onSelect={vi.fn()} />);
+    const markers = screen.getByLabelText("Conversation turn markers");
+    expect(markers.parentElement).toHaveClass("absolute", "right-2", "w-8");
+    expect(markers.parentElement).not.toHaveClass("left-0");
+    expect(markers).toHaveClass("items-end", "pr-1");
+    expect(screen.getByLabelText("Jump to Session start")).toHaveClass(
+      "justify-end",
+    );
+  });
+
   it("opens a labeled turn popover when the rail is hovered", () => {
     render(<TurnRail turns={turns} activeTurnId="b" onSelect={vi.fn()} />);
     fireEvent.mouseEnter(
@@ -37,7 +48,8 @@ describe("TurnRail", () => {
 
     expect(
       screen.getByRole("listbox", { name: "Conversation turns" }),
-    ).toBeInTheDocument();
+    ).toHaveClass("absolute", "right-3");
+    expect(screen.getByRole("listbox")).not.toHaveClass("left-3");
     expect(
       screen.getByRole("option", { name: "Session start" }),
     ).toBeInTheDocument();
@@ -71,6 +83,37 @@ describe("TurnRail", () => {
     fireEvent.click(screen.getByLabelText("Browse conversation turns"));
     fireEvent.click(screen.getByRole("option", { name: "Fix the tests" }));
     expect(onSelect).toHaveBeenCalledWith("c");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("jumps to a turn when its compact marker is clicked", () => {
+    const onSelect = vi.fn();
+    render(<TurnRail turns={turns} activeTurnId="a" onSelect={onSelect} />);
+    fireEvent.click(screen.getByLabelText("Jump to Build the bank"));
+    expect(onSelect).toHaveBeenCalledWith("b");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("closes the popover when the pointer leaves the rail", () => {
+    render(<TurnRail turns={turns} activeTurnId="a" onSelect={vi.fn()} />);
+    const rail = screen.getByLabelText(
+      "Conversation turn markers",
+    ).parentElement!;
+    fireEvent.mouseEnter(rail);
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    fireEvent.mouseLeave(rail);
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("opens on keyboard focus and stays open while focus is inside", () => {
+    render(<TurnRail turns={turns} activeTurnId="a" onSelect={vi.fn()} />);
+    const trigger = screen.getByLabelText("Browse conversation turns");
+    fireEvent.focus(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const option = screen.getByRole("option", { name: "Build the bank" });
+    fireEvent.blur(trigger, { relatedTarget: option });
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    fireEvent.blur(option, { relatedTarget: document.body });
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
