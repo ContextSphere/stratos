@@ -1,6 +1,14 @@
-import { useEffect, useRef, useState, useId, useCallback } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useId,
+  useCallback,
+  useMemo,
+} from "react";
 import mermaid from "mermaid";
 import DOMPurify from "dompurify";
+import { useTheme, type AppTheme } from "../context/ThemeContext";
 
 function triggerDownload(href: string, filename: string): void {
   const a = document.createElement("a");
@@ -67,16 +75,49 @@ async function downloadSvgAsPng(svgHtml: string): Promise<void> {
   });
 }
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: "dark",
-  darkMode: true,
-  securityLevel: "antiscript",
-});
+function mermaidConfig(theme: AppTheme) {
+  return {
+    startOnLoad: false,
+    theme: theme === "light" ? "default" : "dark",
+    darkMode: theme !== "light",
+    securityLevel: "antiscript",
+    // HTML labels live in <foreignObject>, which the SVG-only DOMPurify pass
+    // below strips (leaving empty boxes). Native SVG <text> labels survive
+    // sanitization and keep PNG export canvas-safe.
+    htmlLabels: false,
+  } as const;
+}
+
+mermaid.initialize(mermaidConfig("dark"));
+
+/**
+ * Mermaid emits `width="100%"` + an inline max-width, so the SVG's laid-out
+ * size depends on its wrapper (Chromium falls back to 300px inside a
+ * shrink-wrapped box). Pin it to the viewBox size; zoom/fit is done via CSS
+ * transform, and PNG export gets real dimensions.
+ */
+export function pinIntrinsicSize(svgHtml: string): string {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = svgHtml;
+  const svgEl = tpl.content.querySelector("svg");
+  if (!svgEl) return svgHtml;
+  const [, , w, h] = (svgEl.getAttribute("viewBox") ?? "")
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (!(w > 0) || !(h > 0)) return svgHtml;
+  svgEl.setAttribute("width", String(w));
+  svgEl.setAttribute("height", String(h));
+  svgEl.style.maxWidth = "none";
+  return tpl.innerHTML;
+}
 
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 5;
 const ZOOM_SENSITIVITY = 0.001;
+const CANVAS_PADDING = 16;
+const MAX_CANVAS_HEIGHT = 400;
+const MIN_CANVAS_HEIGHT = 120;
 
 export function MermaidDiagram({
   chart,
@@ -84,10 +125,12 @@ export function MermaidDiagram({
   chart: string;
 }): React.ReactElement {
   const id = useId().replace(/:/g, "");
+  const theme = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [svg, setSvg] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [canvasHeight, setCanvasHeight] = useState(MAX_CANVAS_HEIGHT);
 
   const copyCode = useCallback(() => {
     const markCopied = () => {
@@ -116,12 +159,18 @@ export function MermaidDiagram({
     if (svg) downloadSvgAsPng(svg);
   }, [svg]);
 
+  // Stable identity: React 19 re-applies innerHTML whenever this object
+  // changes, which would wipe the rendered SVG on every state update.
+  const svgMarkup = useMemo(() => ({ __html: svg ?? "" }), [svg]);
+
   // Pan/zoom state stored in refs to avoid re-renders during drag
   const scale = useRef(1);
   const offset = useRef({ x: 0, y: 0 });
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const innerRef = useRef<HTMLDivElement>(null);
+  // Set once the user zooms/pans so container resizes don't clobber their view
+  const userAdjusted = useRef(false);
 
   const applyTransform = useCallback(() => {
     if (innerRef.current) {
@@ -134,20 +183,21 @@ export function MermaidDiagram({
     const inner = innerRef.current;
     if (!container || !inner) return;
 
-    // Read intrinsic SVG dimensions from attributes/viewBox (unaffected by clipping)
     inner.style.transform = "none";
     const svgEl = inner.querySelector("svg");
     if (!svgEl) return;
 
-    // Prefer explicit width/height attrs; fall back to viewBox
-    let iw = svgEl.width?.baseVal?.value ?? 0;
-    let ih = svgEl.height?.baseVal?.value ?? 0;
-    if (!iw || !ih) {
-      const vb = svgEl.viewBox?.baseVal;
-      if (vb && vb.width && vb.height) {
-        iw = vb.width;
-        ih = vb.height;
-      }
+    // Prefer the viewBox (intrinsic size) over width/height, which may be
+    // percentages that resolve against the wrapper rather than the diagram.
+    let iw = 0;
+    let ih = 0;
+    const vb = svgEl.viewBox?.baseVal;
+    if (vb && vb.width && vb.height) {
+      iw = vb.width;
+      ih = vb.height;
+    } else {
+      iw = svgEl.width?.baseVal?.value ?? 0;
+      ih = svgEl.height?.baseVal?.value ?? 0;
     }
     // Last resort: temporarily make it visible and measure
     if (!iw || !ih) {
@@ -163,15 +213,26 @@ export function MermaidDiagram({
     }
     if (iw === 0 || ih === 0) return;
 
+    // Fit to the available width (capped at the max canvas height), then
+    // shrink the canvas to the fitted diagram so wide charts don't leave a
+    // tall empty box.
     const cw = container.clientWidth;
-    const ch = container.clientHeight;
-    const padding = 16;
-    const s = Math.min(1, (cw - padding * 2) / iw, (ch - padding * 2) / ih);
+    const s = Math.min(
+      1,
+      (cw - CANVAS_PADDING * 2) / iw,
+      (MAX_CANVAS_HEIGHT - CANVAS_PADDING * 2) / ih,
+    );
+    const h = Math.max(
+      MIN_CANVAS_HEIGHT,
+      Math.ceil(ih * s + CANVAS_PADDING * 2),
+    );
     scale.current = s;
     offset.current = {
       x: (cw - iw * s) / 2,
-      y: (ch - ih * s) / 2,
+      y: (h - ih * s) / 2,
     };
+    userAdjusted.current = false;
+    setCanvasHeight(h);
     applyTransform();
   }, [applyTransform]);
 
@@ -199,6 +260,7 @@ export function MermaidDiagram({
         y: mouseY - ratio * (mouseY - offset.current.y),
       };
       scale.current = newScale;
+      userAdjusted.current = true;
       applyTransform();
     },
     [applyTransform],
@@ -221,6 +283,7 @@ export function MermaidDiagram({
         x: e.clientX - dragStart.current.x,
         y: e.clientY - dragStart.current.y,
       };
+      userAdjusted.current = true;
       applyTransform();
     },
     [applyTransform],
@@ -240,6 +303,28 @@ export function MermaidDiagram({
     }
   }, [svg, fitToContainer]);
 
+  // Refit when the available width changes (e.g. the preview pane is resized),
+  // unless the user has zoomed/panned.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!svg || !container || typeof ResizeObserver === "undefined") return;
+    let lastWidth = container.clientWidth;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      const w = container.clientWidth;
+      if (w === lastWidth) return;
+      lastWidth = w;
+      if (userAdjusted.current) return;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(fitToContainer);
+    });
+    ro.observe(container);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [svg, fitToContainer]);
+
   useEffect(() => {
     let cancelled = false;
     setError(null);
@@ -247,14 +332,19 @@ export function MermaidDiagram({
     scale.current = 1;
     offset.current = { x: 0, y: 0 };
 
+    // Mermaid config is global; all diagrams share the app theme, so
+    // re-applying it right before render keeps them in sync.
+    mermaid.initialize(mermaidConfig(theme));
     mermaid
       .render(`mermaid-${id}`, chart)
       .then(({ svg: renderedSvg }) => {
         if (!cancelled)
           setSvg(
-            DOMPurify.sanitize(renderedSvg, {
-              USE_PROFILES: { svg: true, svgFilters: true },
-            }),
+            pinIntrinsicSize(
+              DOMPurify.sanitize(renderedSvg, {
+                USE_PROFILES: { svg: true, svgFilters: true },
+              }),
+            ),
           );
       })
       .catch((err: unknown) => {
@@ -265,7 +355,7 @@ export function MermaidDiagram({
     return () => {
       cancelled = true;
     };
-  }, [chart, id]);
+  }, [chart, id, theme]);
 
   if (error) {
     return (
@@ -309,6 +399,7 @@ export function MermaidDiagram({
           type="button"
           onClick={() => {
             scale.current = Math.min(MAX_SCALE, scale.current * 1.25);
+            userAdjusted.current = true;
             applyTransform();
           }}
           className="rounded px-1.5 py-0.5 text-xs text-[var(--text-muted)] hover:bg-white/10"
@@ -320,6 +411,7 @@ export function MermaidDiagram({
           type="button"
           onClick={() => {
             scale.current = Math.max(MIN_SCALE, scale.current / 1.25);
+            userAdjusted.current = true;
             applyTransform();
           }}
           className="rounded px-1.5 py-0.5 text-xs text-[var(--text-muted)] hover:bg-white/10"
@@ -337,11 +429,12 @@ export function MermaidDiagram({
         </button>
       </div>
 
-      {/* Diagram canvas */}
+      {/* Diagram canvas. The inner layer is absolutely positioned so the
+          intrinsically-sized SVG never contributes to layout width. */}
       <div
         ref={containerRef}
-        className="overflow-hidden rounded-b-md p-4"
-        style={{ cursor: "grab", height: 400 }}
+        className="relative overflow-hidden rounded-b-md"
+        style={{ cursor: "grab", height: canvasHeight }}
         onWheel={onWheel}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
@@ -350,9 +443,15 @@ export function MermaidDiagram({
       >
         <div
           ref={innerRef}
-          style={{ transformOrigin: "0 0", display: "inline-block" }}
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            transformOrigin: "0 0",
+            display: "inline-block",
+          }}
           // biome-ignore lint/security/noDangerouslySetInnerHtml: svg is DOMPurify-sanitized before storage
-          dangerouslySetInnerHTML={{ __html: svg }}
+          dangerouslySetInnerHTML={svgMarkup}
         />
       </div>
     </div>

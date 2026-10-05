@@ -6,7 +6,8 @@ import {
   waitFor,
   fireEvent,
 } from "@testing-library/react";
-import { MermaidDiagram } from "../components/MermaidDiagram";
+import { MermaidDiagram, pinIntrinsicSize } from "../components/MermaidDiagram";
+import { ThemeContext } from "../context/ThemeContext";
 
 // Mock the mermaid module — its SVG renderer requires a real browser DOM
 vi.mock("mermaid", () => ({
@@ -18,6 +19,7 @@ vi.mock("mermaid", () => ({
 
 import mermaid from "mermaid";
 const mockRender = vi.mocked(mermaid.render);
+const mockInitialize = vi.mocked(mermaid.initialize);
 
 describe("MermaidDiagram", () => {
   beforeEach(() => {
@@ -152,5 +154,69 @@ describe("MermaidDiagram", () => {
     });
 
     expect(mockRender).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses mermaid's dark theme by default", async () => {
+    mockRender.mockResolvedValue({
+      svg: "<svg><text>Dark</text></svg>",
+      bindFunctions: undefined,
+    });
+
+    render(<MermaidDiagram chart="flowchart TB\n  A --> B" />);
+
+    await waitFor(() => expect(mockRender).toHaveBeenCalled());
+    expect(mockInitialize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ theme: "dark", darkMode: true }),
+    );
+  });
+
+  it("uses mermaid's default (light) theme and re-renders when the app theme changes", async () => {
+    mockRender.mockResolvedValue({
+      svg: "<svg><text>Themed</text></svg>",
+      bindFunctions: undefined,
+    });
+
+    const { rerender } = render(
+      <ThemeContext.Provider value="light">
+        <MermaidDiagram chart="flowchart TB\n  A --> B" />
+      </ThemeContext.Provider>,
+    );
+
+    await waitFor(() => expect(mockRender).toHaveBeenCalledTimes(1));
+    expect(mockInitialize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ theme: "default", darkMode: false }),
+    );
+
+    rerender(
+      <ThemeContext.Provider value="dark">
+        <MermaidDiagram chart="flowchart TB\n  A --> B" />
+      </ThemeContext.Provider>,
+    );
+
+    await waitFor(() => expect(mockRender).toHaveBeenCalledTimes(2));
+    expect(mockInitialize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ theme: "dark", darkMode: true }),
+    );
+  });
+});
+
+describe("pinIntrinsicSize", () => {
+  it("replaces responsive width with the viewBox size", () => {
+    const out = pinIntrinsicSize(
+      '<svg viewBox="0 0 1305.5 564" width="100%" style="max-width: 1305.5px;"><g></g></svg>',
+    );
+    const svg = new DOMParser()
+      .parseFromString(out, "text/html")
+      .querySelector("svg")!;
+
+    expect(svg.getAttribute("width")).toBe("1305.5");
+    expect(svg.getAttribute("height")).toBe("564");
+    expect(svg.style.maxWidth).toBe("none");
+  });
+
+  it("leaves SVGs without a usable viewBox unchanged", () => {
+    const input = '<svg width="100%"><g></g></svg>';
+    expect(pinIntrinsicSize(input)).toBe(input);
+    expect(pinIntrinsicSize("not svg")).toBe("not svg");
   });
 });
