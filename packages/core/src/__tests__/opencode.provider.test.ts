@@ -484,6 +484,95 @@ describe("OpencodeProvider sendMessage SSE integration", () => {
     });
   });
 
+  it("sends images as OpenCode file parts with mime and url", async () => {
+    const provider = setupProvider([]);
+    await drain(
+      provider.sendMessage({
+        prompt: "describe these",
+        images: [
+          { dataUrl: "data:image/png;base64,AAA", mimeType: "image/png" },
+          { dataUrl: "data:image/jpeg;base64,BBB", mimeType: "image/jpeg" },
+        ],
+        permissionHandler: async () => ({ approved: true }),
+      }),
+    );
+
+    const promptCall = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.find(([input]) =>
+        String(input).includes("/session/ses_test/message"),
+      );
+    expect(JSON.parse(String(promptCall?.[1]?.body))).toEqual({
+      parts: [
+        { type: "text", text: "describe these" },
+        {
+          type: "file",
+          mime: "image/png",
+          url: "data:image/png;base64,AAA",
+        },
+        {
+          type: "file",
+          mime: "image/jpeg",
+          url: "data:image/jpeg;base64,BBB",
+        },
+      ],
+    });
+  });
+
+  it("surfaces a prompt HTTP failure even while the SSE stream stays open", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const provider = new OpencodeProvider() as any;
+    provider.config = { cwd: "/tmp" };
+    provider.baseUrl = "http://127.0.0.1:8765";
+    provider.port = 8765;
+    provider.healthCheck = vi.fn().mockResolvedValue(true);
+
+    const neverEndingSse = new ReadableStream<Uint8Array>({
+      start() {
+        // Deliberately never enqueue or close: only the prompt failure can
+        // release sendMessage, which guards against permanent “Thinking”.
+      },
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/session")) {
+        return new Response(JSON.stringify({ id: "ses_test" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/event")) {
+        return new Response(neverEndingSse, { status: 200 });
+      }
+      if (url.endsWith("/session/ses_test/message")) {
+        return new Response("bad request", {
+          status: 400,
+          statusText: "Bad Request",
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    await expect(
+      drain(
+        provider.sendMessage({
+          prompt: "hi",
+          permissionHandler: async () => ({ approved: true }),
+        }),
+      ),
+    ).resolves.toEqual([
+      {
+        type: "session_init",
+        sessionId: "ses_test",
+        tools: expect.any(Array),
+      },
+      {
+        type: "error",
+        message: "opencode: failed to send prompt (400 Bad Request)",
+      },
+    ]);
+  });
+
   it("full lifecycle: emits tool_use once and tool_result once for pending→running→running→completed", async () => {
     const sessionID = "ses_test";
     const events = [

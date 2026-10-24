@@ -801,9 +801,9 @@ export class OpencodeProvider implements AgentProvider {
     ];
     for (const img of params.images ?? []) {
       messageParts.push({
-        type: "image",
+        type: "file",
+        mime: img.mimeType,
         url: img.dataUrl,
-        mimeType: img.mimeType,
       });
     }
 
@@ -838,16 +838,13 @@ export class OpencodeProvider implements AgentProvider {
       return resp;
     });
 
-    // Surface POST-level errors (e.g. 4xx, network reset). We don't await
-    // completion here — that happens via SSE's session.idle event — but we
-    // do need to catch rejections so they reach the caller instead of
-    // becoming an unhandled rejection in the background.
-    promptPromise.catch((err) => {
-      // Aborts are expected when the user interrupts; surface anything else.
-      if (!this.abortController?.signal.aborted) {
-        console.error("[opencode] prompt POST failed:", err);
-      }
-    });
+    // Keep a rejection-only promise pending while the POST succeeds. Racing
+    // this against each SSE read lets an HTTP/network failure terminate the
+    // stream even when opencode never follows it with a session.error/idle.
+    const promptFailure = promptPromise.then(
+      () => new Promise<never>(() => {}),
+      (error) => ({ kind: "prompt-error" as const, error }),
+    );
 
     // ── Process SSE events ─────────────────────────────────────────────────
 
@@ -861,7 +858,35 @@ export class OpencodeProvider implements AgentProvider {
     // frames opencode fires per tool call (pending → running → completed).
     const emittedToolUses = new Set<string>();
 
-    for await (const event of parseSSE(sseResponse.body)) {
+    const eventIterator = parseSSE(sseResponse.body);
+    while (true) {
+      const next = await Promise.race([
+        eventIterator.next().then(
+          (result) => ({ kind: "sse-event" as const, result }),
+          (error) => ({ kind: "sse-error" as const, error }),
+        ),
+        promptFailure,
+      ]);
+
+      if (next.kind === "prompt-error") {
+        // The user interrupt path aborts this same POST intentionally.
+        if (this.abortController.signal.aborted) return;
+        // Close the SSE request too; otherwise a rejected prompt can leave
+        // its event reader open forever with the UI stuck on “Thinking”.
+        this.abortController.abort();
+        yield {
+          type: "error",
+          message: normalizeOpencodeError(next.error, params.model),
+        };
+        return;
+      }
+      if (next.kind === "sse-error") {
+        if (this.abortController.signal.aborted) return;
+        throw next.error;
+      }
+      if (next.result.done) break;
+
+      const event = next.result.value;
       if (this.abortController.signal.aborted) break;
 
       // Filter events to this session only
@@ -919,6 +944,19 @@ export class OpencodeProvider implements AgentProvider {
         case "session.status": {
           const status = props.status as { type?: string } | undefined;
           if (status?.type === "idle") {
+            // Usually the POST settles with the idle event. Await it here so
+            // an almost-simultaneous HTTP failure cannot be reported as a
+            // successful turn merely because the SSE event won the race.
+            try {
+              await promptPromise;
+            } catch (error) {
+              if (this.abortController.signal.aborted) return;
+              yield {
+                type: "error",
+                message: normalizeOpencodeError(error, params.model),
+              };
+              return;
+            }
             yield { type: "result", content: "" };
             return;
           }
