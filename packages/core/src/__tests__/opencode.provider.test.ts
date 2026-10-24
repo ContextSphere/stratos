@@ -8,6 +8,7 @@ import {
   parseOpencodeModels,
   parseOpencodeModelRef,
   normalizeOpencodeError,
+  getOpencodeServerIdentity,
   type OpencodeToolPart,
 } from "../providers/opencode.provider";
 import type { AgentMessage } from "../providers/types";
@@ -233,6 +234,95 @@ describe("OpenRouter configuration", () => {
       providerID: "openrouter",
       modelID: "nvidia/nemotron-3-super-120b-a12b:free",
     });
+  });
+});
+
+describe("OpenCode MCP integration", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("uses different server identities for different MCP configurations", () => {
+    const cwd = "/repo";
+    const first = getOpencodeServerIdentity(cwd, {
+      mcpServers: { one: { command: "node", args: ["one.js"] } },
+    });
+    const second = getOpencodeServerIdentity(cwd, {
+      mcpServers: { two: { command: "node", args: ["two.js"] } },
+    });
+    expect(first.fingerprint).not.toBe(second.fingerprint);
+    expect(first.preferredPort).toBeGreaterThanOrEqual(8200);
+    expect(first.preferredPort).toBeLessThan(8999);
+  });
+
+  it("maps OpenCode MCP status and preserves project metadata", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const provider = new OpencodeProvider() as any;
+    provider.baseUrl = "http://127.0.0.1:8765";
+    provider.config = {
+      mcpServers: {
+        chrome: {
+          command: "bash",
+          scope: "project",
+          configPath: "/repo/.mcp.json",
+        },
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          chrome: { status: "connected" },
+          oauth: { status: "needs_auth" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await expect(provider.getMcpServerStatus()).resolves.toEqual([
+      {
+        name: "chrome",
+        status: "connected",
+        tools: [],
+        toolListAvailable: false,
+        error: undefined,
+        scope: "project",
+        configPath: "/repo/.mcp.json",
+        configType: "stdio",
+      },
+      {
+        name: "oauth",
+        status: "needs-auth",
+        tools: [],
+        toolListAvailable: false,
+        error: undefined,
+        scope: undefined,
+        configPath: undefined,
+        configType: undefined,
+      },
+    ]);
+  });
+
+  it("connects and disconnects MCP servers through the OpenCode API", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const provider = new OpencodeProvider() as any;
+    provider.baseUrl = "http://127.0.0.1:8765";
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("true", { status: 200 }));
+
+    await provider.toggleMcpServer("chrome devtools", false);
+    await provider.toggleMcpServer("chrome devtools", true);
+
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      "http://127.0.0.1:8765/mcp/chrome%20devtools/disconnect",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8765/mcp/chrome%20devtools/connect",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });
 
@@ -565,6 +655,7 @@ describe("OpencodeProvider sendMessage SSE integration", () => {
         type: "session_init",
         sessionId: "ses_test",
         tools: expect.any(Array),
+        mcpServers: [],
       },
       {
         type: "error",

@@ -11,12 +11,12 @@
  *   - Stream completion is signalled by the "session.idle" event.
  */
 
-import { spawn } from "child_process";
+import { execFile, spawn } from "child_process";
 import { createInterface } from "readline";
-import { execSync } from "child_process";
 import { existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { promisify } from "util";
 import { deriveHash, derivePort } from "../utils/worktree";
 import { getOpencodeProviderDefinition } from "./opencode-catalog";
 import type {
@@ -25,7 +25,10 @@ import type {
   ProviderConfig,
   SendMessageParams,
   ModelInfo,
+  McpServerInfo,
 } from "./types";
+
+const execFileAsync = promisify(execFile);
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -126,6 +129,7 @@ interface ServerEntry {
   proc: ReturnType<typeof spawn>;
   baseUrl: string;
   refCount: number;
+  configFingerprint: string;
 }
 
 interface SseEvent {
@@ -173,12 +177,36 @@ export interface OpencodeToolPart extends OpencodePart {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function deriveOpencodePort(cwd: string): number {
-  const hash = deriveHash(cwd);
-  return derivePort(hash, PORT_RANGE_START, PORT_RANGE_END);
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
-function resolveOpencodeBinary(binaryPath?: string): string {
+export function getOpencodeServerIdentity(
+  cwd: string,
+  config: ProviderConfig,
+): { fingerprint: string; preferredPort: number } {
+  // The digest detects credential/config changes without retaining or logging
+  // the raw values. Sessions share a server only when their effective configs
+  // are identical.
+  const fingerprint = deriveHash(
+    `${cwd}\0${stableStringify(buildOpencodeConfig(config))}`,
+  );
+  return {
+    fingerprint,
+    preferredPort: derivePort(fingerprint, PORT_RANGE_START, PORT_RANGE_END),
+  };
+}
+
+async function resolveOpencodeBinary(binaryPath?: string): Promise<string> {
   if (binaryPath) return binaryPath;
 
   // Packaged Electron build: binary bundled alongside app resources
@@ -204,10 +232,10 @@ function resolveOpencodeBinary(binaryPath?: string): string {
 
   // Fall back to PATH resolution
   try {
-    return execSync("which opencode", {
+    const { stdout } = await execFileAsync("which", ["opencode"], {
       encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
+    });
+    return stdout.trim();
   } catch {
     return "opencode";
   }
@@ -215,8 +243,8 @@ function resolveOpencodeBinary(binaryPath?: string): string {
 
 /**
  * Translate Stratos's `mcpServers` config into Opencode's `mcp` JSON config.
- * Only stdio-style entries (with `command`) are forwarded — SDK entries are
- * claude-code-only and are skipped.
+ * Claude's stdio/http/sse vocabulary is translated into OpenCode's
+ * local/remote vocabulary. SDK entries are Claude-Code-only and are skipped.
  */
 export function buildOpencodeMcpConfig(
   mcpServers: Record<string, unknown>,
@@ -227,17 +255,46 @@ export function buildOpencodeMcpConfig(
   for (const [name, raw] of Object.entries(mcpServers)) {
     const srv = raw as {
       type?: string;
-      command?: string;
+      command?: string | string[];
       args?: string[];
       env?: Record<string, string>;
+      environment?: Record<string, string>;
+      url?: string;
+      headers?: Record<string, string>;
+      oauth?: unknown;
+      cwd?: string;
+      timeout?: number;
+      enabled?: boolean;
     };
-    if (srv.type === "sdk" || !srv.command) continue;
-    out[name] = {
-      type: "local",
-      command: [srv.command, ...(srv.args ?? [])],
-      enabled: true,
-      ...(srv.env ? { environment: srv.env } : {}),
-    };
+    if (srv.type === "sdk") continue;
+
+    if (srv.command) {
+      const command = Array.isArray(srv.command)
+        ? srv.command
+        : [srv.command, ...(srv.args ?? [])];
+      out[name] = {
+        type: "local",
+        command,
+        enabled: srv.enabled !== false,
+        ...((srv.environment ?? srv.env)
+          ? { environment: srv.environment ?? srv.env }
+          : {}),
+        ...(srv.cwd ? { cwd: srv.cwd } : {}),
+        ...(typeof srv.timeout === "number" ? { timeout: srv.timeout } : {}),
+      };
+      continue;
+    }
+
+    if (srv.url && ["http", "sse", "remote"].includes(srv.type ?? "http")) {
+      out[name] = {
+        type: "remote",
+        url: srv.url,
+        enabled: srv.enabled !== false,
+        ...(srv.headers ? { headers: srv.headers } : {}),
+        ...(srv.oauth !== undefined ? { oauth: srv.oauth } : {}),
+        ...(typeof srv.timeout === "number" ? { timeout: srv.timeout } : {}),
+      };
+    }
   }
   return out;
 }
@@ -373,6 +430,24 @@ async function waitForServerReady(
       }
     }, 500);
   });
+}
+
+async function validateLegacyApi(baseUrl: string): Promise<void> {
+  const resp = await fetch(`${baseUrl}/provider`, {
+    signal: AbortSignal.timeout(5_000),
+  });
+  const contentType = resp.headers.get("content-type") ?? "";
+  if (!resp.ok || !contentType.includes("application/json")) {
+    throw new Error(
+      "Unsupported OpenCode server API. Stratos currently requires an OpenCode 1.x-compatible binary.",
+    );
+  }
+  const body = (await resp.json()) as { all?: unknown } | unknown[];
+  if (!Array.isArray(body) && !Array.isArray(body.all)) {
+    throw new Error(
+      "Unsupported OpenCode server API. Stratos currently requires an OpenCode 1.x-compatible binary.",
+    );
+  }
 }
 
 /**
@@ -587,18 +662,36 @@ export class OpencodeProvider implements AgentProvider {
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
     const cwd = config.cwd ?? process.cwd();
-    const port = config.opencodeConfig?.port ?? deriveOpencodePort(cwd);
+    const identity = getOpencodeServerIdentity(cwd, config);
+    const explicitPort = config.opencodeConfig?.port;
+    let port = explicitPort ?? identity.preferredPort;
+
+    if (explicitPort === undefined) {
+      const rangeSize = PORT_RANGE_END - PORT_RANGE_START;
+      for (let offset = 0; offset < rangeSize; offset++) {
+        const entry = OpencodeProvider.serverRegistry.get(port);
+        if (!entry || entry.configFingerprint === identity.fingerprint) break;
+        port = PORT_RANGE_START + ((port - PORT_RANGE_START + 1) % rangeSize);
+      }
+    }
     this.port = port;
 
     // Re-use existing server if already running for this port
     const existing = OpencodeProvider.serverRegistry.get(port);
     if (existing) {
+      if (existing.configFingerprint !== identity.fingerprint) {
+        throw new Error(
+          `OpenCode port ${port} is already serving a different configuration`,
+        );
+      }
       existing.refCount++;
       this.baseUrl = existing.baseUrl;
       return;
     }
 
-    const binaryPath = resolveOpencodeBinary(config.opencodeConfig?.binaryPath);
+    const binaryPath = await resolveOpencodeBinary(
+      config.opencodeConfig?.binaryPath,
+    );
     const env = buildOpencodeEnv(config);
 
     // If a stale opencode server from a prior run is holding our port, kill
@@ -606,10 +699,14 @@ export class OpencodeProvider implements AgentProvider {
     // via HTTP probe and we'd be stuck with whatever env it was started with
     // (e.g. without the current Ollama config).
     try {
-      const existingPids = execSync(`lsof -ti :${port} -sTCP:LISTEN`, {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-      })
+      const { stdout } = await execFileAsync(
+        "lsof",
+        ["-ti", `:${port}`, "-sTCP:LISTEN"],
+        {
+          encoding: "utf-8",
+        },
+      );
+      const existingPids = stdout
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean);
@@ -647,12 +744,23 @@ export class OpencodeProvider implements AgentProvider {
       },
     );
 
-    await waitForServerReady(proc, port, SERVER_START_TIMEOUT_MS);
-
-    console.log(`[opencode] server ready at http://127.0.0.1:${port}`);
-
     const baseUrl = `http://127.0.0.1:${port}`;
-    OpencodeProvider.serverRegistry.set(port, { proc, baseUrl, refCount: 1 });
+    try {
+      await waitForServerReady(proc, port, SERVER_START_TIMEOUT_MS);
+      await validateLegacyApi(baseUrl);
+    } catch (error) {
+      proc.kill("SIGTERM");
+      throw error;
+    }
+
+    console.log(`[opencode] server ready at ${baseUrl}`);
+
+    OpencodeProvider.serverRegistry.set(port, {
+      proc,
+      baseUrl,
+      refCount: 1,
+      configFingerprint: identity.fingerprint,
+    });
     this.baseUrl = baseUrl;
   }
 
@@ -779,6 +887,7 @@ export class OpencodeProvider implements AgentProvider {
       type: "session_init",
       sessionId,
       tools: OPENCODE_BUILTIN_TOOLS,
+      mcpServers: await this.getMcpServerStatus(),
     };
 
     // ── Subscribe to SSE event stream ──────────────────────────────────────
@@ -1022,5 +1131,91 @@ export class OpencodeProvider implements AgentProvider {
   > {
     // opencode agents/skills not yet surfaced as slash commands
     return [];
+  }
+
+  async getMcpServerStatus(): Promise<McpServerInfo[]> {
+    if (!this.baseUrl) return [];
+    try {
+      const resp = await fetch(`${this.baseUrl}/mcp`, {
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!resp.ok) return [];
+      const statuses = (await resp.json()) as Record<
+        string,
+        { status?: string; error?: string }
+      >;
+
+      return Object.entries(statuses).map(([name, status]) => {
+        const source = this.config?.mcpServers?.[name] as
+          | {
+              type?: string;
+              scope?: string;
+              configPath?: string;
+              command?: unknown;
+              url?: string;
+            }
+          | undefined;
+        let mapped: McpServerInfo["status"];
+        switch (status.status) {
+          case "connected":
+            mapped = "connected";
+            break;
+          case "disabled":
+            mapped = "disabled";
+            break;
+          case "needs_auth":
+          case "needs_client_registration":
+            mapped = "needs-auth";
+            break;
+          case "pending":
+            mapped = "pending";
+            break;
+          default:
+            mapped = "failed";
+        }
+
+        return {
+          name,
+          status: mapped,
+          tools: [],
+          toolListAvailable: false,
+          error: status.error,
+          scope: source?.scope,
+          configPath: source?.configPath,
+          configType:
+            source?.type ??
+            (source?.command ? "stdio" : source?.url ? "http" : undefined),
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {
+    if (!this.baseUrl) return;
+    const action = enabled ? "connect" : "disconnect";
+    const resp = await fetch(
+      `${this.baseUrl}/mcp/${encodeURIComponent(serverName)}/${action}`,
+      {
+        method: "POST",
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (!resp.ok) {
+      throw new Error(
+        `OpenCode failed to ${action} MCP server ${serverName} (${resp.status})`,
+      );
+    }
+  }
+
+  async reconnectMcpServer(serverName: string): Promise<void> {
+    if (!this.baseUrl) return;
+    try {
+      await this.toggleMcpServer(serverName, false);
+    } catch {
+      // A failed server may already be disconnected; connect is authoritative.
+    }
+    await this.toggleMcpServer(serverName, true);
   }
 }

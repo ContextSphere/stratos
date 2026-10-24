@@ -95,7 +95,9 @@ export function ChatInfoBar({
           {hasToolsBadge && (
             <ToolsBadge
               toolCount={
-                mcpServers?.reduce((sum, s) => sum + s.tools.length, 0) ?? 0
+                (sessionTools?.filter((tool) => !tool.startsWith("mcp__"))
+                  .length ?? 0) +
+                (mcpServers?.reduce((sum, s) => sum + s.tools.length, 0) ?? 0)
               }
               sessionTools={sessionTools ?? []}
               mcpServers={mcpServers}
