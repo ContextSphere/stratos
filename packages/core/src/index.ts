@@ -93,6 +93,11 @@ export { READ_ONLY_TOOLS } from "./providers/types";
 export { ClaudeCodeProvider } from "./providers/claude-code.provider";
 export { CodexProvider, findCodexBinary } from "./providers/codex.provider";
 export { OpencodeProvider } from "./providers/opencode.provider";
+export {
+  OPENCODE_PROVIDER_CATALOG,
+  getOpencodeProviderDefinition,
+} from "./providers/opencode-catalog";
+export type { OpencodeProviderDefinition } from "./providers/opencode-catalog";
 export { CopilotProvider } from "./providers/copilot.provider";
 export { createProvider, getAvailableProviders } from "./providers/index";
 

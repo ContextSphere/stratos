@@ -227,9 +227,11 @@ Required:
 - **`OPENCODE_LIST_PROVIDER_MODELS(providerId) → ModelInfo[]`** — fetches the full, unfiltered model list for one provider from the running opencode server. Today `GET_AVAILABLE_MODELS` applies the allowlist filter before returning; for the Manage panel we need the _raw_ list so users can pick from it. Implementation: calls the existing `/provider` HTTP endpoint opencode exposes and returns the subset for the requested providerId, bypassing the filter.
 - **`OPENCODE_GET_ENABLED_MODELS() → Record<string, string[]>`** and **`OPENCODE_SET_ENABLED_MODELS(providerId, modelValues[])`** — thin wrappers over the new settings field.
 
-Unchanged channels (still used):
+Credential channels:
 
-- `opencodeGetProviderKeys` / `opencodeSetProviderKey` / `opencodeDeleteProviderKey`
+- `opencodeGetProviderStatuses` returns only configured state and a masked
+  hint. Decrypted keys stay in the main process.
+- `opencodeSetProviderKey` / `opencodeDeleteProviderKey`
 - `ollamaGetConfig` / `ollamaSetConfig` / `ollamaClearConfig` / `ollamaDiscoverModels`
 
 Deprecated (kept for one release, then removed):

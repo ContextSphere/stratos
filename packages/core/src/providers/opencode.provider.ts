@@ -18,6 +18,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { deriveHash, derivePort } from "../utils/worktree";
+import { getOpencodeProviderDefinition } from "./opencode-catalog";
 import type {
   AgentProvider,
   AgentMessage,
@@ -132,7 +133,7 @@ interface SseEvent {
   properties: Record<string, unknown>;
 }
 
-interface OpencodeProviderInfo {
+export interface OpencodeProviderInfo {
   id: string;
   name: string;
   models?: Record<
@@ -241,7 +242,9 @@ export function buildOpencodeMcpConfig(
   return out;
 }
 
-function buildOpencodeEnv(config: ProviderConfig): NodeJS.ProcessEnv {
+export function buildOpencodeConfig(
+  config: ProviderConfig,
+): Record<string, unknown> {
   const providers = config.opencodeConfig?.providers ?? {};
   const customProviders = config.opencodeConfig?.customProviders ?? {};
 
@@ -251,8 +254,21 @@ function buildOpencodeEnv(config: ProviderConfig): NodeJS.ProcessEnv {
   // Standard providers: inject apiKey + optional baseURL
   for (const [id, { apiKey, baseURL }] of Object.entries(providers)) {
     if (!apiKey) continue;
+    const definition = getOpencodeProviderDefinition(id);
+    const resolvedBaseURL = baseURL || definition?.defaultBaseURL;
     providerConfig[id] = {
-      options: { apiKey, ...(baseURL ? { baseURL } : {}) },
+      options: {
+        apiKey,
+        ...(resolvedBaseURL ? { baseURL: resolvedBaseURL } : {}),
+        ...(id === "openrouter"
+          ? {
+              headers: {
+                "HTTP-Referer": "https://github.com/ContextSphere/stratos",
+                "X-Title": "Stratos",
+              },
+            }
+          : {}),
+      },
     };
   }
 
@@ -278,10 +294,14 @@ function buildOpencodeEnv(config: ProviderConfig): NodeJS.ProcessEnv {
     configObj.provider = providerConfig;
   if (Object.keys(mcpConfig).length > 0) configObj.mcp = mcpConfig;
 
-  const hasEntries = Object.keys(configObj).length > 0;
+  return configObj;
+}
+
+function buildOpencodeEnv(config: ProviderConfig): NodeJS.ProcessEnv {
+  const configObj = buildOpencodeConfig(config);
   return {
     ...process.env,
-    ...(hasEntries
+    ...(Object.keys(configObj).length > 0
       ? { OPENCODE_CONFIG_CONTENT: JSON.stringify(configObj) }
       : {}),
   };
@@ -446,12 +466,83 @@ function extractErrorMessage(error: unknown): string {
   if (typeof error === "string") return error;
   if (typeof error === "object") {
     const e = error as Record<string, unknown>;
-    return String(e.message ?? e.data ?? JSON.stringify(error));
+    if (typeof e.message === "string") return e.message;
+    if (e.data && typeof e.data === "object") {
+      const data = e.data as Record<string, unknown>;
+      if (typeof data.message === "string") return data.message;
+    }
+    return JSON.stringify(error);
   }
   return String(error);
 }
 
-function parseOpencodeModels(providers: OpencodeProviderInfo[]): ModelInfo[] {
+export function parseOpencodeModelRef(model: string): {
+  providerID: string;
+  modelID: string;
+} {
+  const separator = model.indexOf("/");
+  if (separator <= 0 || separator === model.length - 1) {
+    throw new Error(
+      `opencode: expected a provider-qualified model, received "${model}"`,
+    );
+  }
+  return {
+    providerID: model.slice(0, separator),
+    modelID: model.slice(separator + 1),
+  };
+}
+
+export function normalizeOpencodeError(error: unknown, model?: string): string {
+  const message = extractErrorMessage(error);
+  if (!model?.startsWith("openrouter/")) return message;
+
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("401") ||
+    normalized.includes("403") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("invalid api key") ||
+    normalized.includes("authentication")
+  ) {
+    return "OpenRouter rejected the API key. Update the OpenRouter credential in Opencode settings.";
+  }
+  if (
+    normalized.includes("402") ||
+    normalized.includes("insufficient credit") ||
+    normalized.includes("insufficient balance") ||
+    normalized.includes("payment required")
+  ) {
+    return "OpenRouter has insufficient credits for this request. Add credits or choose an available free model.";
+  }
+  if (
+    normalized.includes("429") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("too many requests")
+  ) {
+    return "OpenRouter rate-limited this request. Wait briefly or choose another model.";
+  }
+  if (
+    normalized.includes("context length") ||
+    normalized.includes("context window") ||
+    normalized.includes("maximum context")
+  ) {
+    return "This request exceeds the selected OpenRouter model's context limit. Start a new thread or use a model with a larger context window.";
+  }
+  if (
+    normalized.includes("404") ||
+    normalized.includes("model not found") ||
+    normalized.includes("model unavailable") ||
+    normalized.includes("no endpoints found")
+  ) {
+    return "The selected OpenRouter model is unavailable. Refresh the OpenRouter model list and choose another model.";
+  }
+
+  return "OpenRouter could not complete the request. Check the provider status, model availability, and account limits, then try again.";
+}
+
+export function parseOpencodeModels(
+  providers: OpencodeProviderInfo[],
+): ModelInfo[] {
   const models: ModelInfo[] = [];
   for (const provider of providers) {
     for (const [modelId, model] of Object.entries(provider.models ?? {})) {
@@ -731,9 +822,10 @@ export class OpencodeProvider implements AgentProvider {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          role: "user",
           parts: messageParts,
-          ...(params.model ? { modelID: params.model } : {}),
+          ...(params.model
+            ? { model: parseOpencodeModelRef(params.model) }
+            : {}),
         }),
         signal: this.abortController.signal,
       },
@@ -836,7 +928,7 @@ export class OpencodeProvider implements AgentProvider {
         case "session.error": {
           yield {
             type: "error",
-            message: extractErrorMessage(props.error),
+            message: normalizeOpencodeError(props.error, params.model),
           };
           return;
         }

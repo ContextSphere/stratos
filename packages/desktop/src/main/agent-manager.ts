@@ -33,6 +33,7 @@ import {
   loadSettings,
   setProviderSettings,
   getOpencodeProviderKeys,
+  getOpencodeProviderStatuses,
   setOpencodeProviderKey,
   deleteOpencodeProviderKey,
   getOpencodeModelAllowlist,
@@ -50,6 +51,7 @@ import {
 import type { OllamaConfig, OllamaModelInfo } from "./settings/settings.store";
 import { resolveToolBehavior, effectiveToolName } from "./agent-session-logic";
 import { resolveClaudePathOrUndefined } from "./integrations/claude-path";
+import { validateOpenRouterCredential } from "./integrations/openrouter";
 import {
   resolveAgentOverlay,
   mergeSystemPromptAppend,
@@ -983,17 +985,30 @@ export class AgentManager {
       },
     );
 
-    // Opencode provider key management
-    ipcMain.handle(IPC_CHANNELS.OPENCODE_GET_PROVIDER_KEYS, async () => {
-      return getOpencodeProviderKeys();
+    // Opencode provider credential management. Never return decrypted keys to
+    // the renderer; only main-process provider initialization can access them.
+    ipcMain.handle(IPC_CHANNELS.OPENCODE_GET_PROVIDER_STATUSES, async () => {
+      return getOpencodeProviderStatuses();
     });
 
     ipcMain.handle(
       IPC_CHANNELS.OPENCODE_SET_PROVIDER_KEY,
       async (_event, providerId: string, apiKey: string, baseURL?: string) => {
-        setOpencodeProviderKey(providerId, {
-          apiKey,
-          ...(baseURL ? { baseURL } : {}),
+        const normalizedProviderId = providerId.trim();
+        const normalizedApiKey = apiKey.trim();
+        if (!/^[a-z0-9_-]+$/i.test(normalizedProviderId)) {
+          throw new Error("Invalid provider ID.");
+        }
+        if (!normalizedApiKey) {
+          throw new Error("An API key is required.");
+        }
+        if (normalizedProviderId === "openrouter") {
+          await validateOpenRouterCredential(normalizedApiKey, baseURL);
+        }
+        const normalizedBaseURL = baseURL?.trim() || undefined;
+        setOpencodeProviderKey(normalizedProviderId, {
+          apiKey: normalizedApiKey,
+          ...(normalizedBaseURL ? { baseURL: normalizedBaseURL } : {}),
         });
         // Restart the opencode server so it picks up the new key
         OpencodeProvider.restartServer();
