@@ -21,6 +21,8 @@ export interface McpServerInfo {
   scope?: string;
   configPath?: string;
   tools: string[];
+  /** False when the provider reports server health but not its tool catalog. */
+  toolListAvailable?: boolean;
   error?: string;
   configType?: string;
   configId?: string;

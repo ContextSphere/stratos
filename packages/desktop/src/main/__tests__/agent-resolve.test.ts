@@ -183,4 +183,26 @@ describe("mergeAgentMcpServers", () => {
       command: "agent-tool",
     });
   });
+
+  it("merges project then agent then built-in servers by precedence", () => {
+    const merged = mergeAgentMcpServers(
+      { stratos: { source: "built-in" } },
+      {
+        mcpServers: {
+          shared: { source: "agent" },
+          stratos: { source: "agent" },
+        },
+      },
+      {
+        shared: { source: "project" },
+        chrome: { source: "project" },
+      },
+    );
+
+    expect(merged).toEqual({
+      shared: { source: "agent" },
+      chrome: { source: "project" },
+      stratos: { source: "built-in" },
+    });
+  });
 });

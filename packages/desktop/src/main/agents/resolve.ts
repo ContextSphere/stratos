@@ -116,9 +116,13 @@ export function mergeSystemPromptAppend(
 export function mergeAgentMcpServers(
   built: Record<string, unknown>,
   overlay: Partial<ProviderConfig>,
+  project: Record<string, unknown> = {},
 ): Record<string, unknown> {
-  if (!overlay.mcpServers || Object.keys(overlay.mcpServers).length === 0) {
+  if (
+    Object.keys(project).length === 0 &&
+    (!overlay.mcpServers || Object.keys(overlay.mcpServers).length === 0)
+  ) {
     return built;
   }
-  return { ...overlay.mcpServers, ...built };
+  return { ...project, ...(overlay.mcpServers ?? {}), ...built };
 }

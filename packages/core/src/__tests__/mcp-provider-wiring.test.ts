@@ -125,6 +125,46 @@ describe("buildOpencodeMcpConfig", () => {
     });
   });
 
+  it("translates HTTP/SSE servers into OpenCode remote servers", () => {
+    const config = buildOpencodeMcpConfig({
+      docs: {
+        type: "http",
+        url: "https://example.test/mcp",
+        headers: { Authorization: "Bearer token" },
+        timeout: 45_000,
+      },
+    });
+    expect(config.docs).toEqual({
+      type: "remote",
+      url: "https://example.test/mcp",
+      enabled: true,
+      headers: { Authorization: "Bearer token" },
+      timeout: 45_000,
+    });
+  });
+
+  it("preserves local cwd, environment, timeout, and disabled state", () => {
+    const config = buildOpencodeMcpConfig({
+      local: {
+        type: "stdio",
+        command: "node",
+        args: ["server.js"],
+        environment: { TOKEN: "x" },
+        cwd: "/repo",
+        timeout: 12_000,
+        enabled: false,
+      },
+    });
+    expect(config.local).toEqual({
+      type: "local",
+      command: ["node", "server.js"],
+      enabled: false,
+      environment: { TOKEN: "x" },
+      cwd: "/repo",
+      timeout: 12_000,
+    });
+  });
+
   it("skips entries without a command", () => {
     expect(
       buildOpencodeMcpConfig({

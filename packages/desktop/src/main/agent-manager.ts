@@ -1,9 +1,10 @@
 import { BrowserWindow, ipcMain, Notification, shell } from "electron";
 import type { McpElicitationRequest } from "@stratosapp/core";
-import { execFileSync } from "child_process";
+import { execFile, execFileSync } from "child_process";
 import { mkdirSync } from "fs";
 import { join, basename } from "path";
 import { homedir } from "os";
+import { promisify } from "util";
 import { IPC_CHANNELS } from "../common/ipc-channels";
 import {
   ClaudeCodeProvider,
@@ -68,6 +69,9 @@ import {
   cleanupLegacyMcpBinaries,
 } from "./mcp/stdio-proxy";
 import { getFileWatcherCount } from "./files/files.ipc";
+import { loadProjectMcpServers } from "./mcp/project-config";
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Build explicit MCP servers for an agent session.
@@ -80,9 +84,9 @@ import { getFileWatcherCount } from "./files/files.ipc";
  *     proxies MCP JSON-RPC over a Unix socket back to main. Wired via the
  *     providers' own config surfaces.
  *
- * Project-level (.mcp.json) and user-level (~/.claude/.mcp.json) servers are
- * auto-discovered by the SDK via `settingSources`; we only inject servers
- * that can't be statically configured.
+ * Claude Code discovers project/user MCPs through `settingSources`. OpenCode
+ * does not read `.mcp.json`, so its project servers are loaded separately and
+ * merged with this host-owned map at session creation.
  */
 interface BuildMcpServersOpts {
   cwd: string;
@@ -93,7 +97,9 @@ interface BuildMcpServersOpts {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildMcpServers(opts: BuildMcpServersOpts): Record<string, any> {
+async function buildMcpServers(
+  opts: BuildMcpServersOpts,
+): Promise<Record<string, any>> {
   const { cwd, providerName, socketPath, sdkHandlers } = opts;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const servers: Record<string, any> = {};
@@ -116,12 +122,16 @@ function buildMcpServers(opts: BuildMcpServersOpts): Record<string, any> {
     try {
       let targetRoot: string;
       try {
-        targetRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-          cwd,
-          encoding: "utf-8",
-          timeout: 3000,
-          stdio: ["pipe", "pipe", "pipe"],
-        }).trim();
+        const { stdout } = await execFileAsync(
+          "git",
+          ["rev-parse", "--show-toplevel"],
+          {
+            cwd,
+            encoding: "utf-8",
+            timeout: 3_000,
+          },
+        );
+        targetRoot = stdout.trim();
       } catch {
         targetRoot = cwd;
       }
@@ -1328,23 +1338,32 @@ export class AgentManager {
           : undefined;
       const { overlay: agentOverlay } = await resolveAgentOverlay(thread);
       const threadCwd = thread.cwd ?? agentOverlay.cwd ?? process.env.HOME!;
-      const builtMcpServers = buildMcpServers({
-        cwd: threadCwd,
-        providerName,
-        socketPath: this.mcpSocketPath,
-        sdkHandlers:
-          providerName === "claude-code"
-            ? createStratosHandlers({
-                storage: this.storage,
-                agentManager: this,
-                window: this.window,
-                sendToRenderer: (channel, data) =>
-                  this.sendToRenderer(channel, data),
-                includeManager: isManagerEnabled(),
-              })
-            : undefined,
-      });
-      const mcpServers = mergeAgentMcpServers(builtMcpServers, agentOverlay);
+      const [builtMcpServers, projectMcpServers] = await Promise.all([
+        buildMcpServers({
+          cwd: threadCwd,
+          providerName,
+          socketPath: this.mcpSocketPath,
+          sdkHandlers:
+            providerName === "claude-code"
+              ? createStratosHandlers({
+                  storage: this.storage,
+                  agentManager: this,
+                  window: this.window,
+                  sendToRenderer: (channel, data) =>
+                    this.sendToRenderer(channel, data),
+                  includeManager: isManagerEnabled(),
+                })
+              : undefined,
+        }),
+        providerName === "opencode"
+          ? loadProjectMcpServers(threadCwd)
+          : Promise.resolve({}),
+      ]);
+      const mcpServers = mergeAgentMcpServers(
+        builtMcpServers,
+        agentOverlay,
+        projectMcpServers,
+      );
       await provider.initialize({
         systemPrompt: agentOverlay.systemPrompt,
         ...(providerName === "claude-code"
@@ -2209,23 +2228,32 @@ export class AgentManager {
           : undefined;
       const { overlay: agentOverlay } = await resolveAgentOverlay(thread);
       const threadCwd = thread.cwd ?? agentOverlay.cwd ?? process.env.HOME!;
-      const builtMcpServers = buildMcpServers({
-        cwd: threadCwd,
-        providerName,
-        socketPath: this.mcpSocketPath,
-        sdkHandlers:
-          providerName === "claude-code"
-            ? createStratosHandlers({
-                storage: this.storage,
-                agentManager: this,
-                window: this.window,
-                sendToRenderer: (channel, data) =>
-                  this.sendToRenderer(channel, data),
-                includeManager: isManagerEnabled(),
-              })
-            : undefined,
-      });
-      const mcpServers = mergeAgentMcpServers(builtMcpServers, agentOverlay);
+      const [builtMcpServers, projectMcpServers] = await Promise.all([
+        buildMcpServers({
+          cwd: threadCwd,
+          providerName,
+          socketPath: this.mcpSocketPath,
+          sdkHandlers:
+            providerName === "claude-code"
+              ? createStratosHandlers({
+                  storage: this.storage,
+                  agentManager: this,
+                  window: this.window,
+                  sendToRenderer: (channel, data) =>
+                    this.sendToRenderer(channel, data),
+                  includeManager: isManagerEnabled(),
+                })
+              : undefined,
+        }),
+        providerName === "opencode"
+          ? loadProjectMcpServers(threadCwd)
+          : Promise.resolve({}),
+      ]);
+      const mcpServers = mergeAgentMcpServers(
+        builtMcpServers,
+        agentOverlay,
+        projectMcpServers,
+      );
       await provider.initialize({
         systemPrompt: agentOverlay.systemPrompt,
         ...(providerName === "claude-code"
