@@ -4,6 +4,10 @@ import {
   normalizeOpencodeToolName,
   normalizeFileToolInput,
   transformToolPart,
+  buildOpencodeConfig,
+  parseOpencodeModels,
+  parseOpencodeModelRef,
+  normalizeOpencodeError,
   type OpencodeToolPart,
 } from "../providers/opencode.provider";
 import type { AgentMessage } from "../providers/types";
@@ -71,6 +75,7 @@ describe("normalizeFileToolInput", () => {
     expect(normalizeFileToolInput("Read", { path: "/c.ts" })).toMatchObject({
       file_path: "/c.ts",
     });
+
     expect(
       normalizeFileToolInput("Delete", { filePath: "/d.ts" }),
     ).toMatchObject({ file_path: "/d.ts" });
@@ -113,6 +118,120 @@ describe("normalizeFileToolInput", () => {
     expect(normalizeFileToolInput("Bash", input)).toBe(input);
     expect(normalizeFileToolInput("WebSearch", { query: "x" })).toEqual({
       query: "x",
+    });
+  });
+});
+
+describe("OpenRouter configuration", () => {
+  it("injects the OpenRouter key, default base URL, and app attribution", () => {
+    expect(
+      buildOpencodeConfig({
+        opencodeConfig: {
+          providers: {
+            openrouter: { apiKey: "test-openrouter-key" },
+          },
+        },
+      }),
+    ).toEqual({
+      provider: {
+        openrouter: {
+          options: {
+            apiKey: "test-openrouter-key",
+            baseURL: "https://openrouter.ai/api/v1",
+            headers: {
+              "HTTP-Referer": "https://github.com/ContextSphere/stratos",
+              "X-Title": "Stratos",
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("honors a custom OpenRouter base URL", () => {
+    const config = buildOpencodeConfig({
+      opencodeConfig: {
+        providers: {
+          openrouter: {
+            apiKey: "test-openrouter-key",
+            baseURL: "https://router.example/v1",
+          },
+        },
+      },
+    }) as {
+      provider: { openrouter: { options: { baseURL: string } } };
+    };
+    expect(config.provider.openrouter.options.baseURL).toBe(
+      "https://router.example/v1",
+    );
+  });
+
+  it("qualifies discovered OpenRouter model IDs", () => {
+    expect(
+      parseOpencodeModels([
+        {
+          id: "openrouter",
+          name: "OpenRouter",
+          models: {
+            "anthropic/claude-sonnet-4.5": {
+              name: "Claude Sonnet 4.5",
+              capabilities: { reasoning: true },
+              limit: { context: 200_000 },
+            },
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        value: "openrouter/anthropic/claude-sonnet-4.5",
+        displayName: "Claude Sonnet 4.5",
+        description: "200k context",
+        supportsEffort: true,
+        supportsReasoning: true,
+      },
+    ]);
+  });
+
+  it("maps OpenRouter failures without returning the raw provider payload", () => {
+    const raw = {
+      message: "401 Unauthorized",
+      data: { debug: "sensitive upstream response" },
+    };
+    expect(
+      normalizeOpencodeError(raw, "openrouter/anthropic/claude-sonnet-4.5"),
+    ).toBe(
+      "OpenRouter rejected the API key. Update the OpenRouter credential in Opencode settings.",
+    );
+    expect(
+      normalizeOpencodeError(raw, "openrouter/openai/gpt-4.1"),
+    ).not.toContain("sensitive");
+  });
+
+  it("maps nested OpenRouter API errors", () => {
+    expect(
+      normalizeOpencodeError(
+        {
+          name: "APIError",
+          data: {
+            message: "No endpoints found that support this request",
+            statusCode: 404,
+          },
+        },
+        "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+      ),
+    ).toBe(
+      "The selected OpenRouter model is unavailable. Refresh the OpenRouter model list and choose another model.",
+    );
+  });
+
+  it("splits provider-qualified model references at the first slash", () => {
+    expect(
+      parseOpencodeModelRef(
+        "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+      ),
+    ).toEqual({
+      providerID: "openrouter",
+      modelID: "nvidia/nemotron-3-super-120b-a12b:free",
     });
   });
 });
@@ -339,6 +458,31 @@ describe("OpencodeProvider sendMessage SSE integration", () => {
 
     return provider;
   }
+
+  it("sends the selected provider and model in OpenCode's model object", async () => {
+    const provider = setupProvider([]);
+    await drain(
+      provider.sendMessage({
+        prompt: "hi",
+        model: "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+        permissionHandler: async () => ({ approved: true }),
+      }),
+    );
+
+    const promptCall = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.find(([input]) =>
+        String(input).includes("/session/ses_test/message"),
+      );
+    expect(promptCall).toBeDefined();
+    expect(JSON.parse(String(promptCall?.[1]?.body))).toMatchObject({
+      parts: [{ type: "text", text: "hi" }],
+      model: {
+        providerID: "openrouter",
+        modelID: "nvidia/nemotron-3-super-120b-a12b:free",
+      },
+    });
+  });
 
   it("full lifecycle: emits tool_use once and tool_result once for pending→running→running→completed", async () => {
     const sessionID = "ses_test";

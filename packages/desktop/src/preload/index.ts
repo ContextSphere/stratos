@@ -288,10 +288,10 @@ const api = {
   codexGetConnection: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.CODEX_GET_CONNECTION),
 
-  // Opencode — provider key management
-  opencodeGetProviderKeys: (): Promise<
-    Record<string, { apiKey: string; baseURL?: string }>
-  > => ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_GET_PROVIDER_KEYS),
+  // Opencode — provider credential management
+  opencodeGetProviderStatuses: (): Promise<
+    Record<string, { configured: boolean; keyHint: string; baseURL?: string }>
+  > => ipcRenderer.invoke(IPC_CHANNELS.OPENCODE_GET_PROVIDER_STATUSES),
   opencodeSetProviderKey: (
     providerId: string,
     apiKey: string,

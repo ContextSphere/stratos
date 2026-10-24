@@ -84,7 +84,7 @@ export const IPC_CHANNELS = {
   COPILOT_GET_CONNECTION: "integration:copilot:get-connection",
 
   // Opencode — provider key management
-  OPENCODE_GET_PROVIDER_KEYS: "integration:opencode:get-provider-keys",
+  OPENCODE_GET_PROVIDER_STATUSES: "integration:opencode:get-provider-statuses",
   OPENCODE_SET_PROVIDER_KEY: "integration:opencode:set-provider-key",
   OPENCODE_DELETE_PROVIDER_KEY: "integration:opencode:delete-provider-key",
 
