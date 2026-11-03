@@ -50,7 +50,7 @@ vi.mock("@stratosapp/core", () => ({
   readTraceEntries: vi.fn(),
   clearTraceFile: vi.fn(),
   isSdkSessionMissing: isSdkSessionMissingMock,
-  DEFAULT_PROVIDER: "copilot",
+  DEFAULT_PROVIDER: "claude-code",
 }));
 
 describe("thread IPC session reset behavior", () => {
@@ -291,6 +291,7 @@ describe("thread IPC session reset behavior", () => {
       vi.resetModules();
       handleMocks.clear();
       vi.doMock("../settings/settings.store", () => ({
+        getLastUsedProvider: vi.fn().mockReturnValue("claude-code"),
         getProviderSettings: vi.fn().mockReturnValue({
           lastUsedModel: "claude-sonnet-4-6",
         }),
@@ -333,6 +334,7 @@ describe("thread IPC session reset behavior", () => {
       vi.resetModules();
       handleMocks.clear();
       vi.doMock("../settings/settings.store", () => ({
+        getLastUsedProvider: vi.fn().mockReturnValue("claude-code"),
         getProviderSettings: vi.fn().mockReturnValue({
           lastUsedModel: "claude-sonnet-4-6",
           lastUsedEffort: "medium",
@@ -367,6 +369,7 @@ describe("thread IPC session reset behavior", () => {
       vi.resetModules();
       handleMocks.clear();
       vi.doMock("../settings/settings.store", () => ({
+        getLastUsedProvider: vi.fn().mockReturnValue("claude-code"),
         getProviderSettings: vi.fn().mockReturnValue({}),
         setProviderSettings: vi.fn(),
         updateSettings: vi.fn(),
@@ -405,6 +408,7 @@ describe("thread IPC session reset behavior", () => {
       handleMocks.clear();
       const getProviderSettings = vi.fn().mockReturnValue({});
       vi.doMock("../settings/settings.store", () => ({
+        getLastUsedProvider: vi.fn().mockReturnValue("claude-code"),
         getProviderSettings,
         setProviderSettings: vi.fn(),
         updateSettings: vi.fn(),
@@ -424,16 +428,42 @@ describe("thread IPC session reset behavior", () => {
         "New chat",
         undefined,
         "/home/user",
-        "copilot",
+        "claude-code",
       );
       // Model/effort prefs are looked up against the resolved default provider
-      expect(getProviderSettings).toHaveBeenCalledWith("copilot");
+      expect(getProviderSettings).toHaveBeenCalledWith("claude-code");
+    });
+
+    it("uses the remembered provider when none is passed", async () => {
+      vi.resetModules();
+      handleMocks.clear();
+      vi.doMock("../settings/settings.store", () => ({
+        getLastUsedProvider: vi.fn().mockReturnValue("codex"),
+        getProviderSettings: vi.fn().mockReturnValue({}),
+      }));
+
+      const threadIpc = await import("../threads/thread.ipc");
+      threadIpc.registerThreadIpc(mockStorage as any);
+
+      const createHandler = handleMocks.get("chat:threads:create");
+      mockStorage.createThread.mockResolvedValue({ id: "t1" });
+      mockStorage.updateThread.mockResolvedValue(undefined);
+
+      await createHandler?.({}, "New chat", undefined, "/home/user");
+
+      expect(mockStorage.createThread).toHaveBeenCalledWith(
+        "New chat",
+        undefined,
+        "/home/user",
+        "codex",
+      );
     });
 
     it("honours an explicit provider over the default", async () => {
       vi.resetModules();
       handleMocks.clear();
       vi.doMock("../settings/settings.store", () => ({
+        getLastUsedProvider: vi.fn().mockReturnValue("claude-code"),
         getProviderSettings: vi.fn().mockReturnValue({}),
         setProviderSettings: vi.fn(),
         updateSettings: vi.fn(),

@@ -13,6 +13,9 @@ vi.mock("electron", () => ({
   BrowserWindow: vi.fn(),
   app: { getPath: () => tmpdir() },
 }));
+vi.mock("../settings/settings.store", () => ({
+  getLastUsedProvider: vi.fn().mockReturnValue("codex"),
+}));
 
 function makeStorage(folders: { id: string; name: string; path: string }[]) {
   return {
@@ -98,6 +101,7 @@ describe("scheduler handlers", () => {
     const entry = JSON.parse(created.content[0].text);
     expect(entry.name).toBe("nightly");
     expect(entry.enabled).toBe(true);
+    expect(entry.provider).toBe("codex");
 
     const listed = await byName(defs, "schedule_list").handler({});
     expect(listed.content[0].text).toContain("nightly");

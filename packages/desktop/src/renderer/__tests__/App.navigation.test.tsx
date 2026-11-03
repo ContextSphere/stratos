@@ -32,7 +32,11 @@ const mocks = vi.hoisted(() => ({
   inputFocus: vi.fn(),
   inputPrefillDraft: vi.fn(),
   inputText: "draft in progress",
-  settings: { theme: "dark", designVariant: undefined as string | undefined },
+  settings: {
+    theme: "dark",
+    designVariant: undefined as string | undefined,
+    lastUsedProvider: undefined as string | undefined,
+  },
   updateSettings: vi.fn(async (_patch: unknown) => {}),
 }));
 
@@ -255,7 +259,14 @@ vi.mock("@stratosapp/ui", () => {
     PreviewPane: () => null,
     ContextUsageIndicator: () => null,
     ToolsBadge: () => null,
-    ProviderToggle: () => null,
+    ProviderToggle: (props: {
+      provider: string;
+      onProviderChange: (provider: "codex") => void;
+    }) => (
+      <button onClick={() => props.onProviderChange("codex")}>
+        Select Codex (current: {props.provider})
+      </button>
+    ),
     ModelSelector: () => null,
     ModeToggle: () => null,
     WorktreeToggle: () => null,
@@ -362,7 +373,11 @@ describe("App navigation from agent screens", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.inputText = "draft in progress";
-    mocks.settings = { theme: "dark", designVariant: undefined };
+    mocks.settings = {
+      theme: "dark",
+      designVariant: undefined,
+      lastUsedProvider: undefined,
+    };
     mocks.updateSettings.mockResolvedValue(undefined);
     Object.defineProperty(window, "api", {
       configurable: true,
@@ -391,6 +406,53 @@ describe("App navigation from agent screens", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(screen.getByTestId("composer")).toBe(composer);
     expect(mocks.createThread).not.toHaveBeenCalled();
+  });
+
+  it("remembers an explicit provider selection", async () => {
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Select Codex (current: claude-code)",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(mocks.updateSettings).toHaveBeenCalledWith({
+        lastUsedProvider: "codex",
+      }),
+    );
+    expect(mocks.updateThread).toHaveBeenCalledWith(
+      "existing-thread",
+      expect.objectContaining({ provider: "codex" }),
+    );
+  });
+
+  it("uses the remembered provider for a new folder session", async () => {
+    mocks.settings.lastUsedProvider = "codex";
+    Object.defineProperty(window, "api", {
+      configurable: true,
+      value: {
+        managerIsEnabled: async () => false,
+        getAppInfo: async () => ({
+          enabledProviders: ["claude-code", "codex"],
+        }),
+      },
+    });
+    render(<App />);
+    await screen.findByRole("button", {
+      name: "Select Codex (current: claude-code)",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Folder plus" }));
+
+    await waitFor(() =>
+      expect(mocks.createThread).toHaveBeenCalledWith(
+        "New chat",
+        undefined,
+        "/repo",
+        "codex",
+      ),
+    );
   });
 
   it("creates and opens a bot using the saved defaults before the roster refreshes", async () => {

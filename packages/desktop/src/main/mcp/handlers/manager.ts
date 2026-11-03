@@ -5,12 +5,14 @@ import { z } from "zod";
 import type { BrowserWindow } from "electron";
 import type { AgentManager } from "../../agent-manager";
 import type { FileStorageAdapter, StoredMessage } from "@stratosapp/core";
-import { getScheduledPrompt, DEFAULT_PROVIDER } from "@stratosapp/core";
+import { getScheduledPrompt } from "@stratosapp/core";
 import { IPC_CHANNELS } from "../../../common/ipc-channels";
 import { getManagerTurnImages } from "../../manager/turn-state";
 import { type HandlerDef, defineHandler, textResult } from "./types";
 import { getManagerRef } from "../../manager/manager-ref";
 import { decoratePromptWithSchedule } from "../../scheduler/decorate-prompt";
+import { getLastUsedProvider } from "../../settings/settings.store";
+import { getEnabledProviders } from "../../config/stratos-config";
 
 const imagesSchema = z
   .array(
@@ -86,7 +88,9 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
         provider: z
           .enum(["claude-code", "codex", "opencode", "copilot"])
           .optional()
-          .describe(`Agent provider (default: ${DEFAULT_PROVIDER})`),
+          .describe(
+            "Agent provider (defaults to the last provider used in Stratos)",
+          ),
         model: z
           .string()
           .optional()
@@ -122,7 +126,7 @@ export function createManagerHandlers(deps: ManagerDeps): HandlerDef[] {
             args.title ?? "New chat",
             args.model,
             args.workspace,
-            args.provider ?? DEFAULT_PROVIDER,
+            args.provider ?? getLastUsedProvider(getEnabledProviders()),
           );
 
           const updates: Record<string, unknown> = {

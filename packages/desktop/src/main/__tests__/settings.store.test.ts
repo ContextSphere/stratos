@@ -80,6 +80,44 @@ describe("settings.store", () => {
     });
   });
 
+  describe("getLastUsedProvider", () => {
+    it("defaults to Claude Code on a clean install", async () => {
+      const { getLastUsedProvider } =
+        await import("../settings/settings.store");
+      expect(getLastUsedProvider()).toBe("claude-code");
+    });
+
+    it("returns the saved provider when it is enabled", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ lastUsedProvider: "codex" }),
+      );
+      const { getLastUsedProvider } =
+        await import("../settings/settings.store");
+      expect(getLastUsedProvider(["claude-code", "codex"])).toBe("codex");
+    });
+
+    it("falls back to the first enabled provider when the saved provider and Claude Code are disabled", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ lastUsedProvider: "copilot" }),
+      );
+      const { getLastUsedProvider } =
+        await import("../settings/settings.store");
+      expect(getLastUsedProvider(["codex", "opencode"])).toBe("codex");
+    });
+
+    it("ignores invalid persisted values", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ lastUsedProvider: "unknown-provider" }),
+      );
+      const { getLastUsedProvider } =
+        await import("../settings/settings.store");
+      expect(getLastUsedProvider()).toBe("claude-code");
+    });
+  });
+
   describe("setProviderSettings", () => {
     it("writes provider settings without overwriting other providers", async () => {
       mockExistsSync.mockReturnValue(true);

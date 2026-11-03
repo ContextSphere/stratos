@@ -7,6 +7,9 @@ import { createManagerHandlers } from "../mcp/handlers/manager";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
 
 vi.mock("electron", () => ({ BrowserWindow: vi.fn() }));
+vi.mock("../settings/settings.store", () => ({
+  getLastUsedProvider: vi.fn().mockReturnValue("codex"),
+}));
 
 function byName(defs: ReturnType<typeof createManagerHandlers>, name: string) {
   const d = defs.find((h) => h.name === name);
@@ -137,6 +140,7 @@ describe("manager handlers", () => {
     const parsed = JSON.parse(res.content[0].text);
     expect(parsed.status).toBe("started");
     expect(parsed.threadId).toMatch(/^t_/);
+    expect(ctx.threads[parsed.threadId].provider).toBe("codex");
     expect(ctx.agentManager.startStream).toHaveBeenCalledWith(
       parsed.threadId,
       "hi",

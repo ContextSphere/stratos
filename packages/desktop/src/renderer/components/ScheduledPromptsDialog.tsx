@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { DEFAULT_PROVIDER } from "../utils/modes";
 import type {
   ScheduledPrompt,
   ScheduleConfig,
@@ -97,6 +96,7 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   folders: Folder[];
+  defaultProvider: ProviderType;
 }
 
 type FormMode = "list" | "create" | "edit";
@@ -117,11 +117,14 @@ interface FormState {
   notify: "default" | ScheduleNotifyMode;
 }
 
-function defaultForm(folders: Folder[]): FormState {
+function defaultForm(
+  folders: Folder[],
+  defaultProvider: ProviderType,
+): FormState {
   return {
     name: "",
     prompt: "",
-    provider: DEFAULT_PROVIDER,
+    provider: defaultProvider,
     model: "",
     folderId: folders[0]?.id ?? "",
     scheduleType: "recurring",
@@ -171,12 +174,15 @@ export function ScheduledPromptsDialog({
   isOpen,
   onClose,
   folders,
+  defaultProvider,
 }: Props): React.ReactElement | null {
   const { prompts, create, update, remove, toggle, runNow } =
     useScheduledPrompts();
   const [mode, setMode] = useState<FormMode>("list");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(defaultForm(folders));
+  const [form, setForm] = useState<FormState>(
+    defaultForm(folders, defaultProvider),
+  );
   const [models, setModels] = useState<DropdownItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -220,10 +226,10 @@ export function ScheduledPromptsDialog({
   }));
 
   const handleCreate = useCallback(() => {
-    setForm(defaultForm(folders));
+    setForm(defaultForm(folders, defaultProvider));
     setMode("create");
     setError(null);
-  }, [folders]);
+  }, [folders, defaultProvider]);
 
   const handleEdit = useCallback((p: ScheduledPrompt) => {
     setForm(promptToForm(p));

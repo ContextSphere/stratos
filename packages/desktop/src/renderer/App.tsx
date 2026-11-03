@@ -27,6 +27,23 @@ const KNOWN_PROVIDERS = new Set<string>([
 function normalizeProvider(p: string | undefined): ProviderType {
   return (p && KNOWN_PROVIDERS.has(p) ? p : "claude-code") as ProviderType;
 }
+
+function resolvePreferredProvider(
+  saved: unknown,
+  enabled: readonly ProviderType[],
+): ProviderType {
+  if (
+    typeof saved === "string" &&
+    KNOWN_PROVIDERS.has(saved) &&
+    (enabled.length === 0 || enabled.includes(saved as ProviderType))
+  ) {
+    return saved as ProviderType;
+  }
+  if (enabled.length === 0 || enabled.includes(DEFAULT_PROVIDER)) {
+    return DEFAULT_PROVIDER;
+  }
+  return enabled[0];
+}
 import type { ImageAttachment, FileAttachment } from "@stratosapp/ui";
 import {
   Sidebar,
@@ -234,18 +251,26 @@ function AppInner(): React.ReactElement {
     promotePending,
   } = useChat(activeThreadId, { onThreadUpdated: refreshThreads });
 
+  const [pendingProvider, setPendingProvider] = useState<ProviderType>();
   const [enabledProviders, setEnabledProviders] = useState<
     ProviderType[] | null
   >(null);
+  const providerSelectionMadeRef = useRef(false);
   useEffect(() => {
-    window.api.getAppInfo().then((info) => {
-      if (Array.isArray(info.enabledProviders)) {
-        setEnabledProviders(info.enabledProviders as ProviderType[]);
-      } else {
-        setEnabledProviders(["claude-code", "codex", "opencode", "copilot"]);
-      }
-    });
-  }, []);
+    Promise.all([window.api.getAppInfo(), settingsBridge.getSettings?.()]).then(
+      ([info, settings]) => {
+        const enabled = Array.isArray(info.enabledProviders)
+          ? (info.enabledProviders as ProviderType[])
+          : (["claude-code", "codex", "opencode", "copilot"] as ProviderType[]);
+        setEnabledProviders(enabled);
+        if (!providerSelectionMadeRef.current) {
+          setPendingProvider(
+            resolvePreferredProvider(settings?.lastUsedProvider, enabled),
+          );
+        }
+      },
+    );
+  }, [settingsBridge]);
   const codexEnabled = enabledProviders?.includes("codex") ?? false;
 
   const github = useGitHub();
@@ -279,13 +304,11 @@ function AppInner(): React.ReactElement {
   const [designSaving, setDesignSaving] = useState(false);
   const [designError, setDesignError] = useState<string | null>(null);
   const [pendingMode, setPendingMode] = useState<AgentMode>();
-  const [pendingProvider, setPendingProvider] =
-    useState<ProviderType>(DEFAULT_PROVIDER);
   /** Provider driving the toolbar/chat: the active thread's own provider, or
    *  the pending selection for the not-yet-created thread. */
   const activeProvider: ProviderType = activeThread
     ? normalizeProvider(activeThread.provider)
-    : pendingProvider;
+    : (pendingProvider ?? DEFAULT_PROVIDER);
   const [homeDir, setHomeDir] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showBottomTerminal, setShowBottomTerminal] = useState(false);
@@ -631,7 +654,8 @@ function AppInner(): React.ReactElement {
 
       // A newly created bot should inherit the provider the user is already
       // working with. Its own explicit provider still wins.
-      const provider = agent?.provider ?? activeProvider;
+      const provider =
+        agent?.provider ?? (activeThread ? activeProvider : pendingProvider);
       const thread = await createThread("New chat", undefined, cwd, provider);
       await threadsBridge.update(thread.id, {
         agentId,
@@ -660,7 +684,9 @@ function AppInner(): React.ReactElement {
       refreshThreads,
       setActiveThreadId,
       settingsBridge,
+      activeThread,
       activeProvider,
+      pendingProvider,
       leaveAgentScreen,
       focusComposerAfterMount,
     ],
@@ -1010,8 +1036,11 @@ function AppInner(): React.ReactElement {
 
   const handleProviderChange = useCallback(
     async (provider: ProviderType) => {
+      providerSelectionMadeRef.current = true;
+      setPendingProvider(provider);
+      await settingsBridge.updateSettings?.({ lastUsedProvider: provider });
+
       if (!activeThreadId) {
-        setPendingProvider(provider);
         setPendingMode((prev) => (prev ? normalizeMode(prev, provider) : prev));
         return;
       }
@@ -2120,6 +2149,7 @@ function AppInner(): React.ReactElement {
             isOpen={showSchedulesDialog}
             onClose={() => setShowSchedulesDialog(false)}
             folders={folders}
+            defaultProvider={pendingProvider ?? DEFAULT_PROVIDER}
           />
 
           {/* Settings dialog */}

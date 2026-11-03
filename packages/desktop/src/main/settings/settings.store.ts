@@ -2,6 +2,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { decryptSecret, encryptSecret } from "./secure-storage";
+import { DEFAULT_PROVIDER, type ProviderType } from "@stratosapp/core";
 
 export type AppTheme = "dark" | "light";
 
@@ -56,6 +57,8 @@ export interface AppSettings {
   theme?: AppTheme;
   /** Visual design, independent of light/dark color mode. */
   designVariant?: "classic" | "refined";
+  /** Provider most recently selected by the user for new sessions. */
+  lastUsedProvider?: ProviderType;
   providers?: Record<string, ProviderPrefs>;
   /** Encrypted Opencode sub-provider credentials keyed by provider ID. */
   opencodeProviderKeys?: Record<string, StoredOpencodeProviderKey>;
@@ -157,6 +160,35 @@ export function setProviderSettings(
   patch: Partial<ProviderPrefs>,
 ): void {
   updateSettings({ providers: { [provider]: patch } });
+}
+
+const KNOWN_PROVIDERS: readonly ProviderType[] = [
+  "claude-code",
+  "codex",
+  "opencode",
+  "copilot",
+];
+
+function isProviderType(value: unknown): value is ProviderType {
+  return KNOWN_PROVIDERS.includes(value as ProviderType);
+}
+
+/**
+ * Resolve the provider used when a caller does not explicitly choose one.
+ * A saved preference wins, followed by Claude Code for a clean install. When
+ * an enabled-provider list is supplied, disabled preferences are skipped.
+ */
+export function getLastUsedProvider(
+  enabledProviders?: readonly ProviderType[],
+): ProviderType {
+  const saved = loadSettings().lastUsedProvider;
+  const enabled = enabledProviders?.filter(isProviderType);
+  const isEnabled = (provider: ProviderType): boolean =>
+    !enabled || enabled.length === 0 || enabled.includes(provider);
+
+  if (isProviderType(saved) && isEnabled(saved)) return saved;
+  if (isEnabled(DEFAULT_PROVIDER)) return DEFAULT_PROVIDER;
+  return enabled?.[0] ?? DEFAULT_PROVIDER;
 }
 
 export function getOpencodeProviderKeys(): Record<string, OpencodeProviderKey> {

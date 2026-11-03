@@ -4,7 +4,7 @@ import { getAvailableProviders } from "../providers";
 
 describe("DEFAULT_PROVIDER", () => {
   it("is copilot — the standard provider for every new session", () => {
-    expect(DEFAULT_PROVIDER).toBe("copilot");
+    expect(DEFAULT_PROVIDER).toBe("claude-code");
   });
 
   it("maps to a registered provider implementation", () => {

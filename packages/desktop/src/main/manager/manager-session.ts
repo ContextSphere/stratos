@@ -15,7 +15,6 @@ import {
   FileStorageAdapter,
   appendTraceEntry,
   appendScheduleRun,
-  DEFAULT_PROVIDER,
 } from "@stratosapp/core";
 import type {
   AgentProvider,
@@ -25,8 +24,12 @@ import type {
   ScheduleRunRecord,
 } from "@stratosapp/core";
 import { resolveClaudePathOrUndefined } from "../integrations/claude-path";
-import { loadSettings } from "../settings/settings.store";
-import { getOpencodeProviderKeys } from "../settings/settings.store";
+import {
+  getLastUsedProvider,
+  getOpencodeProviderKeys,
+  loadSettings,
+} from "../settings/settings.store";
+import { getEnabledProviders } from "../config/stratos-config";
 import { createStratosHandlers } from "../mcp/handlers";
 import { handlersToSdkMcp } from "../mcp/sdk-adapter";
 import { getStratosMcpPath, getStratosMcpSocketPath } from "../mcp/stdio-proxy";
@@ -95,7 +98,7 @@ When a scheduled run completes, the agent that ran it may have called \`schedule
 
 ## Defaults
 - Unsure which workspace? Ask the user.
-- Unsure which provider? Default to \`claude-code\`.
+- Unsure which provider? Omit it so Stratos uses the user's last selection.
 - Unsure which mode? For design/plan work, default to \`acceptEdits\` so the agent can write files. For code changes requiring caution, default to \`default\` (prompts on each tool).
 
 ## Thread affinity
@@ -104,7 +107,7 @@ When a session was used to produce design, research, or planning for a feature, 
 **Exception — scheduled tasks:** Each \`[SCHEDULED TASK]\` run is always independent. NEVER call \`send_message\` to a previous run's thread. Always call \`create_session\` regardless of what ran before.
 
 ## Providers you can assign to sessions
-- \`claude-code\`: Anthropic's Claude with full tool use (default for coding tasks)
+- \`claude-code\`: Anthropic's Claude with full tool use
 - \`opencode\`: Multi-model provider (OpenAI, Gemini, etc.)
 - \`codex\`: OpenAI's Codex agent
 
@@ -135,7 +138,9 @@ export class ManagerSession {
 
   private threadId: string | null = null;
   private provider: AgentProvider | null = null;
-  private currentProvider: ProviderType = DEFAULT_PROVIDER;
+  private currentProvider: ProviderType = getLastUsedProvider(
+    getEnabledProviders(),
+  );
   private sessionId: string | undefined;
   private activeStream = false;
   private gatewayReplyFn: ((reply: string) => void) | null = null;
