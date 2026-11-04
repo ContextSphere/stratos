@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useCallback,
@@ -55,8 +56,11 @@ const SCROLL_THRESHOLD = 80;
  *  50 ms budget. Rendering a recent window keeps that cost constant. */
 const INITIAL_WINDOW = 60;
 
-/** How many additional messages to reveal per "load earlier" click. */
+/** How many additional messages to reveal when the user reaches the top. */
 const WINDOW_STEP = 100;
+
+/** Start loading just before the scrollbar reaches its absolute minimum. */
+const LOAD_EARLIER_THRESHOLD = 24;
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   {
@@ -87,6 +91,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // revealed on demand, or automatically when something scrolls to them.
   const [windowSize, setWindowSize] = useState(INITIAL_WINDOW);
   const pendingScrollIdRef = useRef<string | null>(null);
+  const pendingPrependRef = useRef<{
+    scrollHeight: number;
+    scrollTop: number;
+  } | null>(null);
 
   // Reset the window when the transcript is replaced (thread switch or
   // history reload) so a new thread doesn't inherit an expanded window.
@@ -110,9 +118,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const lastMessageId =
     messages.length > 0 ? messages[messages.length - 1].id : null;
 
-  const showEarlier = useCallback(() => {
-    setWindowSize((n) => n + WINDOW_STEP);
-  }, []);
+  const loadEarlier = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || hiddenCount === 0 || pendingPrependRef.current) return;
+
+    pendingPrependRef.current = {
+      scrollHeight: el.scrollHeight,
+      scrollTop: el.scrollTop,
+    };
+    setWindowSize((n) => Math.min(messages.length, n + WINDOW_STEP));
+  }, [hiddenCount, messages.length]);
+
+  useLayoutEffect(() => {
+    const pending = pendingPrependRef.current;
+    const el = scrollRef.current;
+    if (!pending || !el) return;
+
+    el.scrollTop = pending.scrollTop + (el.scrollHeight - pending.scrollHeight);
+    pendingPrependRef.current = null;
+  }, [windowSize]);
 
   // ── Turn rail ──────────────────────────────────────────────────────────
   // Each of the user's prompts is a "turn". The first entry is relabelled
@@ -262,6 +286,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    if (el.scrollTop <= LOAD_EARLIER_THRESHOLD) {
+      loadEarlier();
+    }
     const nearBottom = checkIfNearBottom(el);
     isNearBottomRef.current = nearBottom;
     setShowScrollButton(!nearBottom);
@@ -269,7 +296,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // Debounce anchor detection so we don't spam on every pixel
     if (anchorTimerRef.current) clearTimeout(anchorTimerRef.current);
     anchorTimerRef.current = setTimeout(detectAnchor, 300);
-  }, [checkIfNearBottom, detectAnchor]);
+  }, [checkIfNearBottom, detectAnchor, loadEarlier]);
 
   // Auto-scroll only when user is near the bottom.
   // Re-runs on isStreaming so the typing indicator (rendered after isStreaming
@@ -328,19 +355,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }`}
       >
         <div className="space-y-4">
-          {hiddenCount > 0 && (
-            <div className="flex justify-center py-2">
-              <button
-                onClick={showEarlier}
-                className="px-3 py-1.5 rounded-full bg-[var(--bg-overlay)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] text-xs border border-[var(--border-mid)] transition-colors"
-                title="Render older messages"
-              >
-                Load {Math.min(hiddenCount, WINDOW_STEP)} earlier message
-                {Math.min(hiddenCount, WINDOW_STEP) === 1 ? "" : "s"} (
-                {hiddenCount} hidden)
-              </button>
-            </div>
-          )}
           {visibleMessages.map((msg) => (
             <MessageBubble
               key={msg.id}

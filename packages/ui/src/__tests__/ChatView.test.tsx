@@ -1,5 +1,11 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
-import { render, screen, cleanup, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  cleanup,
+  act,
+  fireEvent,
+} from "@testing-library/react";
 import { ChatView } from "../components/ChatView";
 import { DesignProvider } from "../context/DesignContext";
 import type { ChatMessage } from "../types";
@@ -171,9 +177,7 @@ describe("ChatView message windowing", () => {
     render(<ChatView messages={makeMessages(10)} isStreaming={false} />);
     expect(screen.getByText("message 0")).toBeInTheDocument();
     expect(screen.getByText("message 9")).toBeInTheDocument();
-    expect(
-      screen.queryByTitle("Render older messages"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Load \d+ earlier/)).not.toBeInTheDocument();
   });
 
   it("renders only the most recent window for a long transcript", () => {
@@ -189,19 +193,61 @@ describe("ChatView message windowing", () => {
     expect(rendered.length).toBeGreaterThan(0);
   });
 
-  it("reveals older messages when the load-earlier control is clicked", () => {
+  it.each(["classic", "refined"] as const)(
+    "automatically reveals one older chunk and preserves position in the %s transcript",
+    (variant) => {
+      const { container } = render(
+        <DesignProvider variant={variant}>
+          <ChatView messages={makeMessages(500)} isStreaming={false} />
+        </DesignProvider>,
+      );
+      const scrollEl = container.querySelector(
+        ".overflow-y-auto",
+      ) as HTMLDivElement;
+      Object.defineProperty(scrollEl, "clientHeight", {
+        configurable: true,
+        value: 500,
+      });
+      Object.defineProperty(scrollEl, "scrollHeight", {
+        configurable: true,
+        get: () => container.querySelectorAll("[data-message-id]").length * 50,
+      });
+
+      expect(container.querySelectorAll("[data-message-id]")).toHaveLength(60);
+      expect(screen.queryByText("message 339")).not.toBeInTheDocument();
+      expect(screen.getByText("message 440")).toBeInTheDocument();
+
+      scrollEl.scrollTop = 0;
+      fireEvent.scroll(scrollEl);
+
+      expect(container.querySelectorAll("[data-message-id]")).toHaveLength(160);
+      expect(screen.getByText("message 340")).toBeInTheDocument();
+      expect(screen.queryByText("message 339")).not.toBeInTheDocument();
+      expect(scrollEl.scrollTop).toBe(5000);
+      expect(screen.queryByText(/Load \d+ earlier/)).not.toBeInTheDocument();
+    },
+  );
+
+  it("does not expand the render window while scrolling away from the top", () => {
     const { container } = render(
       <ChatView messages={makeMessages(500)} isStreaming={false} />,
     );
-    const before = container.querySelectorAll("[data-message-id]").length;
-
-    const btn = screen.getByTitle("Render older messages");
-    act(() => {
-      btn.click();
+    const scrollEl = container.querySelector(
+      ".overflow-y-auto",
+    ) as HTMLDivElement;
+    Object.defineProperty(scrollEl, "clientHeight", {
+      configurable: true,
+      value: 500,
+    });
+    Object.defineProperty(scrollEl, "scrollHeight", {
+      configurable: true,
+      value: 3000,
     });
 
-    const after = container.querySelectorAll("[data-message-id]").length;
-    expect(after).toBeGreaterThan(before);
+    scrollEl.scrollTop = 500;
+    fireEvent.scroll(scrollEl);
+
+    expect(container.querySelectorAll("[data-message-id]")).toHaveLength(60);
   });
 
   it("marks the true last message as streaming, not the last of the window", () => {
@@ -217,9 +263,15 @@ describe("ChatView message windowing", () => {
     const { container, rerender } = render(
       <ChatView messages={makeMessages(500)} isStreaming={false} />,
     );
-    act(() => {
-      screen.getByTitle("Render older messages").click();
+    const scrollEl = container.querySelector(
+      ".overflow-y-auto",
+    ) as HTMLDivElement;
+    Object.defineProperty(scrollEl, "scrollHeight", {
+      configurable: true,
+      get: () => container.querySelectorAll("[data-message-id]").length * 50,
     });
+    scrollEl.scrollTop = 0;
+    fireEvent.scroll(scrollEl);
     const expanded = container.querySelectorAll("[data-message-id]").length;
 
     // Switch to a different transcript (different first message id).
