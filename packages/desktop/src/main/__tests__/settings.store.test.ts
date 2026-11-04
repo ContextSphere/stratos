@@ -3,6 +3,15 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 
 vi.mock("fs");
 vi.mock("os", () => ({ homedir: () => "/mock-home" }));
+vi.mock("../settings/secure-storage", () => ({
+  encryptSecret: vi.fn((value: string) =>
+    Buffer.from(`encrypted:${value}`).toString("base64"),
+  ),
+  decryptSecret: vi.fn((value: string) => {
+    const decoded = Buffer.from(value, "base64").toString("utf-8");
+    return decoded.replace(/^encrypted:/, "");
+  }),
+}));
 
 const mockExistsSync = vi.mocked(existsSync);
 const mockReadFileSync = vi.mocked(readFileSync);
@@ -68,6 +77,44 @@ describe("settings.store", () => {
       const { getProviderSettings } =
         await import("../settings/settings.store");
       expect(getProviderSettings("codex")).toEqual({});
+    });
+  });
+
+  describe("getLastUsedProvider", () => {
+    it("defaults to Claude Code on a clean install", async () => {
+      const { getLastUsedProvider } =
+        await import("../settings/settings.store");
+      expect(getLastUsedProvider()).toBe("claude-code");
+    });
+
+    it("returns the saved provider when it is enabled", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ lastUsedProvider: "codex" }),
+      );
+      const { getLastUsedProvider } =
+        await import("../settings/settings.store");
+      expect(getLastUsedProvider(["claude-code", "codex"])).toBe("codex");
+    });
+
+    it("falls back to the first enabled provider when the saved provider and Claude Code are disabled", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ lastUsedProvider: "copilot" }),
+      );
+      const { getLastUsedProvider } =
+        await import("../settings/settings.store");
+      expect(getLastUsedProvider(["codex", "opencode"])).toBe("codex");
+    });
+
+    it("ignores invalid persisted values", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ lastUsedProvider: "unknown-provider" }),
+      );
+      const { getLastUsedProvider } =
+        await import("../settings/settings.store");
+      expect(getLastUsedProvider()).toBe("claude-code");
     });
   });
 
@@ -253,6 +300,105 @@ describe("settings.store", () => {
       const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
       expect(written.opencodeEnabledModels).toEqual({});
       expect(written.opencodeEnabledModelsArchive).toEqual({});
+    });
+  });
+
+  describe("Opencode credential storage", () => {
+    it("stores credentials encrypted and never writes the plaintext field", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(JSON.stringify({}));
+      const { setOpencodeProviderKey } =
+        await import("../settings/settings.store");
+
+      setOpencodeProviderKey("openrouter", {
+        apiKey: "test-openrouter-secret",
+      });
+
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
+      expect(written.opencodeProviderKeys.openrouter).toEqual({
+        encryptedApiKey: Buffer.from(
+          "encrypted:test-openrouter-secret",
+        ).toString("base64"),
+        keyHint: "test…cret",
+      });
+      expect(mockWriteFileSync.mock.calls[0][1]).not.toContain(
+        "test-openrouter-secret",
+      );
+    });
+
+    it("migrates a legacy plaintext credential on first main-process read", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({
+          opencodeProviderKeys: {
+            openrouter: {
+              apiKey: "legacy-openrouter-secret",
+              baseURL: "https://router.example/v1",
+            },
+          },
+        }),
+      );
+      const { getOpencodeProviderKeys } =
+        await import("../settings/settings.store");
+
+      expect(getOpencodeProviderKeys()).toEqual({
+        openrouter: {
+          apiKey: "legacy-openrouter-secret",
+          baseURL: "https://router.example/v1",
+        },
+      });
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
+      expect(written.opencodeProviderKeys.openrouter.apiKey).toBeUndefined();
+      expect(
+        written.opencodeProviderKeys.openrouter.encryptedApiKey,
+      ).toBeTruthy();
+    });
+
+    it("returns only redacted provider status to renderer callers", async () => {
+      const encryptedApiKey = Buffer.from(
+        "encrypted:test-openrouter-secret",
+      ).toString("base64");
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({
+          opencodeProviderKeys: {
+            openrouter: {
+              encryptedApiKey,
+              keyHint: "test…cret",
+            },
+          },
+        }),
+      );
+      const { getOpencodeProviderStatuses } =
+        await import("../settings/settings.store");
+
+      expect(getOpencodeProviderStatuses()).toEqual({
+        openrouter: {
+          configured: true,
+          keyHint: "test…cret",
+        },
+      });
+      expect(JSON.stringify(getOpencodeProviderStatuses())).not.toContain(
+        "test-openrouter-secret",
+      );
+    });
+
+    it("omits stored credentials from general renderer settings", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({
+          theme: "dark",
+          opencodeProviderKeys: {
+            openrouter: { encryptedApiKey: "ciphertext" },
+          },
+        }),
+      );
+      const { getPublicSettings } = await import("../settings/settings.store");
+
+      expect(getPublicSettings()).toEqual({
+        theme: "dark",
+        designVariant: "classic",
+      });
     });
   });
 

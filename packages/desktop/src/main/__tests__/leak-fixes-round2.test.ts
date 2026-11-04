@@ -104,6 +104,7 @@ vi.mock("@stratosapp/core", async (importOriginal) => {
 });
 
 vi.mock("../settings/settings.store", () => ({
+  getLastUsedProvider: vi.fn().mockReturnValue("claude-code"),
   loadSettings: vi.fn().mockReturnValue({}),
   setProviderSettings: vi.fn(),
   getOpencodeProviderKeys: vi.fn().mockReturnValue({}),

@@ -5,13 +5,16 @@ import { join, isAbsolute } from "path";
 import { mkdirSync, existsSync } from "fs";
 import { homedir } from "os";
 import { IPC_CHANNELS } from "../../common/ipc-channels";
-import { getProviderSettings } from "../settings/settings.store";
+import {
+  getLastUsedProvider,
+  getProviderSettings,
+} from "../settings/settings.store";
+import { getEnabledProviders } from "../config/stratos-config";
 import {
   FileStorageAdapter,
   readTraceEntries,
   clearTraceFile,
   isSdkSessionMissing,
-  DEFAULT_PROVIDER,
 } from "@stratosapp/core";
 import type {
   StoredMessage,
@@ -174,9 +177,10 @@ export function registerThreadIpc(storage = new FileStorageAdapter()): void {
       provider?: string,
       agentId?: string,
     ) => {
-      // Every new session defaults to the standard provider unless the caller
-      // explicitly picks another one.
-      const resolvedProvider = provider ?? DEFAULT_PROVIDER;
+      // Explicit choices win. Otherwise use the user's remembered provider,
+      // falling back to Claude Code on a clean install.
+      const resolvedProvider =
+        provider ?? getLastUsedProvider(getEnabledProviders());
       // Pre-populate model and effort from last-used provider settings
       const providerPrefs = getProviderSettings(resolvedProvider);
       const resolvedModel = model ?? providerPrefs.lastUsedModel;

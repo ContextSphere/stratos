@@ -1,6 +1,8 @@
 import { join } from "path";
 import { homedir } from "os";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { decryptSecret, encryptSecret } from "./secure-storage";
+import { DEFAULT_PROVIDER, type ProviderType } from "@stratosapp/core";
 
 export type AppTheme = "dark" | "light";
 
@@ -9,9 +11,24 @@ export interface ProviderPrefs {
   lastUsedEffort?: "low" | "medium" | "high" | "max";
 }
 
-/** API keys for opencode sub-providers (stored in app-settings.json, plain text) */
+/** Decrypted API key used only inside the Electron main process. */
 export interface OpencodeProviderKey {
   apiKey: string;
+  baseURL?: string;
+}
+
+/** Encrypted-at-rest representation persisted in app-settings.json. */
+interface StoredOpencodeProviderKey {
+  /** @deprecated Plaintext field retained only for one-time migration. */
+  apiKey?: string;
+  encryptedApiKey?: string;
+  keyHint?: string;
+  baseURL?: string;
+}
+
+export interface OpencodeProviderStatus {
+  configured: boolean;
+  keyHint: string;
   baseURL?: string;
 }
 
@@ -40,9 +57,11 @@ export interface AppSettings {
   theme?: AppTheme;
   /** Visual design, independent of light/dark color mode. */
   designVariant?: "classic" | "refined";
+  /** Provider most recently selected by the user for new sessions. */
+  lastUsedProvider?: ProviderType;
   providers?: Record<string, ProviderPrefs>;
-  /** Opencode sub-provider API keys keyed by opencode provider ID (e.g. "anthropic", "openai") */
-  opencodeProviderKeys?: Record<string, OpencodeProviderKey>;
+  /** Encrypted Opencode sub-provider credentials keyed by provider ID. */
+  opencodeProviderKeys?: Record<string, StoredOpencodeProviderKey>;
   /** @deprecated Use `opencodeEnabledModels`. Retained for migration. */
   opencodeModelAllowlist?: string[];
   /**
@@ -143,21 +162,113 @@ export function setProviderSettings(
   updateSettings({ providers: { [provider]: patch } });
 }
 
+const KNOWN_PROVIDERS: readonly ProviderType[] = [
+  "claude-code",
+  "codex",
+  "opencode",
+  "copilot",
+];
+
+function isProviderType(value: unknown): value is ProviderType {
+  return KNOWN_PROVIDERS.includes(value as ProviderType);
+}
+
+/**
+ * Resolve the provider used when a caller does not explicitly choose one.
+ * A saved preference wins, followed by Claude Code for a clean install. When
+ * an enabled-provider list is supplied, disabled preferences are skipped.
+ */
+export function getLastUsedProvider(
+  enabledProviders?: readonly ProviderType[],
+): ProviderType {
+  const saved = loadSettings().lastUsedProvider;
+  const enabled = enabledProviders?.filter(isProviderType);
+  const isEnabled = (provider: ProviderType): boolean =>
+    !enabled || enabled.length === 0 || enabled.includes(provider);
+
+  if (isProviderType(saved) && isEnabled(saved)) return saved;
+  if (isEnabled(DEFAULT_PROVIDER)) return DEFAULT_PROVIDER;
+  return enabled?.[0] ?? DEFAULT_PROVIDER;
+}
+
 export function getOpencodeProviderKeys(): Record<string, OpencodeProviderKey> {
   const settings = loadSettings();
-  return settings.opencodeProviderKeys ?? {};
+  const stored = settings.opencodeProviderKeys ?? {};
+  const resolved: Record<string, OpencodeProviderKey> = {};
+  let migrated = false;
+  const migratedKeys: Record<string, StoredOpencodeProviderKey> = {};
+
+  for (const [providerId, entry] of Object.entries(stored)) {
+    const apiKey = entry.encryptedApiKey
+      ? decryptSecret(entry.encryptedApiKey)
+      : entry.apiKey;
+    if (!apiKey) continue;
+
+    resolved[providerId] = {
+      apiKey,
+      ...(entry.baseURL ? { baseURL: entry.baseURL } : {}),
+    };
+
+    if (entry.encryptedApiKey) {
+      migratedKeys[providerId] = entry;
+      continue;
+    }
+
+    migrated = true;
+    migratedKeys[providerId] = {
+      encryptedApiKey: encryptSecret(apiKey),
+      keyHint: maskCredential(apiKey),
+      ...(entry.baseURL ? { baseURL: entry.baseURL } : {}),
+    };
+  }
+
+  if (migrated) {
+    saveSettings({ ...settings, opencodeProviderKeys: migratedKeys });
+  }
+
+  return resolved;
+}
+
+export function getOpencodeProviderStatuses(): Record<
+  string,
+  OpencodeProviderStatus
+> {
+  // Resolve once so legacy plaintext credentials are migrated before anything
+  // is returned to the renderer.
+  getOpencodeProviderKeys();
+  const stored = loadSettings().opencodeProviderKeys ?? {};
+  return Object.fromEntries(
+    Object.entries(stored)
+      .filter(([, entry]) => Boolean(entry.encryptedApiKey))
+      .map(([providerId, entry]) => [
+        providerId,
+        {
+          configured: true,
+          keyHint: entry.keyHint ?? "Credential stored securely",
+          ...(entry.baseURL ? { baseURL: entry.baseURL } : {}),
+        },
+      ]),
+  );
 }
 
 export function setOpencodeProviderKey(
   providerId: string,
   key: OpencodeProviderKey,
 ): void {
+  const apiKey = key.apiKey.trim();
+  if (!apiKey) {
+    throw new Error("An API key is required.");
+  }
   const current = loadSettings();
   const updated: AppSettings = {
     ...current,
     opencodeProviderKeys: {
       ...(current.opencodeProviderKeys ?? {}),
-      [providerId]: key,
+      [providerId]: {
+        encryptedApiKey: encryptSecret(apiKey),
+        keyHint: maskCredential(apiKey),
+        ...(key.baseURL ? { baseURL: key.baseURL } : {}),
+      },
     },
   };
   saveSettings(updated);
@@ -169,6 +280,24 @@ export function deleteOpencodeProviderKey(providerId: string): void {
   delete keys[providerId];
   const updated: AppSettings = { ...current, opencodeProviderKeys: keys };
   saveSettings(updated);
+}
+
+function maskCredential(value: string): string {
+  if (value.length <= 8) return "Credential stored securely";
+  return `${value.slice(0, 4)}…${value.slice(-4)}`;
+}
+
+export function getPublicSettings(): AppSettings {
+  const { opencodeProviderKeys: _credentials, ...settings } = loadSettings();
+  return settings;
+}
+
+export function updatePublicSettings(
+  updates: Partial<AppSettings>,
+): AppSettings {
+  const { opencodeProviderKeys: _credentials, ...safeUpdates } = updates;
+  updateSettings(safeUpdates);
+  return getPublicSettings();
 }
 
 export function getOpencodeModelAllowlist(): string[] {

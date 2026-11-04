@@ -65,6 +65,7 @@ export function ToolsPopover({
       scope?: string;
       configPath?: string;
       configType?: string;
+      toolListAvailable?: boolean;
     })[]
   >(() => {
     if (mcpServers && mcpServers.length > 0) {
@@ -80,6 +81,7 @@ export function ToolsPopover({
           scope: s.scope,
           configPath: s.configPath,
           configType: s.configType,
+          toolListAvailable: s.toolListAvailable,
         }))
         .sort((a, b) => {
           const aBuiltin = !!toolRegistry.getByServerName(a.name);
@@ -239,7 +241,7 @@ export function ToolsPopover({
               </div>
             )}
             <span className="text-xs text-[var(--text-muted)]">
-              {server.tools.length}
+              {server.toolListAvailable === false ? "—" : server.tools.length}
             </span>
             <svg
               className={`w-3 h-3 text-[var(--text-muted)] transition-transform duration-150 ${
@@ -295,17 +297,24 @@ export function ToolsPopover({
                 )}
               </div>
             )}
-            <div className="grid grid-cols-2 gap-1">
-              {server.tools.map((tool) => (
-                <div
-                  key={tool}
-                  className="text-xs font-mono text-[var(--text-muted)] bg-[var(--bg-overlay)] px-2 py-1 rounded truncate"
-                  title={tool}
-                >
-                  {tool}
-                </div>
-              ))}
-            </div>
+            {server.toolListAvailable === false ? (
+              <div className="text-[10px] text-[var(--text-muted)]">
+                Connected. OpenCode does not expose this server&apos;s tool
+                list.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-1">
+                {server.tools.map((tool) => (
+                  <div
+                    key={tool}
+                    className="text-xs font-mono text-[var(--text-muted)] bg-[var(--bg-overlay)] px-2 py-1 rounded truncate"
+                    title={tool}
+                  >
+                    {tool}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -313,6 +322,9 @@ export function ToolsPopover({
   }
 
   const mcpToolCount = servers.reduce((sum, s) => sum + s.tools.length, 0);
+  const hasUnknownMcpTools = servers.some(
+    (server) => server.toolListAvailable === false,
+  );
   const builtInCount =
     sessionTools.length -
     sessionTools.filter((t) => t.startsWith("mcp__")).length;
@@ -354,12 +366,16 @@ export function ToolsPopover({
       <PanelCard
         title="Available Tools"
         headerAction={closeButton}
-        footer={`${mcpToolCount} MCP · ${builtInCount} built-in · ${mcpToolCount + builtInCount} total`}
+        footer={
+          hasUnknownMcpTools
+            ? `${servers.length} MCP server${servers.length === 1 ? "" : "s"} · ${builtInCount} built-in`
+            : `${mcpToolCount} MCP · ${builtInCount} built-in · ${mcpToolCount + builtInCount} total`
+        }
       >
         {builtInCount > 0 && (
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)]">
             <span className="text-xs text-[var(--text-secondary)]">
-              Built-in Claude Code tools
+              Built-in tools
             </span>
             <span className="text-xs text-[var(--text-muted)]">
               {builtInCount}
@@ -369,7 +385,7 @@ export function ToolsPopover({
 
         {servers.length === 0 ? (
           <div className="px-4 py-6 text-xs text-[var(--text-muted)] text-center">
-            No MCP tools connected
+            No MCP servers connected
           </div>
         ) : (
           <div>

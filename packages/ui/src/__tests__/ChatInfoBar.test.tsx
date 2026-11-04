@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { ChatInfoBar } from "../components/ChatInfoBar";
 
 describe("ChatInfoBar", () => {
@@ -60,5 +60,35 @@ describe("ChatInfoBar", () => {
 
     expect(screen.getByTitle("View available tools")).toBeInTheDocument();
     expect(screen.getByText("1 tools")).toBeInTheDocument();
+  });
+
+  it("counts built-in tools and reports MCP servers with unknown catalogs", () => {
+    render(
+      <ChatInfoBar
+        sessionStats={{
+          totalCost: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          contextWindow: null,
+        }}
+        sessionTools={["bash", "read"]}
+        mcpServers={[
+          {
+            name: "chrome-devtools",
+            status: "connected",
+            tools: [],
+            toolListAvailable: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("2 tools")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("View available tools"));
+    expect(screen.getByText("Built-in tools")).toBeInTheDocument();
+    expect(screen.getByText("1 MCP server · 2 built-in")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No MCP servers connected"),
+    ).not.toBeInTheDocument();
   });
 });

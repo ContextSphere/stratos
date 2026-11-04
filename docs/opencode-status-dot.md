@@ -77,15 +77,19 @@ interface OpencodeStatus {
 export function useOpencodeStatus(): OpencodeStatus { ... }
 ```
 
-Internally calls existing IPCs — **no new IPC channels needed**:
+Internally calls:
 
-- `window.api.opencodeGetProviderKeys()` → `Record<providerId, {apiKey, baseURL?}>`
+- `window.api.opencodeGetProviderStatuses()` →
+  `Record<providerId, {configured, keyHint, baseURL?}>`
 - `window.api.ollamaGetConfig()` → `{baseURL, models} | undefined`
+
+Decrypted provider keys remain in the Electron main process and never cross
+this IPC boundary.
 
 Derives:
 
-- `configured = Object.keys(keys).length > 0 || (ollamaConfig && Object.keys(ollamaConfig.models).length > 0)`
-- `providerLabels = [...keys with friendly label] ++ (ollama ? ["Ollama (N models)"] : [])`
+- `configured = Object.keys(statuses).length > 0 || (ollamaConfig && Object.keys(ollamaConfig.models).length > 0)`
+- `providerLabels = [...statuses with friendly label] ++ (ollama ? ["Ollama (N models)"] : [])`
 
 ### Refresh triggers
 

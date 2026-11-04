@@ -11,7 +11,11 @@ import {
   AGENT_ACCENTS,
   validateAgentDefinition,
 } from "../../utils/agent-defaults";
-import { getAgentModes, getModeConfig } from "../../utils/modes";
+import {
+  DEFAULT_PROVIDER,
+  getAgentModes,
+  getModeConfig,
+} from "../../utils/modes";
 import {
   getAgentAccentSwatchClass,
   getAgentGlyph,
@@ -560,7 +564,7 @@ export function AgentEditor({
                   </option>
                   {(provider ? getAgentModes(provider) : MODES).map((entry) => (
                     <option key={entry} value={entry}>
-                      {getModeConfig(provider || "copilot", entry).label}
+                      {getModeConfig(provider || DEFAULT_PROVIDER, entry).label}
                     </option>
                   ))}
                 </select>

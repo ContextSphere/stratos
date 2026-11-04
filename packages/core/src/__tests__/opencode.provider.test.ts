@@ -4,6 +4,11 @@ import {
   normalizeOpencodeToolName,
   normalizeFileToolInput,
   transformToolPart,
+  buildOpencodeConfig,
+  parseOpencodeModels,
+  parseOpencodeModelRef,
+  normalizeOpencodeError,
+  getOpencodeServerIdentity,
   type OpencodeToolPart,
 } from "../providers/opencode.provider";
 import type { AgentMessage } from "../providers/types";
@@ -71,6 +76,7 @@ describe("normalizeFileToolInput", () => {
     expect(normalizeFileToolInput("Read", { path: "/c.ts" })).toMatchObject({
       file_path: "/c.ts",
     });
+
     expect(
       normalizeFileToolInput("Delete", { filePath: "/d.ts" }),
     ).toMatchObject({ file_path: "/d.ts" });
@@ -114,6 +120,209 @@ describe("normalizeFileToolInput", () => {
     expect(normalizeFileToolInput("WebSearch", { query: "x" })).toEqual({
       query: "x",
     });
+  });
+});
+
+describe("OpenRouter configuration", () => {
+  it("injects the OpenRouter key, default base URL, and app attribution", () => {
+    expect(
+      buildOpencodeConfig({
+        opencodeConfig: {
+          providers: {
+            openrouter: { apiKey: "test-openrouter-key" },
+          },
+        },
+      }),
+    ).toEqual({
+      provider: {
+        openrouter: {
+          options: {
+            apiKey: "test-openrouter-key",
+            baseURL: "https://openrouter.ai/api/v1",
+            headers: {
+              "HTTP-Referer": "https://github.com/ContextSphere/stratos",
+              "X-Title": "Stratos",
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("honors a custom OpenRouter base URL", () => {
+    const config = buildOpencodeConfig({
+      opencodeConfig: {
+        providers: {
+          openrouter: {
+            apiKey: "test-openrouter-key",
+            baseURL: "https://router.example/v1",
+          },
+        },
+      },
+    }) as {
+      provider: { openrouter: { options: { baseURL: string } } };
+    };
+    expect(config.provider.openrouter.options.baseURL).toBe(
+      "https://router.example/v1",
+    );
+  });
+
+  it("qualifies discovered OpenRouter model IDs", () => {
+    expect(
+      parseOpencodeModels([
+        {
+          id: "openrouter",
+          name: "OpenRouter",
+          models: {
+            "anthropic/claude-sonnet-4.5": {
+              name: "Claude Sonnet 4.5",
+              capabilities: { reasoning: true },
+              limit: { context: 200_000 },
+            },
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        value: "openrouter/anthropic/claude-sonnet-4.5",
+        displayName: "Claude Sonnet 4.5",
+        description: "200k context",
+        supportsEffort: true,
+        supportsReasoning: true,
+      },
+    ]);
+  });
+
+  it("maps OpenRouter failures without returning the raw provider payload", () => {
+    const raw = {
+      message: "401 Unauthorized",
+      data: { debug: "sensitive upstream response" },
+    };
+    expect(
+      normalizeOpencodeError(raw, "openrouter/anthropic/claude-sonnet-4.5"),
+    ).toBe(
+      "OpenRouter rejected the API key. Update the OpenRouter credential in Opencode settings.",
+    );
+    expect(
+      normalizeOpencodeError(raw, "openrouter/openai/gpt-4.1"),
+    ).not.toContain("sensitive");
+  });
+
+  it("maps nested OpenRouter API errors", () => {
+    expect(
+      normalizeOpencodeError(
+        {
+          name: "APIError",
+          data: {
+            message: "No endpoints found that support this request",
+            statusCode: 404,
+          },
+        },
+        "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+      ),
+    ).toBe(
+      "The selected OpenRouter model is unavailable. Refresh the OpenRouter model list and choose another model.",
+    );
+  });
+
+  it("splits provider-qualified model references at the first slash", () => {
+    expect(
+      parseOpencodeModelRef(
+        "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+      ),
+    ).toEqual({
+      providerID: "openrouter",
+      modelID: "nvidia/nemotron-3-super-120b-a12b:free",
+    });
+  });
+});
+
+describe("OpenCode MCP integration", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("uses different server identities for different MCP configurations", () => {
+    const cwd = "/repo";
+    const first = getOpencodeServerIdentity(cwd, {
+      mcpServers: { one: { command: "node", args: ["one.js"] } },
+    });
+    const second = getOpencodeServerIdentity(cwd, {
+      mcpServers: { two: { command: "node", args: ["two.js"] } },
+    });
+    expect(first.fingerprint).not.toBe(second.fingerprint);
+    expect(first.preferredPort).toBeGreaterThanOrEqual(8200);
+    expect(first.preferredPort).toBeLessThan(8999);
+  });
+
+  it("maps OpenCode MCP status and preserves project metadata", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const provider = new OpencodeProvider() as any;
+    provider.baseUrl = "http://127.0.0.1:8765";
+    provider.config = {
+      mcpServers: {
+        chrome: {
+          command: "bash",
+          scope: "project",
+          configPath: "/repo/.mcp.json",
+        },
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          chrome: { status: "connected" },
+          oauth: { status: "needs_auth" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await expect(provider.getMcpServerStatus()).resolves.toEqual([
+      {
+        name: "chrome",
+        status: "connected",
+        tools: [],
+        toolListAvailable: false,
+        error: undefined,
+        scope: "project",
+        configPath: "/repo/.mcp.json",
+        configType: "stdio",
+      },
+      {
+        name: "oauth",
+        status: "needs-auth",
+        tools: [],
+        toolListAvailable: false,
+        error: undefined,
+        scope: undefined,
+        configPath: undefined,
+        configType: undefined,
+      },
+    ]);
+  });
+
+  it("connects and disconnects MCP servers through the OpenCode API", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const provider = new OpencodeProvider() as any;
+    provider.baseUrl = "http://127.0.0.1:8765";
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("true", { status: 200 }));
+
+    await provider.toggleMcpServer("chrome devtools", false);
+    await provider.toggleMcpServer("chrome devtools", true);
+
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      "http://127.0.0.1:8765/mcp/chrome%20devtools/disconnect",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8765/mcp/chrome%20devtools/connect",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });
 
@@ -339,6 +548,121 @@ describe("OpencodeProvider sendMessage SSE integration", () => {
 
     return provider;
   }
+
+  it("sends the selected provider and model in OpenCode's model object", async () => {
+    const provider = setupProvider([]);
+    await drain(
+      provider.sendMessage({
+        prompt: "hi",
+        model: "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+        permissionHandler: async () => ({ approved: true }),
+      }),
+    );
+
+    const promptCall = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.find(([input]) =>
+        String(input).includes("/session/ses_test/message"),
+      );
+    expect(promptCall).toBeDefined();
+    expect(JSON.parse(String(promptCall?.[1]?.body))).toMatchObject({
+      parts: [{ type: "text", text: "hi" }],
+      model: {
+        providerID: "openrouter",
+        modelID: "nvidia/nemotron-3-super-120b-a12b:free",
+      },
+    });
+  });
+
+  it("sends images as OpenCode file parts with mime and url", async () => {
+    const provider = setupProvider([]);
+    await drain(
+      provider.sendMessage({
+        prompt: "describe these",
+        images: [
+          { dataUrl: "data:image/png;base64,AAA", mimeType: "image/png" },
+          { dataUrl: "data:image/jpeg;base64,BBB", mimeType: "image/jpeg" },
+        ],
+        permissionHandler: async () => ({ approved: true }),
+      }),
+    );
+
+    const promptCall = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.find(([input]) =>
+        String(input).includes("/session/ses_test/message"),
+      );
+    expect(JSON.parse(String(promptCall?.[1]?.body))).toEqual({
+      parts: [
+        { type: "text", text: "describe these" },
+        {
+          type: "file",
+          mime: "image/png",
+          url: "data:image/png;base64,AAA",
+        },
+        {
+          type: "file",
+          mime: "image/jpeg",
+          url: "data:image/jpeg;base64,BBB",
+        },
+      ],
+    });
+  });
+
+  it("surfaces a prompt HTTP failure even while the SSE stream stays open", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const provider = new OpencodeProvider() as any;
+    provider.config = { cwd: "/tmp" };
+    provider.baseUrl = "http://127.0.0.1:8765";
+    provider.port = 8765;
+    provider.healthCheck = vi.fn().mockResolvedValue(true);
+
+    const neverEndingSse = new ReadableStream<Uint8Array>({
+      start() {
+        // Deliberately never enqueue or close: only the prompt failure can
+        // release sendMessage, which guards against permanent “Thinking”.
+      },
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/session")) {
+        return new Response(JSON.stringify({ id: "ses_test" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/event")) {
+        return new Response(neverEndingSse, { status: 200 });
+      }
+      if (url.endsWith("/session/ses_test/message")) {
+        return new Response("bad request", {
+          status: 400,
+          statusText: "Bad Request",
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    await expect(
+      drain(
+        provider.sendMessage({
+          prompt: "hi",
+          permissionHandler: async () => ({ approved: true }),
+        }),
+      ),
+    ).resolves.toEqual([
+      {
+        type: "session_init",
+        sessionId: "ses_test",
+        tools: expect.any(Array),
+        mcpServers: [],
+      },
+      {
+        type: "error",
+        message: "opencode: failed to send prompt (400 Bad Request)",
+      },
+    ]);
+  });
 
   it("full lifecycle: emits tool_use once and tool_result once for pending→running→running→completed", async () => {
     const sessionID = "ses_test";

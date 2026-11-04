@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { getOpencodeProviderDefinition } from "../utils/opencode-providers";
 
 interface OllamaConfigShape {
   baseURL: string;
@@ -11,17 +12,8 @@ interface UseOpencodeStatusReturn {
   refresh: () => Promise<void>;
 }
 
-const FRIENDLY_LABELS: Record<string, string> = {
-  anthropic: "Anthropic",
-  openai: "OpenAI",
-  openrouter: "OpenRouter",
-  google: "Google AI",
-  groq: "Groq",
-  mistral: "Mistral",
-};
-
 function prettyProviderId(id: string): string {
-  return FRIENDLY_LABELS[id] ?? id;
+  return getOpencodeProviderDefinition(id)?.label ?? id;
 }
 
 export function useOpencodeStatus(): UseOpencodeStatusReturn {
@@ -31,7 +23,7 @@ export function useOpencodeStatus(): UseOpencodeStatusReturn {
   const refresh = useCallback(async () => {
     try {
       const [keys, ollama] = await Promise.all([
-        window.api.opencodeGetProviderKeys(),
+        window.api.opencodeGetProviderStatuses(),
         window.api.ollamaGetConfig() as Promise<OllamaConfigShape | undefined>,
       ]);
       const keyIds = Object.keys(keys ?? {});

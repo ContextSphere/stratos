@@ -9,11 +9,12 @@ import {
   updateScheduledPrompt,
   listScheduleRuns,
   FileStorageAdapter,
-  DEFAULT_PROVIDER,
 } from "@stratosapp/core";
 import type { ScheduledPrompt } from "@stratosapp/core";
 import { type HandlerDef, defineHandler, textResult } from "./types";
 import { depositReport } from "../../scheduler/schedule-report-store";
+import { getLastUsedProvider } from "../../settings/settings.store";
+import { getEnabledProviders } from "../../config/stratos-config";
 
 function buildSchedule(args: {
   once?: string;
@@ -67,7 +68,9 @@ export function createSchedulerHandlers(deps: SchedulerDeps): HandlerDef[] {
         provider: z
           .enum(["claude-code", "codex", "opencode", "copilot"])
           .optional()
-          .describe(`Agent provider (default: ${DEFAULT_PROVIDER})`),
+          .describe(
+            "Agent provider (defaults to the last provider used in Stratos)",
+          ),
         model: z
           .string()
           .optional()
@@ -139,7 +142,7 @@ export function createSchedulerHandlers(deps: SchedulerDeps): HandlerDef[] {
         const entry = addScheduledPrompt({
           name: args.name,
           prompt: args.prompt,
-          provider: args.provider ?? DEFAULT_PROVIDER,
+          provider: args.provider ?? getLastUsedProvider(getEnabledProviders()),
           folderId,
           schedule,
           enabled: true,

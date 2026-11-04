@@ -70,7 +70,7 @@ export type ProviderType = "claude-code" | "codex" | "opencode" | "copilot";
  * Those predate the field and were always Claude Code, so read paths keep
  * using `thread.provider ?? "claude-code"` to render their history correctly.
  */
-export const DEFAULT_PROVIDER: ProviderType = "copilot";
+export const DEFAULT_PROVIDER: ProviderType = "claude-code";
 
 export interface Thread {
   id: string;

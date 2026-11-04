@@ -27,6 +27,23 @@ const KNOWN_PROVIDERS = new Set<string>([
 function normalizeProvider(p: string | undefined): ProviderType {
   return (p && KNOWN_PROVIDERS.has(p) ? p : "claude-code") as ProviderType;
 }
+
+function resolvePreferredProvider(
+  saved: unknown,
+  enabled: readonly ProviderType[],
+): ProviderType {
+  if (
+    typeof saved === "string" &&
+    KNOWN_PROVIDERS.has(saved) &&
+    (enabled.length === 0 || enabled.includes(saved as ProviderType))
+  ) {
+    return saved as ProviderType;
+  }
+  if (enabled.length === 0 || enabled.includes(DEFAULT_PROVIDER)) {
+    return DEFAULT_PROVIDER;
+  }
+  return enabled[0];
+}
 import type { ImageAttachment, FileAttachment } from "@stratosapp/ui";
 import {
   Sidebar,
@@ -86,7 +103,25 @@ import { OpencodeSettingsDialog } from "./components/OpencodeSettingsDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ScheduledPromptsDialog } from "./components/ScheduledPromptsDialog";
 import { NewThreadDialog } from "./components/NewThreadDialog";
+import { SidebarResizeHandle } from "./components/SidebarResizeHandle";
 import { createDesktopBridge } from "./bridge";
+
+const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_WIDTH_STORAGE_KEY = "stratos.sidebarWidth";
+
+function defaultSidebarWidth(variant: DesignVariant): number {
+  return variant === "refined" ? 220 : 256;
+}
+
+function loadSidebarWidth(): number | null {
+  const storedWidth = Number.parseFloat(
+    window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) ?? "",
+  );
+  return Number.isFinite(storedWidth)
+    ? Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, storedWidth))
+    : null;
+}
 
 export default function App(): React.ReactElement {
   const bridge = useMemo(() => createDesktopBridge(), []);
@@ -234,18 +269,26 @@ function AppInner(): React.ReactElement {
     promotePending,
   } = useChat(activeThreadId, { onThreadUpdated: refreshThreads });
 
+  const [pendingProvider, setPendingProvider] = useState<ProviderType>();
   const [enabledProviders, setEnabledProviders] = useState<
     ProviderType[] | null
   >(null);
+  const providerSelectionMadeRef = useRef(false);
   useEffect(() => {
-    window.api.getAppInfo().then((info) => {
-      if (Array.isArray(info.enabledProviders)) {
-        setEnabledProviders(info.enabledProviders as ProviderType[]);
-      } else {
-        setEnabledProviders(["claude-code", "codex", "opencode", "copilot"]);
-      }
-    });
-  }, []);
+    Promise.all([window.api.getAppInfo(), settingsBridge.getSettings?.()]).then(
+      ([info, settings]) => {
+        const enabled = Array.isArray(info.enabledProviders)
+          ? (info.enabledProviders as ProviderType[])
+          : (["claude-code", "codex", "opencode", "copilot"] as ProviderType[]);
+        setEnabledProviders(enabled);
+        if (!providerSelectionMadeRef.current) {
+          setPendingProvider(
+            resolvePreferredProvider(settings?.lastUsedProvider, enabled),
+          );
+        }
+      },
+    );
+  }, [settingsBridge]);
   const codexEnabled = enabledProviders?.includes("codex") ?? false;
 
   const github = useGitHub();
@@ -279,15 +322,18 @@ function AppInner(): React.ReactElement {
   const [designSaving, setDesignSaving] = useState(false);
   const [designError, setDesignError] = useState<string | null>(null);
   const [pendingMode, setPendingMode] = useState<AgentMode>();
-  const [pendingProvider, setPendingProvider] =
-    useState<ProviderType>(DEFAULT_PROVIDER);
   /** Provider driving the toolbar/chat: the active thread's own provider, or
    *  the pending selection for the not-yet-created thread. */
   const activeProvider: ProviderType = activeThread
     ? normalizeProvider(activeThread.provider)
-    : pendingProvider;
+    : (pendingProvider ?? DEFAULT_PROVIDER);
   const [homeDir, setHomeDir] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isSidebarResizing, setIsSidebarResizing] = useState(false);
+  const storedSidebarWidthRef = useRef<number | null>(loadSidebarWidth());
+  const [sidebarWidth, setSidebarWidth] = useState(
+    storedSidebarWidthRef.current ?? defaultSidebarWidth(designVariant),
+  );
   const [showBottomTerminal, setShowBottomTerminal] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(280);
   const terminalContainerRef = useRef<HTMLDivElement>(null);
@@ -346,6 +392,12 @@ function AppInner(): React.ReactElement {
       document.documentElement.setAttribute("data-design", design);
     });
   }, [settingsBridge]);
+
+  useEffect(() => {
+    if (storedSidebarWidthRef.current === null) {
+      setSidebarWidth(defaultSidebarWidth(designVariant));
+    }
+  }, [designVariant]);
 
   const handleThemeChange = useCallback(
     async (t: "dark" | "light") => {
@@ -631,7 +683,8 @@ function AppInner(): React.ReactElement {
 
       // A newly created bot should inherit the provider the user is already
       // working with. Its own explicit provider still wins.
-      const provider = agent?.provider ?? activeProvider;
+      const provider =
+        agent?.provider ?? (activeThread ? activeProvider : pendingProvider);
       const thread = await createThread("New chat", undefined, cwd, provider);
       await threadsBridge.update(thread.id, {
         agentId,
@@ -660,7 +713,9 @@ function AppInner(): React.ReactElement {
       refreshThreads,
       setActiveThreadId,
       settingsBridge,
+      activeThread,
       activeProvider,
+      pendingProvider,
       leaveAgentScreen,
       focusComposerAfterMount,
     ],
@@ -1010,8 +1065,11 @@ function AppInner(): React.ReactElement {
 
   const handleProviderChange = useCallback(
     async (provider: ProviderType) => {
+      providerSelectionMadeRef.current = true;
+      setPendingProvider(provider);
+      await settingsBridge.updateSettings?.({ lastUsedProvider: provider });
+
       if (!activeThreadId) {
-        setPendingProvider(provider);
         setPendingMode((prev) => (prev ? normalizeMode(prev, provider) : prev));
         return;
       }
@@ -1346,6 +1404,17 @@ function AppInner(): React.ReactElement {
     [],
   );
 
+  const persistSidebarWidth = useCallback((width: number) => {
+    storedSidebarWidthRef.current = width;
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(width));
+  }, []);
+
+  const resetSidebarWidth = useCallback(() => {
+    const width = defaultSidebarWidth(designVariant);
+    setSidebarWidth(width);
+    persistSidebarWidth(width);
+  }, [designVariant, persistSidebarWidth]);
+
   const sidebarExpandButton = sidebarCollapsed ? (
     <button
       onClick={toggleSidebar}
@@ -1407,48 +1476,64 @@ function AppInner(): React.ReactElement {
       <DesignProvider variant={designVariant}>
         <div className="flex h-screen">
           <div
-            className="overflow-hidden transition-[width] duration-200 ease-in-out flex-shrink-0"
+            className={`relative flex-shrink-0 ${
+              isSidebarResizing
+                ? ""
+                : "transition-[width] duration-200 ease-in-out"
+            }`}
             style={{
-              width: sidebarCollapsed
-                ? 0
-                : designVariant === "refined"
-                  ? 220
-                  : 256,
+              width: sidebarCollapsed ? 0 : sidebarWidth,
             }}
             inert={sidebarCollapsed ? true : undefined}
           >
-            <Sidebar
-              threads={visibleThreads}
-              folders={folders}
-              activeThreadId={activeThreadId}
-              onThreadClick={handleThreadClick}
-              onCreateThreadInFolder={handleCreateThreadInFolder}
-              onAddFolder={handleAddFolder}
-              onRemoveFolder={async (folderId: string) => {
-                await removeFolder(folderId);
-                await refreshThreads();
-              }}
-              onToggleFolderCollapsed={handleToggleFolderCollapsed}
-              onDeleteThread={handleDeleteThread}
-              onRenameThread={handleRenameThread}
-              onToggleSidebar={toggleSidebar}
-              onSettingsClick={() => setShowSettingsDialog(true)}
-              onSchedulesClick={() => setShowSchedulesDialog(true)}
-              runningThreadIds={runningThreadIds}
-              threadNotifications={threadNotifications}
-              pendingPermissionThreadIds={pendingPermissionThreadIds}
-              draftThreadIds={draftThreadIds}
-              grouping={sidebarGrouping}
-              onGroupingChange={setSidebarGrouping}
-              agents={agents}
-              activeAgentId={viewingAgentId ?? editingAgentId}
-              collapsedAgentIds={collapsedAgentIds}
-              onToggleAgent={handleToggleAgent}
-              onAgentClick={handleAgentClick}
-              onCreateThreadForAgent={handleCreateThreadForAgent}
-              onCreateAgent={handleCreateAgent}
-              onDeleteAgent={handleDeleteAgent}
-            />
+            <div className="h-full overflow-hidden">
+              <Sidebar
+                threads={visibleThreads}
+                folders={folders}
+                activeThreadId={activeThreadId}
+                onThreadClick={handleThreadClick}
+                onCreateThreadInFolder={handleCreateThreadInFolder}
+                onAddFolder={handleAddFolder}
+                onRemoveFolder={async (folderId: string) => {
+                  await removeFolder(folderId);
+                  await refreshThreads();
+                }}
+                onToggleFolderCollapsed={handleToggleFolderCollapsed}
+                onDeleteThread={handleDeleteThread}
+                onRenameThread={handleRenameThread}
+                onToggleSidebar={toggleSidebar}
+                onSettingsClick={() => setShowSettingsDialog(true)}
+                onSchedulesClick={() => setShowSchedulesDialog(true)}
+                runningThreadIds={runningThreadIds}
+                threadNotifications={threadNotifications}
+                pendingPermissionThreadIds={pendingPermissionThreadIds}
+                draftThreadIds={draftThreadIds}
+                grouping={sidebarGrouping}
+                onGroupingChange={setSidebarGrouping}
+                agents={agents}
+                activeAgentId={viewingAgentId ?? editingAgentId}
+                collapsedAgentIds={collapsedAgentIds}
+                onToggleAgent={handleToggleAgent}
+                onAgentClick={handleAgentClick}
+                onCreateThreadForAgent={handleCreateThreadForAgent}
+                onCreateAgent={handleCreateAgent}
+                onDeleteAgent={handleDeleteAgent}
+              />
+            </div>
+            {!sidebarCollapsed && (
+              <SidebarResizeHandle
+                width={sidebarWidth}
+                minWidth={SIDEBAR_MIN_WIDTH}
+                maxWidth={SIDEBAR_MAX_WIDTH}
+                onResizeStart={() => setIsSidebarResizing(true)}
+                onResize={setSidebarWidth}
+                onResizeEnd={(width) => {
+                  setIsSidebarResizing(false);
+                  persistSidebarWidth(width);
+                }}
+                onReset={resetSidebarWidth}
+              />
+            )}
           </div>
 
           <Group orientation="horizontal" className="flex-1 min-h-0">
@@ -2120,6 +2205,7 @@ function AppInner(): React.ReactElement {
             isOpen={showSchedulesDialog}
             onClose={() => setShowSchedulesDialog(false)}
             folders={folders}
+            defaultProvider={pendingProvider ?? DEFAULT_PROVIDER}
           />
 
           {/* Settings dialog */}

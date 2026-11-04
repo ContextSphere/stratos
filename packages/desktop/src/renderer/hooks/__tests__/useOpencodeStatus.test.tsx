@@ -4,11 +4,14 @@ import { renderHook, waitFor, act } from "@testing-library/react";
 import { useOpencodeStatus } from "../useOpencodeStatus";
 
 function mockApi(
-  keys: Record<string, { apiKey: string }>,
+  statuses: Record<
+    string,
+    { configured: boolean; keyHint: string; baseURL?: string }
+  >,
   ollama: { baseURL: string; models: Record<string, unknown> } | undefined,
 ) {
   (window as unknown as { api: unknown }).api = {
-    opencodeGetProviderKeys: vi.fn().mockResolvedValue(keys),
+    opencodeGetProviderStatuses: vi.fn().mockResolvedValue(statuses),
     ollamaGetConfig: vi.fn().mockResolvedValue(ollama),
   };
 }
@@ -26,7 +29,15 @@ describe("useOpencodeStatus", () => {
   });
 
   it("reports configured with friendly label for an API key", async () => {
-    mockApi({ anthropic: { apiKey: "sk-ant-x" } }, undefined);
+    mockApi(
+      {
+        anthropic: {
+          configured: true,
+          keyHint: "sk-a…nt-x",
+        },
+      },
+      undefined,
+    );
     const { result } = renderHook(() => useOpencodeStatus());
     await waitFor(() => expect(result.current.configured).toBe(true));
     expect(result.current.providerLabels).toEqual(["Anthropic"]);
@@ -48,9 +59,12 @@ describe("useOpencodeStatus", () => {
   it("orders API providers alphabetically with Ollama last", async () => {
     mockApi(
       {
-        openai: { apiKey: "sk-x" },
-        anthropic: { apiKey: "sk-ant-x" },
-        groq: { apiKey: "gsk_x" },
+        openai: { configured: true, keyHint: "Credential stored securely" },
+        anthropic: {
+          configured: true,
+          keyHint: "Credential stored securely",
+        },
+        groq: { configured: true, keyHint: "Credential stored securely" },
       },
       {
         baseURL: "http://localhost:11434",
@@ -75,7 +89,15 @@ describe("useOpencodeStatus", () => {
   });
 
   it("falls back to raw provider id for unknown providers", async () => {
-    mockApi({ bedrock: { apiKey: "aws-x" } }, undefined);
+    mockApi(
+      {
+        bedrock: {
+          configured: true,
+          keyHint: "Credential stored securely",
+        },
+      },
+      undefined,
+    );
     const { result } = renderHook(() => useOpencodeStatus());
     await waitFor(() => expect(result.current.configured).toBe(true));
     expect(result.current.providerLabels).toEqual(["bedrock"]);
@@ -87,7 +109,15 @@ describe("useOpencodeStatus", () => {
     await waitFor(() => expect(result.current.configured).toBe(false));
 
     // Flip backing state
-    mockApi({ mistral: { apiKey: "x" } }, undefined);
+    mockApi(
+      {
+        mistral: {
+          configured: true,
+          keyHint: "Credential stored securely",
+        },
+      },
+      undefined,
+    );
     await act(async () => {
       await result.current.refresh();
     });

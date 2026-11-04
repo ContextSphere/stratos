@@ -109,20 +109,23 @@ Opencode sessions persist on the opencode server across turns. Stratos stores th
 
 ### Storage
 
-API keys are stored in `~/.stratos/app-settings.json` under `opencodeProviderKeys`:
+API keys are encrypted with Electron `safeStorage`, backed by the operating
+system credential store. Only the encrypted bytes and a display-safe hint are
+stored in `~/.stratos/app-settings.json` under `opencodeProviderKeys`:
 
 ```json
 {
   "opencodeProviderKeys": {
-    "anthropic": { "apiKey": "sk-ant-..." },
-    "openai": { "apiKey": "sk-..." },
     "openrouter": {
-      "apiKey": "sk-or-...",
-      "baseURL": "https://openrouter.ai/api/v1"
+      "encryptedApiKey": "<base64 encrypted bytes>",
+      "keyHint": "sk-o…1234"
     }
   }
 }
 ```
+
+Legacy plaintext entries are encrypted and rewritten on their first
+main-process read. Decrypted keys never cross preload IPC into the renderer.
 
 ### Injection
 
@@ -130,12 +133,24 @@ Keys are injected into the opencode server at startup via the `OPENCODE_CONFIG_C
 
 ```json
 {
-  "providers": {
-    "anthropic": { "apiKey": "sk-ant-..." },
-    "openai": { "apiKey": "sk-..." }
+  "provider": {
+    "openrouter": {
+      "options": {
+        "apiKey": "<decrypted in main process>",
+        "baseURL": "https://openrouter.ai/api/v1",
+        "headers": {
+          "HTTP-Referer": "https://github.com/ContextSphere/stratos",
+          "X-Title": "Stratos"
+        }
+      }
+    }
   }
 }
 ```
+
+OpenRouter credentials are validated against its `/auth/key` endpoint before
+they are saved. The base URL defaults to `https://openrouter.ai/api/v1`; an
+advanced override is available for compatible endpoints.
 
 ### Key Change Lifecycle
 
@@ -164,7 +179,8 @@ Opencode does not have a native plan mode or per-tool permission — it's the St
 
 ```
 packages/core/src/providers/
-  opencode.provider.ts          # Main provider implementation (~460 lines)
+  opencode.provider.ts          # Main provider implementation
+  opencode-catalog.ts           # Shared provider metadata and defaults
 
 packages/core/src/providers/
   index.ts                      # Registry: added "opencode" → OpencodeProvider
@@ -180,14 +196,16 @@ packages/ui/src/components/
   ProviderToggle.tsx            # Added "Opencode" button
 
 packages/desktop/src/common/
-  ipc-channels.ts               # Added OPENCODE_GET_PROVIDER_KEYS, SET, DELETE
+  ipc-channels.ts               # Credential status, set, and delete channels
 
 packages/desktop/src/preload/
-  index.ts                      # Exposed opencode key management APIs
+  index.ts                      # Exposes redacted status and credential mutations
 
 packages/desktop/src/main/
   agent-manager.ts              # Initialize with opencodeConfig, IPC handlers
-  settings/settings.store.ts    # OpencodeProviderKey type, CRUD helpers
+  integrations/openrouter.ts    # Credential validation
+  settings/settings.store.ts    # Encrypted credential metadata and CRUD
+  settings/secure-storage.ts    # OS-backed encryption boundary
 
 packages/desktop/src/renderer/
   App.tsx                       # ProviderType casts, OpencodeSettingsDialog

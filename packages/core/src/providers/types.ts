@@ -340,6 +340,8 @@ export interface McpServerInfo {
   scope?: string; // 'project' | 'user' | 'local' | 'claudeai' | 'managed'
   configPath?: string;
   tools: string[];
+  /** False when the provider reports server health but not its tool catalog. */
+  toolListAvailable?: boolean;
   error?: string;
   /** Server config type (stdio, sse, http, claudeai-proxy) */
   configType?: string;

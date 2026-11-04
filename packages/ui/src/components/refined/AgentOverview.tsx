@@ -1,6 +1,6 @@
 import type { Thread } from "@stratosapp/core";
 import type { AgentDefinition, AgentFidelity } from "@stratosapp/core";
-import { getModeConfig } from "../../utils/modes";
+import { DEFAULT_PROVIDER, getModeConfig } from "../../utils/modes";
 import { AgentGlyph } from "../AgentGlyph";
 import { getThreadStatus } from "../ThreadList";
 
@@ -282,7 +282,8 @@ export function AgentOverview({
             </dt>
             <dd className="truncate border-b border-[var(--border)] py-2 text-[var(--text-primary)]">
               {agent.mode
-                ? getModeConfig(agent.provider ?? "copilot", agent.mode).label
+                ? getModeConfig(agent.provider ?? DEFAULT_PROVIDER, agent.mode)
+                    .label
                 : "Thread default"}
             </dd>
           </dl>

@@ -1,8 +1,13 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { Dialog, DialogBody, Button } from "@stratosapp/ui";
+import {
+  OPENCODE_PROVIDER_CATALOG,
+  type OpencodeProviderDefinition,
+} from "../utils/opencode-providers";
 
-interface ProviderKey {
-  apiKey: string;
+interface ProviderStatus {
+  configured: boolean;
+  keyHint: string;
   baseURL?: string;
 }
 
@@ -36,41 +41,11 @@ interface Props {
   initialAddProviderId?: string;
 }
 
-interface ProviderDef {
-  id: string;
-  label: string;
-  placeholder: string;
-  kind: "api" | "ollama";
-}
-
-const PROVIDERS: ProviderDef[] = [
-  {
-    id: "anthropic",
-    label: "Anthropic",
-    placeholder: "sk-ant-...",
-    kind: "api",
-  },
-  { id: "openai", label: "OpenAI", placeholder: "sk-...", kind: "api" },
-  {
-    id: "openrouter",
-    label: "OpenRouter",
-    placeholder: "sk-or-...",
-    kind: "api",
-  },
-  { id: "google", label: "Google AI", placeholder: "AIza...", kind: "api" },
-  { id: "groq", label: "Groq", placeholder: "gsk_...", kind: "api" },
-  { id: "mistral", label: "Mistral", placeholder: "...", kind: "api" },
-  { id: "ollama", label: "Ollama", placeholder: "", kind: "ollama" },
-];
+const PROVIDERS: readonly OpencodeProviderDefinition[] =
+  OPENCODE_PROVIDER_CATALOG;
 
 function providerLabel(id: string): string {
   return PROVIDERS.find((p) => p.id === id)?.label ?? id;
-}
-
-function maskKey(key: string): string {
-  if (!key) return "";
-  if (key.length <= 8) return "•".repeat(key.length);
-  return `${key.slice(0, 4)}…${key.slice(-4)}`;
 }
 
 function formatBytes(bytes: number): string {
@@ -88,7 +63,7 @@ export function OpencodeSettingsDialog({
   onClose,
   initialAddProviderId,
 }: Props): React.ReactElement | null {
-  const [keys, setKeys] = useState<Record<string, ProviderKey>>({});
+  const [statuses, setStatuses] = useState<Record<string, ProviderStatus>>({});
   const [enabledModels, setEnabledModels] = useState<Record<string, string[]>>(
     {},
   );
@@ -99,11 +74,11 @@ export function OpencodeSettingsDialog({
   const refresh = useCallback(async () => {
     try {
       const [k, em, oc] = await Promise.all([
-        window.api.opencodeGetProviderKeys(),
+        window.api.opencodeGetProviderStatuses(),
         window.api.opencodeGetEnabledModels?.() ?? Promise.resolve({}),
         window.api.ollamaGetConfig() as Promise<OllamaConfig | undefined>,
       ]);
-      setKeys(k ?? {});
+      setStatuses(k ?? {});
       setEnabledModels(em ?? {});
       setOllamaConfig(oc ?? null);
     } catch (err) {
@@ -123,10 +98,10 @@ export function OpencodeSettingsDialog({
   }, [isOpen, refresh, initialAddProviderId]);
 
   const configuredIds = useMemo(() => {
-    const ids = new Set<string>(Object.keys(keys));
+    const ids = new Set<string>(Object.keys(statuses));
     if (ollamaConfig) ids.add("ollama");
     return ids;
-  }, [keys, ollamaConfig]);
+  }, [statuses, ollamaConfig]);
 
   const rows = useMemo(() => {
     const list: {
@@ -142,7 +117,7 @@ export function OpencodeSettingsDialog({
       const isOllama = id === "ollama";
       const hint = isOllama
         ? (ollamaConfig?.baseURL ?? "")
-        : maskKey(keys[id]?.apiKey ?? "");
+        : (statuses[id]?.keyHint ?? "Credential stored securely");
       const picks = enabledModels[id] ?? [];
       // Legacy-empty array = fall back to known count (we don't know, show 0
       // until the user opens Manage; that's a reasonable nudge).
@@ -162,7 +137,7 @@ export function OpencodeSettingsDialog({
       if (b.id === "ollama") return -1;
       return a.label.localeCompare(b.label);
     });
-  }, [configuredIds, keys, ollamaConfig, enabledModels]);
+  }, [configuredIds, statuses, ollamaConfig, enabledModels]);
 
   const handleToggle = useCallback(
     async (id: string, nextEnabled: boolean) => {
@@ -210,8 +185,8 @@ export function OpencodeSettingsDialog({
       <DialogBody>
         <div className="space-y-4">
           <p className="text-xs text-[var(--text-muted)]">
-            Configure providers for the opencode runtime. Keys are stored
-            locally and injected at server startup.
+            Configure providers for the opencode runtime. Keys are encrypted
+            with your system credential store and injected at server startup.
           </p>
 
           {rows.length > 0 && (
@@ -259,8 +234,8 @@ export function OpencodeSettingsDialog({
             <AddProviderPanel
               mode={panel}
               configuredIds={configuredIds}
-              existingKey={
-                panel.kind === "edit" ? keys[panel.providerId] : undefined
+              existingStatus={
+                panel.kind === "edit" ? statuses[panel.providerId] : undefined
               }
               existingOllama={
                 panel.kind === "edit" && panel.providerId === "ollama"
@@ -407,7 +382,7 @@ function Toggle({
 interface AddProviderPanelProps {
   mode: { kind: "add" } | { kind: "edit"; providerId: string };
   configuredIds: Set<string>;
-  existingKey?: ProviderKey;
+  existingStatus?: ProviderStatus;
   existingOllama: OllamaConfig | null;
   existingSelection: string[];
   initialProviderId?: string;
@@ -418,7 +393,7 @@ interface AddProviderPanelProps {
 function AddProviderPanel({
   mode,
   configuredIds,
-  existingKey,
+  existingStatus,
   existingOllama,
   existingSelection,
   initialProviderId,
@@ -438,8 +413,8 @@ function AddProviderPanel({
   );
 
   // Shared state
-  const [apiKey, setApiKey] = useState(existingKey?.apiKey ?? "");
-  const [baseURL, setBaseURL] = useState(existingKey?.baseURL ?? "");
+  const [apiKey, setApiKey] = useState("");
+  const [baseURL, setBaseURL] = useState(existingStatus?.baseURL ?? "");
   const [ollamaURL, setOllamaURL] = useState(
     existingOllama?.baseURL ?? "http://localhost:11434",
   );
@@ -616,22 +591,36 @@ function AddProviderPanel({
 
       {step === "credentials" && def?.kind === "api" && (
         <div className="space-y-2">
+          {editing && (
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Enter a new key to replace the credential stored securely.
+            </p>
+          )}
           <input
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder={def.placeholder || "API key"}
+            placeholder={
+              editing ? "Enter a new API key" : def.placeholder || "API key"
+            }
             className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--bg-base)] border border-[var(--border)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--text-control)]"
             autoFocus
             data-testid="opencode-api-key"
           />
-          <input
-            type="text"
-            value={baseURL}
-            onChange={(e) => setBaseURL(e.target.value)}
-            placeholder="Base URL (optional)"
-            className="w-full px-2 py-1.5 text-xs rounded-md bg-[var(--bg-base)] border border-[var(--border)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--text-control)]"
-          />
+          <details className="text-[11px] text-[var(--text-muted)]">
+            <summary className="cursor-pointer select-none">Advanced</summary>
+            <input
+              type="text"
+              value={baseURL}
+              onChange={(e) => setBaseURL(e.target.value)}
+              placeholder={
+                def.defaultBaseURL
+                  ? `Custom base URL (default: ${def.defaultBaseURL})`
+                  : "Custom base URL (optional)"
+              }
+              className="w-full mt-2 px-2 py-1.5 text-xs rounded-md bg-[var(--bg-base)] border border-[var(--border)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--text-control)]"
+            />
+          </details>
         </div>
       )}
 
@@ -756,7 +745,58 @@ function ModelMultiSelect({
   onRetry,
   onChangeKey,
 }: ModelMultiSelectProps): React.ReactElement {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+
+  const visibleApiModels = useMemo(
+    () =>
+      [...apiModels]
+        .sort(
+          (a, b) =>
+            a.displayName.localeCompare(b.displayName, undefined, {
+              sensitivity: "base",
+              numeric: true,
+            }) ||
+            a.value.localeCompare(b.value, undefined, {
+              sensitivity: "base",
+              numeric: true,
+            }),
+        )
+        .filter((model) => {
+          if (!normalizedQuery) return true;
+          return [model.displayName, model.value, model.description].some(
+            (value) => value.toLocaleLowerCase().includes(normalizedQuery),
+          );
+        }),
+    [apiModels, normalizedQuery],
+  );
+
+  const visibleOllamaModels = useMemo(
+    () =>
+      [...ollamaModels]
+        .sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, {
+            sensitivity: "base",
+            numeric: true,
+          }),
+        )
+        .filter((model) => {
+          if (!normalizedQuery) return true;
+          return [
+            model.name,
+            model.family,
+            model.parameterSize,
+            model.quantization,
+          ].some((value) =>
+            value.toLocaleLowerCase().includes(normalizedQuery),
+          );
+        }),
+    [ollamaModels, normalizedQuery],
+  );
+
   const count = kind === "ollama" ? ollamaModels.length : apiModels.length;
+  const visibleCount =
+    kind === "ollama" ? visibleOllamaModels.length : visibleApiModels.length;
 
   return (
     <div className="space-y-2">
@@ -796,6 +836,30 @@ function ModelMultiSelect({
         </div>
       </div>
 
+      {count > 0 && (
+        <div className="relative">
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search models by name or ID…"
+            aria-label="Search models"
+            className="w-full px-2 py-1.5 pr-14 text-xs rounded-md bg-[var(--bg-base)] border border-[var(--border)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--text-control)]"
+            data-testid="opencode-model-search"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              aria-label="Clear model search"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {fetching && count === 0 && (
         <p className="text-xs text-[var(--text-muted)] py-2 text-center">
           Fetching models…
@@ -814,13 +878,19 @@ function ModelMultiSelect({
         </p>
       )}
 
-      {count > 0 && (
+      {count > 0 && visibleCount === 0 && (
+        <p className="text-xs text-[var(--text-muted)] py-3 text-center">
+          No models match “{query.trim()}”.
+        </p>
+      )}
+
+      {visibleCount > 0 && (
         <div
           className="space-y-1 max-h-64 overflow-y-auto pr-1"
           data-testid="opencode-model-list"
         >
           {kind === "ollama"
-            ? ollamaModels.map((m) => {
+            ? visibleOllamaModels.map((m) => {
                 const on = selected.has(m.name);
                 const badges: string[] = [];
                 if (m.capabilities.tools) badges.push("tools");
@@ -867,7 +937,7 @@ function ModelMultiSelect({
                   </button>
                 );
               })
-            : apiModels.map((m) => {
+            : visibleApiModels.map((m) => {
                 const on = selected.has(m.value);
                 return (
                   <button
