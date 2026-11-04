@@ -103,7 +103,25 @@ import { OpencodeSettingsDialog } from "./components/OpencodeSettingsDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ScheduledPromptsDialog } from "./components/ScheduledPromptsDialog";
 import { NewThreadDialog } from "./components/NewThreadDialog";
+import { SidebarResizeHandle } from "./components/SidebarResizeHandle";
 import { createDesktopBridge } from "./bridge";
+
+const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_WIDTH_STORAGE_KEY = "stratos.sidebarWidth";
+
+function defaultSidebarWidth(variant: DesignVariant): number {
+  return variant === "refined" ? 220 : 256;
+}
+
+function loadSidebarWidth(): number | null {
+  const storedWidth = Number.parseFloat(
+    window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) ?? "",
+  );
+  return Number.isFinite(storedWidth)
+    ? Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, storedWidth))
+    : null;
+}
 
 export default function App(): React.ReactElement {
   const bridge = useMemo(() => createDesktopBridge(), []);
@@ -311,6 +329,11 @@ function AppInner(): React.ReactElement {
     : (pendingProvider ?? DEFAULT_PROVIDER);
   const [homeDir, setHomeDir] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isSidebarResizing, setIsSidebarResizing] = useState(false);
+  const storedSidebarWidthRef = useRef<number | null>(loadSidebarWidth());
+  const [sidebarWidth, setSidebarWidth] = useState(
+    storedSidebarWidthRef.current ?? defaultSidebarWidth(designVariant),
+  );
   const [showBottomTerminal, setShowBottomTerminal] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(280);
   const terminalContainerRef = useRef<HTMLDivElement>(null);
@@ -369,6 +392,12 @@ function AppInner(): React.ReactElement {
       document.documentElement.setAttribute("data-design", design);
     });
   }, [settingsBridge]);
+
+  useEffect(() => {
+    if (storedSidebarWidthRef.current === null) {
+      setSidebarWidth(defaultSidebarWidth(designVariant));
+    }
+  }, [designVariant]);
 
   const handleThemeChange = useCallback(
     async (t: "dark" | "light") => {
@@ -1375,6 +1404,17 @@ function AppInner(): React.ReactElement {
     [],
   );
 
+  const persistSidebarWidth = useCallback((width: number) => {
+    storedSidebarWidthRef.current = width;
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(width));
+  }, []);
+
+  const resetSidebarWidth = useCallback(() => {
+    const width = defaultSidebarWidth(designVariant);
+    setSidebarWidth(width);
+    persistSidebarWidth(width);
+  }, [designVariant, persistSidebarWidth]);
+
   const sidebarExpandButton = sidebarCollapsed ? (
     <button
       onClick={toggleSidebar}
@@ -1436,48 +1476,64 @@ function AppInner(): React.ReactElement {
       <DesignProvider variant={designVariant}>
         <div className="flex h-screen">
           <div
-            className="overflow-hidden transition-[width] duration-200 ease-in-out flex-shrink-0"
+            className={`relative flex-shrink-0 ${
+              isSidebarResizing
+                ? ""
+                : "transition-[width] duration-200 ease-in-out"
+            }`}
             style={{
-              width: sidebarCollapsed
-                ? 0
-                : designVariant === "refined"
-                  ? 220
-                  : 256,
+              width: sidebarCollapsed ? 0 : sidebarWidth,
             }}
             inert={sidebarCollapsed ? true : undefined}
           >
-            <Sidebar
-              threads={visibleThreads}
-              folders={folders}
-              activeThreadId={activeThreadId}
-              onThreadClick={handleThreadClick}
-              onCreateThreadInFolder={handleCreateThreadInFolder}
-              onAddFolder={handleAddFolder}
-              onRemoveFolder={async (folderId: string) => {
-                await removeFolder(folderId);
-                await refreshThreads();
-              }}
-              onToggleFolderCollapsed={handleToggleFolderCollapsed}
-              onDeleteThread={handleDeleteThread}
-              onRenameThread={handleRenameThread}
-              onToggleSidebar={toggleSidebar}
-              onSettingsClick={() => setShowSettingsDialog(true)}
-              onSchedulesClick={() => setShowSchedulesDialog(true)}
-              runningThreadIds={runningThreadIds}
-              threadNotifications={threadNotifications}
-              pendingPermissionThreadIds={pendingPermissionThreadIds}
-              draftThreadIds={draftThreadIds}
-              grouping={sidebarGrouping}
-              onGroupingChange={setSidebarGrouping}
-              agents={agents}
-              activeAgentId={viewingAgentId ?? editingAgentId}
-              collapsedAgentIds={collapsedAgentIds}
-              onToggleAgent={handleToggleAgent}
-              onAgentClick={handleAgentClick}
-              onCreateThreadForAgent={handleCreateThreadForAgent}
-              onCreateAgent={handleCreateAgent}
-              onDeleteAgent={handleDeleteAgent}
-            />
+            <div className="h-full overflow-hidden">
+              <Sidebar
+                threads={visibleThreads}
+                folders={folders}
+                activeThreadId={activeThreadId}
+                onThreadClick={handleThreadClick}
+                onCreateThreadInFolder={handleCreateThreadInFolder}
+                onAddFolder={handleAddFolder}
+                onRemoveFolder={async (folderId: string) => {
+                  await removeFolder(folderId);
+                  await refreshThreads();
+                }}
+                onToggleFolderCollapsed={handleToggleFolderCollapsed}
+                onDeleteThread={handleDeleteThread}
+                onRenameThread={handleRenameThread}
+                onToggleSidebar={toggleSidebar}
+                onSettingsClick={() => setShowSettingsDialog(true)}
+                onSchedulesClick={() => setShowSchedulesDialog(true)}
+                runningThreadIds={runningThreadIds}
+                threadNotifications={threadNotifications}
+                pendingPermissionThreadIds={pendingPermissionThreadIds}
+                draftThreadIds={draftThreadIds}
+                grouping={sidebarGrouping}
+                onGroupingChange={setSidebarGrouping}
+                agents={agents}
+                activeAgentId={viewingAgentId ?? editingAgentId}
+                collapsedAgentIds={collapsedAgentIds}
+                onToggleAgent={handleToggleAgent}
+                onAgentClick={handleAgentClick}
+                onCreateThreadForAgent={handleCreateThreadForAgent}
+                onCreateAgent={handleCreateAgent}
+                onDeleteAgent={handleDeleteAgent}
+              />
+            </div>
+            {!sidebarCollapsed && (
+              <SidebarResizeHandle
+                width={sidebarWidth}
+                minWidth={SIDEBAR_MIN_WIDTH}
+                maxWidth={SIDEBAR_MAX_WIDTH}
+                onResizeStart={() => setIsSidebarResizing(true)}
+                onResize={setSidebarWidth}
+                onResizeEnd={(width) => {
+                  setIsSidebarResizing(false);
+                  persistSidebarWidth(width);
+                }}
+                onReset={resetSidebarWidth}
+              />
+            )}
           </div>
 
           <Group orientation="horizontal" className="flex-1 min-h-0">

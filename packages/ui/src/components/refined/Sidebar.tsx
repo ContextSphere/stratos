@@ -69,7 +69,7 @@ export function Sidebar({
   onDeleteAgent,
 }: Props): React.ReactElement {
   return (
-    <div className="flex h-full w-[220px] min-w-[220px] flex-shrink-0 flex-col overflow-hidden bg-[var(--bg-root)] text-[13px]">
+    <div className="flex h-full w-full min-w-0 flex-shrink-0 flex-col overflow-hidden bg-[var(--bg-root)] text-[13px]">
       <div className="flex flex-col h-full">
         {/* Traffic-light clearance */}
         <div className="drag-region h-6 flex-shrink-0" />
